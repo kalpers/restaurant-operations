@@ -4,6 +4,7 @@ import { assertVersionMatched } from "@/db/helpers/versioning";
 import {
   withTransaction,
   type DatabaseExecutor,
+  type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
 import {
   BusinessRuleError,
@@ -27,7 +28,10 @@ import {
 import {
   activateAssignment,
   deactivateAssignment,
+  disableUserRow,
+  findLinkedEmployeeStatus,
   findUserAssignmentRowsAtLocation,
+  findUserInOrganization,
   findUserStatusById,
   hasAssignmentAtLocation,
   insertAssignment,
@@ -181,6 +185,13 @@ export async function setUserActive(
         organizationId: actor.organizationId,
         userId: input.userId,
       });
+    } else if (
+      (await findLinkedEmployeeStatus(transaction, input.userId)) === "TERMINATED"
+    ) {
+      throw new BusinessRuleError(
+        "USER_LINKED_TO_TERMINATED_EMPLOYEE",
+        "This account belongs to a terminated employee. Unlink it first.",
+      );
     }
 
     return assertVersionMatched(await updateUserActive(transaction, input), {
@@ -188,6 +199,46 @@ export async function setUserActive(
       id: input.userId,
     });
   });
+}
+
+/**
+ * Disables a terminated employee's account, in the caller's transaction, under the same
+ * safeguards as disabling it directly. Any failure rolls the termination back, so an
+ * employee is never terminated while keeping access through this path.
+ */
+export async function disableUserForTermination(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  userId: string,
+): Promise<void> {
+  if (userId === actor.userId) {
+    throw new BusinessRuleError(
+      "SELF_TERMINATION_NOT_ALLOWED",
+      "You can't terminate your own employee record.",
+    );
+  }
+
+  const user = await findUserStatusById(transaction, userId);
+
+  if (!user?.active) {
+    return;
+  }
+
+  assertActorHolds(actor, await findUserPermissionCodes(transaction, userId));
+  await assertNotLastOwner(transaction, {
+    organizationId: actor.organizationId,
+    userId,
+  });
+  await disableUserRow(transaction, userId);
+}
+
+/** What the Employees domain may know about a user it is linking. */
+export function findLinkableUser(
+  executor: DatabaseExecutor,
+  userId: string,
+  organizationId: string,
+): Promise<{ id: string; email: string } | undefined> {
+  return findUserInOrganization(executor, userId, organizationId);
 }
 
 export async function assignRole(

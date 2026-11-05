@@ -54,9 +54,9 @@ describe("password hashing", () => {
 });
 
 describe("permission catalog", () => {
-  it("has 44 unique codes", () => {
-    expect(ALL_PERMISSION_CODES).toHaveLength(44);
-    expect(new Set(ALL_PERMISSION_CODES).size).toBe(44);
+  it("has 64 unique codes", () => {
+    expect(ALL_PERMISSION_CODES).toHaveLength(64);
+    expect(new Set(ALL_PERMISSION_CODES).size).toBe(64);
   });
 
   it("uses the domain.action format", () => {
@@ -127,9 +127,53 @@ describe("role catalog", () => {
 
     expect(manager).not.toContain("admin.users.manage");
     expect(manager).not.toContain("admin.roles.view");
-    expect(manager).not.toContain("hr.view");
-    expect(manager).not.toContain("hr.compensation.view");
     expect(manager).toContain("schedule.publish");
+
+    for (const restricted of [
+      "employees.create",
+      "employees.edit",
+      "employees.terminate",
+      "hr.compensation.view",
+      "hr.compensation.edit",
+      "hr.disciplinary.view",
+      "hr.disciplinary.manage",
+      "hr.personal.view",
+      "hr.personal.edit",
+      "hr.documents.view",
+      "hr.documents.sensitive.view",
+      "hr.notes.sensitive.view",
+      "hr.notes.sensitive.manage",
+    ] as const) {
+      expect(manager, restricted).not.toContain(restricted);
+    }
+  });
+
+  it("gives the Manager the management HR tier", () => {
+    const manager = permissionsOf("MANAGER");
+
+    for (const code of [
+      "employees.view",
+      "hr.view",
+      "hr.certifications.view",
+      "hr.certifications.manage",
+      "hr.performance.view",
+      "hr.performance.manage",
+      "hr.notes.view",
+      "hr.notes.manage",
+    ] as const) {
+      expect(manager, code).toContain(code);
+    }
+  });
+
+  it("gives floor roles no employee or HR access", () => {
+    for (const role of ["SERVER", "BARTENDER", "HOST", "COOK", "WAIT_STAFF", "INVENTORY_MANAGER"]) {
+      expect(
+        permissionsOf(role).filter(
+          (code) => code.startsWith("hr.") || code.startsWith("employees."),
+        ),
+        role,
+      ).toEqual([]);
+    }
   });
 
   it("gives Wait Staff no order entry", () => {

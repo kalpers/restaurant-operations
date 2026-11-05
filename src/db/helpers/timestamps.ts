@@ -18,6 +18,14 @@ export function updatedAt() {
 }
 
 /**
+ * A calendar date with no operating-day meaning, such as a hire or effective date:
+ * `DATE`, as a `YYYY-MM-DD` string so no timezone conversion can shift it.
+ */
+export function calendarDate(name: string) {
+  return date(name, { mode: "string" });
+}
+
+/**
  * A restaurant operating day: `DATE`, read and written as a `YYYY-MM-DD` string so
  * no timezone conversion can shift it. It is separate from the instant, and its
  * value must come from BusinessDateService, never from truncating a timestamp.

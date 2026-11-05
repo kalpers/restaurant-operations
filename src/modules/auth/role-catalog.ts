@@ -48,12 +48,20 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
   {
     code: "MANAGER",
     name: "Manager",
-    description: "Day-to-day operations, without HR records or security administration.",
+    description:
+      "Day-to-day operations and management-level HR records, without restricted HR or security administration.",
     permissions: [
       "admin.users.view",
       "organization.view",
       "locations.view",
       "employees.view",
+      "hr.view",
+      "hr.certifications.view",
+      "hr.certifications.manage",
+      "hr.performance.view",
+      "hr.performance.manage",
+      "hr.notes.view",
+      "hr.notes.manage",
       "schedule.view",
       "schedule.edit",
       "schedule.generate",

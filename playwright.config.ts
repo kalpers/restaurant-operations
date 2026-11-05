@@ -8,6 +8,7 @@ import {
   loadLocalEnv,
   requireTestDatabaseUrl,
 } from "./src/config/tooling-env";
+import { E2E_DOCUMENT_STORAGE_PATH } from "./tests/helpers/e2e-storage";
 
 loadLocalEnv();
 
@@ -36,6 +37,7 @@ export default defineConfig({
       DATABASE_URL: requireTestDatabaseUrl(),
       // Generated per run, so tests never depend on a developer's or a known secret.
       NEXTAUTH_SECRET: randomBytes(32).toString("base64url"),
+      EMPLOYEE_DOCUMENT_STORAGE_PATH: E2E_DOCUMENT_STORAGE_PATH,
     },
     // A reused dev server would run the tests against the development database.
     reuseExistingServer: false,

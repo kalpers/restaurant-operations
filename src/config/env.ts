@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+const DEFAULT_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const MAXIMUM_DOCUMENT_BYTES = 50 * 1024 * 1024;
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -22,6 +25,17 @@ const envSchema = z
       protocol: /^https?$/,
       error: "must be an http:// or https:// URL",
     }),
+    // Must stay outside public/. The local adapter refuses a root inside it.
+    EMPLOYEE_DOCUMENT_STORAGE_PATH: z
+      .string({ error: "must be a string" })
+      .min(1, { error: "must not be empty" })
+      .default(".local/hr-files"),
+    EMPLOYEE_DOCUMENT_MAX_BYTES: z.coerce
+      .number({ error: "must be a whole number" })
+      .int({ error: "must be a whole number" })
+      .positive({ error: "must be positive" })
+      .max(MAXIMUM_DOCUMENT_BYTES, { error: "must be at most 50 MiB" })
+      .default(DEFAULT_DOCUMENT_BYTES),
     // An empty value, as in a copied .env.example, counts as unset.
     NEXTAUTH_SECRET: z.preprocess(
       (value) => (value === "" ? undefined : value),

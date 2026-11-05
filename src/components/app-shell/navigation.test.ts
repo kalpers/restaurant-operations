@@ -27,6 +27,9 @@ describe("visibleNavigation", () => {
   it("shows everything with every permission", () => {
     expect(labels(ALL_PERMISSION_CODES)).toEqual([
       "Dashboard",
+      "Employees",
+      "Positions",
+      "Certification types",
       "Organization",
       "Locations",
       "Areas",

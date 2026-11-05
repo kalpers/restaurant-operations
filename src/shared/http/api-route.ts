@@ -12,7 +12,10 @@ type ApiRouteArgs<Params> = {
   requestId: string;
 };
 
-export type ApiResult = { body?: unknown; status?: number };
+/** `response` sends a prepared Response as is, such as a file download. */
+export type ApiResult =
+  | { body?: unknown; status?: number; response?: undefined }
+  | { response: Response };
 
 /** The one error response shape. */
 export function errorResponse(error: unknown, requestId: string): Response {
@@ -42,7 +45,13 @@ export function apiRoute<Params = Record<string, never>>(
 
     try {
       const params = await context.params;
-      const { body, status = 200 } = await handler({ request, params, requestId });
+      const result = await handler({ request, params, requestId });
+
+      if (result.response) {
+        return result.response;
+      }
+
+      const { body, status = 200 } = result;
 
       return body === undefined
         ? new Response(null, { status: 204 })

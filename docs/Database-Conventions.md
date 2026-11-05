@@ -11,6 +11,7 @@ Helpers live in `src/db/helpers/`.
 | Primary key | `uuidPrimaryKey()` | `UUID`, database-generated | `string` |
 | Real-world instant | `timestamptz(name)`, `createdAt()`, `updatedAt()` | `TIMESTAMPTZ` | `Date` |
 | Restaurant business date | `businessDate(name?)` | `DATE` | `YYYY-MM-DD` string |
+| Calendar date (hire, effective date) | `calendarDate(name)` | `DATE` | `YYYY-MM-DD` string |
 | Customer-facing money | `money(name)` | `NUMERIC(12,2)` | decimal string |
 | Detailed cost | `cost(name)` | `NUMERIC(14,4)` | decimal string |
 | Inventory quantity | `quantity(name)` | `NUMERIC(14,4)` | decimal string |
@@ -73,8 +74,11 @@ PostgreSQL constraints are the final integrity layer, in addition to application
 | Foreign key | Drizzle's generated name. If PostgreSQL's 63-character limit would truncate it, name it explicitly |
 | Check constraint | `<table>_<rule>`, for example `order_items_quantity_positive` |
 | Index | `<table>_<column>_idx` |
+| Exclusion constraint | `<table>_no_overlap` |
 
 Add indexes for known access patterns, foreign keys, uniqueness or measured query needs, not by default.
+
+Drizzle's schema language can't express exclusion constraints. Put them in a custom migration (`npm run db:generate -- --custom --name=<short_description>`), and say so in a comment on the table in the schema. Drift checks don't see them, so `tests/integration/database/migrations.test.ts` asserts they exist. `employee_locations`, `employee_positions` and `employee_position_compensation` use one to refuse overlapping effective periods, treating each period as an inclusive `daterange` where a `NULL` end is open-ended. They need the `btree_gist` extension.
 
 Prefer constrained strings and configurable tables to native PostgreSQL enums for lifecycle states.
 

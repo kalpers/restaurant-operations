@@ -93,3 +93,21 @@ export async function requirePagePermission(permission: PermissionCode): Promise
 
   return { auth, location };
 }
+
+/** For pages whose services take an actor and enforce permissions themselves. */
+export async function requirePageActor(permission: PermissionCode): Promise<{
+  auth: AuthContext;
+  location: AuthorizedLocation;
+  actor: Actor;
+}> {
+  const { auth, location } = await requirePagePermission(permission);
+
+  return {
+    auth,
+    location,
+    actor: requirePermission(auth, {
+      permission,
+      locationId: location.locationId,
+    }),
+  };
+}

@@ -15,6 +15,20 @@
       "when": 1793893868239,
       "tag": "0001_organization_auth_rbac",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793898306263,
+      "tag": "0002_employees_hr",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793898319589,
+      "tag": "0003_employee_overlap_constraints",
+      "breakpoints": true
     }
   ]
 }

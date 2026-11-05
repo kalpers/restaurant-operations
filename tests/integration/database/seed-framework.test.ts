@@ -159,10 +159,12 @@ describe("runSeeds", () => {
     expect(await totals()).toEqual({ markers: 0, records: 0 });
   });
 
-  it("registers the Phase 2 foundation seeds, organization first", () => {
+  it("registers the foundation seeds, organization first", () => {
     expect(registeredSeeds.map((seed) => seed.key)).toEqual([
       "organization.initial",
       "security.initial",
+      "security.hr-permissions-v2",
+      "employees.reference-data",
     ]);
   });
 });

@@ -1,9 +1,13 @@
+import { employeeReferenceDataSeed } from "./employee-reference-data";
 import { organizationFoundationSeed } from "./organization-foundation";
 import type { Seed } from "./run-seeds";
 import { securityFoundationSeed } from "./security-foundation";
+import { securityHrPermissionsSeed } from "./security-hr-permissions";
 
 /** Seeds run in this order. Later phases register their seeds here. */
 export const seeds: readonly Seed[] = [
   organizationFoundationSeed,
   securityFoundationSeed,
+  securityHrPermissionsSeed,
+  employeeReferenceDataSeed,
 ];

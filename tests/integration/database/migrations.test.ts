@@ -20,10 +20,24 @@ const RECONSTRUCTION_DATABASE = "restaurant_ops_test_reconstruction";
 
 const EXPECTED_TABLES = [
   "drizzle.__drizzle_migrations",
+  "public.certification_types",
+  "public.employee_addresses",
+  "public.employee_certifications",
+  "public.employee_disciplinary_actions",
+  "public.employee_documents",
+  "public.employee_emergency_contacts",
+  "public.employee_locations",
+  "public.employee_notes",
+  "public.employee_performance_reviews",
+  "public.employee_position_compensation",
+  "public.employee_positions",
+  "public.employee_status_history",
+  "public.employees",
   "public.location_settings",
   "public.locations",
   "public.organizations",
   "public.permissions",
+  "public.positions",
   "public.restaurant_areas",
   "public.role_permissions",
   "public.roles",
@@ -96,6 +110,55 @@ describe("reconstruction from checked-in migrations", () => {
     expect(foreignKeys.length).toBeGreaterThan(0);
     // 'r' is RESTRICT.
     expect(foreignKeys.filter((key) => key.confdeltype !== "r")).toEqual([]);
+  });
+
+  it("creates the overlap protections that the schema language can't express", async () => {
+    await applyMigrations(databaseUrl);
+
+    const constraints = await query<{ conname: string }>(`
+      SELECT conname FROM pg_constraint
+      WHERE contype = 'x' AND connamespace = 'public'::regnamespace
+      ORDER BY conname
+    `);
+
+    expect(constraints.map((row) => row.conname)).toEqual([
+      "employee_locations_no_overlap",
+      "employee_position_compensation_no_overlap",
+      "employee_positions_no_overlap",
+    ]);
+  });
+
+  it("names every foreign key within PostgreSQL's limit, unambiguously", async () => {
+    await applyMigrations(databaseUrl);
+
+    const names = await query<{ conname: string }>(`
+      SELECT conname FROM pg_constraint
+      WHERE contype = 'f' AND connamespace = 'public'::regnamespace
+    `);
+
+    // A truncated name is exactly 63 characters; the generated ones here are shorter.
+    expect(names.filter((row) => row.conname.length >= 63)).toEqual([]);
+  });
+
+  it("gives positions no wage column", async () => {
+    await applyMigrations(databaseUrl);
+
+    const columns = await query<{ column_name: string }>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'positions'
+    `);
+
+    expect(columns.map((row) => row.column_name).sort()).toEqual([
+      "active",
+      "code",
+      "created_at",
+      "description",
+      "id",
+      "name",
+      "organization_id",
+      "updated_at",
+      "version",
+    ]);
   });
 
   it("applies every migration in the journal", async () => {

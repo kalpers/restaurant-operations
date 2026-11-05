@@ -1,6 +1,6 @@
 import { hash, verify, type Algorithm } from "@node-rs/argon2";
 
-export const MINIMUM_PASSWORD_LENGTH = 5;
+export const MINIMUM_PASSWORD_LENGTH = 14;
 
 /** Bounds hashing work on an oversized submission. */
 export const MAXIMUM_PASSWORD_LENGTH = 1024;

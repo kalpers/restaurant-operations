@@ -1,7 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { nextVersion } from "@/db/helpers/versioning";
-import { roles, userRoles, users } from "@/db/schema";
+import { employees, locations, roles, userRoles, users } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 
 /** The only query that reads a password hash. Its result stays in the auth module. */
@@ -101,6 +101,53 @@ export function updateUserActive(
       and(eq(users.id, input.userId), eq(users.version, input.expectedVersion)),
     )
     .returning({ id: users.id, active: users.active, version: users.version });
+}
+
+/** Bumps the version, so an administrator's stale re-enable can't race this. */
+export async function disableUserRow(
+  executor: DatabaseExecutor,
+  userId: string,
+): Promise<void> {
+  await executor
+    .update(users)
+    .set({
+      active: false,
+      disabledAt: sql`now()`,
+      version: nextVersion(users.version),
+    })
+    .where(and(eq(users.id, userId), eq(users.active, true)));
+}
+
+/** Read only: Employees owns the record. Undefined when the user has no employee. */
+export async function findLinkedEmployeeStatus(
+  executor: DatabaseExecutor,
+  userId: string,
+): Promise<string | undefined> {
+  const [employee] = await executor
+    .select({ employmentStatus: employees.employmentStatus })
+    .from(employees)
+    .where(eq(employees.userId, userId));
+
+  return employee?.employmentStatus;
+}
+
+/** Users have no organization column: they belong through role assignments. */
+export async function findUserInOrganization(
+  executor: DatabaseExecutor,
+  userId: string,
+  organizationId: string,
+) {
+  const [user] = await executor
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .innerJoin(locations, eq(locations.id, userRoles.locationId))
+    .where(
+      and(eq(users.id, userId), eq(locations.organizationId, organizationId)),
+    )
+    .limit(1);
+
+  return user;
 }
 
 /** One row per assignment, active or not. Credential columns aren't selected. */

@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -9,10 +9,13 @@ import type { Database } from "@/db";
 import { applyMigrations } from "@/db/maintenance/apply-migrations";
 import * as schema from "@/db/schema";
 import {
+  certificationTypes,
+  employees,
   locations,
   locationSettings,
   organizations,
   permissions,
+  positions,
   rolePermissions,
   roles,
   restaurantAreas,
@@ -21,6 +24,7 @@ import {
 } from "@/db/schema";
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
+import { securityHrPermissionsSeed } from "@/db/seeds/security-hr-permissions";
 import { PERMISSION_CATALOG } from "@/modules/auth/permission-catalog";
 import { ROLE_CATALOG } from "@/modules/auth/role-catalog";
 
@@ -52,6 +56,9 @@ describe("foundation seeds, on a fresh database", () => {
       rolePermissions: await countOf(rolePermissions),
       seedRuns: await countOf(seedRuns),
       users: await countOf(users),
+      positions: await countOf(positions),
+      certificationTypes: await countOf(certificationTypes),
+      employees: await countOf(employees),
     };
   }
 
@@ -61,13 +68,16 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 44,
+    permissions: 64,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 2,
+    seedRuns: 4,
     users: 0,
+    positions: 8,
+    certificationTypes: 2,
+    employees: 0,
   };
 
   beforeAll(async () => {
@@ -89,7 +99,12 @@ describe("foundation seeds, on a fresh database", () => {
   it("applies once and creates exactly the expected records and no users", async () => {
     const result = await runSeeds(database, seeds);
 
-    expect(result.applied).toEqual(["organization.initial", "security.initial"]);
+    expect(result.applied).toEqual([
+      "organization.initial",
+      "security.initial",
+      "security.hr-permissions-v2",
+      "employees.reference-data",
+    ]);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -97,8 +112,125 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(2);
+    expect(result.skipped).toHaveLength(4);
     expect(await totals()).toEqual(expectedTotals);
+  });
+
+  it("seeds positions and generic certification types, and no employees", async () => {
+    const seededPositions = await database
+      .select({ code: positions.code })
+      .from(positions);
+    const seededTypes = await database
+      .select({ code: certificationTypes.code })
+      .from(certificationTypes);
+
+    expect(seededPositions.map((row) => row.code).sort()).toEqual([
+      "BARTENDER",
+      "COOK",
+      "GENERAL_MANAGER",
+      "HOST",
+      "INVENTORY_MANAGER",
+      "MANAGER",
+      "SERVER",
+      "WAIT_STAFF",
+    ]);
+    expect(seededTypes.map((row) => row.code).sort()).toEqual([
+      "ALCOHOL_SERVICE",
+      "FOOD_SAFETY",
+    ]);
+  });
+
+  describe("upgrading a Phase 2 database", () => {
+    const grantsOf = async (roleCode: string) => {
+      const rows = await database
+        .select({ code: permissions.code })
+        .from(rolePermissions)
+        .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+        .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+        .where(eq(roles.code, roleCode));
+
+      return rows.map((row) => row.code).sort();
+    };
+
+    it("adds the new permissions and grants, and restores nothing an admin removed", async () => {
+      // Back to the Phase 2 catalog: no Phase 3 codes, and the Manager without hr.view.
+      const newCodes = PERMISSION_CATALOG.map((row) => row.code).filter(
+        (code) =>
+          (code.startsWith("hr.") || code.startsWith("employees.")) &&
+          !["employees.view", "employees.edit", "hr.view", "hr.compensation.view", "hr.compensation.edit"].includes(code),
+      );
+      const newRows = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(inArray(permissions.code, newCodes));
+      const newIds = newRows.map((row) => row.id);
+
+      await database
+        .delete(rolePermissions)
+        .where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+
+      const [hrView] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "hr.view"));
+      const [manager] = await database
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.code, "MANAGER"));
+
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, manager!.id),
+            eq(rolePermissions.permissionId, hrView!.id),
+          ),
+        );
+
+      // An administrator removed a grant unrelated to Phase 3.
+      const [menuEdit] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "menu.edit"));
+
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, manager!.id),
+            eq(rolePermissions.permissionId, menuEdit!.id),
+          ),
+        );
+
+      expect(await countPermissions()).toBe(44);
+
+      await database.transaction((transaction) =>
+        securityHrPermissionsSeed.run(transaction),
+      );
+
+      expect(await countPermissions()).toBe(64);
+
+      const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
+        .permissions.filter((code) => code !== "menu.edit")
+        .sort();
+
+      expect(await grantsOf("MANAGER")).toEqual(expected);
+      expect(await grantsOf("OWNER")).toEqual(
+        [...PERMISSION_CATALOG.map((row) => row.code)].sort(),
+      );
+
+      // Leave the matrix as the other tests in this file expect it.
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: manager!.id, permissionId: menuEdit!.id });
+    });
+
+    async function countPermissions() {
+      const [row] = await database.select({ total: count() }).from(permissions);
+
+      return row?.total;
+    }
   });
 
   it("seeds the organization and location values", async () => {

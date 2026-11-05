@@ -9,6 +9,9 @@ export type NavigationItem = {
 
 const NAVIGATION: readonly NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", permission: null },
+  { href: "/employees", label: "Employees", permission: "employees.view" },
+  { href: "/employees/positions", label: "Positions", permission: "employees.positions.manage" },
+  { href: "/employees/certification-types", label: "Certification types", permission: "hr.certifications.manage" },
   { href: "/admin/organization", label: "Organization", permission: "organization.view" },
   { href: "/admin/locations", label: "Locations", permission: "locations.view" },
   { href: "/admin/areas", label: "Areas", permission: "locations.view" },

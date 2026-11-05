@@ -62,7 +62,7 @@ describe("NEXTAUTH_SECRET", () => {
 
 describe("parseEnv", () => {
   it("returns validated configuration", () => {
-    expect(parseEnv(validEnv)).toEqual(validEnv);
+    expect(parseEnv(validEnv)).toMatchObject(validEnv);
   });
 
   it("accepts the postgres:// scheme", () => {
@@ -80,7 +80,7 @@ describe("parseEnv", () => {
   });
 
   it("ignores unrelated variables", () => {
-    expect(parseEnv({ ...validEnv, UNRELATED: "value" })).toEqual(validEnv);
+    expect(parseEnv({ ...validEnv, UNRELATED: "value" })).not.toHaveProperty("UNRELATED");
   });
 
   it.each(["DATABASE_URL", "APP_BASE_URL"])("rejects a missing %s", (name) => {

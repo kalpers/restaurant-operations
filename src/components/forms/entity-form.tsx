@@ -8,7 +8,16 @@ import { sendApiRequest } from "./api-request";
 export type FormField = {
   name: string;
   label: string;
-  type?: "text" | "email" | "password" | "number" | "time" | "checkbox" | "select";
+  type?:
+    | "text"
+    | "email"
+    | "password"
+    | "number"
+    | "time"
+    | "date"
+    | "checkbox"
+    | "select"
+    | "textarea";
   defaultValue?: string | number | boolean | null;
   required?: boolean;
   minLength?: number;
@@ -120,6 +129,18 @@ export function EntityForm({
                   </option>
                 ))}
               </select>
+            ) : field.type === "textarea" ? (
+              <textarea
+                name={field.name}
+                required={field.required}
+                rows={4}
+                defaultValue={
+                  field.defaultValue === null || field.defaultValue === undefined
+                    ? undefined
+                    : String(field.defaultValue)
+                }
+                className={INPUT_CLASS}
+              />
             ) : (
               <input
                 type={field.type ?? "text"}
