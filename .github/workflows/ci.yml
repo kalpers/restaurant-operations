@@ -43,6 +43,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Check production dependencies
+        run: npm audit --omit=dev
+
+      - name: Generate a throwaway session secret
+        run: echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
       - name: Apply migrations
         run: npm run db:migrate
 
@@ -57,3 +63,8 @@ jobs:
       - run: npm run test:unit
       - run: npm run test:integration
       - run: npm run build
+
+      - name: Install the E2E browser
+        run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e

@@ -8,6 +8,13 @@
       "when": 1793891841285,
       "tag": "0000_seed_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793893868239,
+      "tag": "0001_organization_auth_rbac",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,20 @@ import {
 
 const RECONSTRUCTION_DATABASE = "restaurant_ops_test_reconstruction";
 
+const EXPECTED_TABLES = [
+  "drizzle.__drizzle_migrations",
+  "public.location_settings",
+  "public.locations",
+  "public.organizations",
+  "public.permissions",
+  "public.restaurant_areas",
+  "public.role_permissions",
+  "public.roles",
+  "public.seed_runs",
+  "public.user_roles",
+  "public.users",
+];
+
 const journal = JSON.parse(
   readFileSync(path.join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
 ) as { entries: unknown[] };
@@ -65,13 +79,23 @@ describe("reconstruction from checked-in migrations", () => {
     expect(await listTables()).toEqual([]);
   });
 
-  it("creates exactly the expected tables and no restaurant tables", async () => {
+  it("creates exactly the expected tables and none from later phases", async () => {
     await applyMigrations(databaseUrl);
 
-    expect(await listTables()).toEqual([
-      "drizzle.__drizzle_migrations",
-      "public.seed_runs",
-    ]);
+    expect(await listTables()).toEqual(EXPECTED_TABLES);
+  });
+
+  it("keeps organization and security data from cascading on delete", async () => {
+    await applyMigrations(databaseUrl);
+
+    const foreignKeys = await query<{ conname: string; confdeltype: string }>(`
+      SELECT conname, confdeltype FROM pg_constraint
+      WHERE contype = 'f' AND connamespace = 'public'::regnamespace
+    `);
+
+    expect(foreignKeys.length).toBeGreaterThan(0);
+    // 'r' is RESTRICT.
+    expect(foreignKeys.filter((key) => key.confdeltype !== "r")).toEqual([]);
   });
 
   it("applies every migration in the journal", async () => {
@@ -132,10 +156,7 @@ describe("reconstruction from checked-in migrations", () => {
 
     await rebuildFromMigrations(databaseUrl);
 
-    expect(await listTables()).toEqual([
-      "drizzle.__drizzle_migrations",
-      "public.seed_runs",
-    ]);
+    expect(await listTables()).toEqual(EXPECTED_TABLES);
     expect(await query("SELECT seed_key FROM seed_runs")).toEqual([]);
     expect(await countAppliedMigrations()).toBe(journal.entries.length);
   });

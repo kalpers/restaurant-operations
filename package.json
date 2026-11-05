@@ -19,11 +19,14 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:reset": "tsx scripts/reset-db.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "bootstrap:owner": "tsx scripts/bootstrap-owner.ts"
   },
   "dependencies": {
+    "@node-rs/argon2": "2.2.2",
     "drizzle-orm": "0.45.4",
     "next": "16.4.5",
+    "next-auth": "4.24.15",
     "postgres": "4.0.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",

@@ -18,6 +18,48 @@ function errorMessageFor(source: Record<string, string | undefined>): string {
   throw new Error("Expected parseEnv to throw");
 }
 
+describe("NEXTAUTH_SECRET", () => {
+  const secret = "s".repeat(32);
+
+  it("is optional outside production", () => {
+    expect(parseEnv(validEnv).NEXTAUTH_SECRET).toBeUndefined();
+  });
+
+  it("treats an empty value as unset", () => {
+    expect(parseEnv({ ...validEnv, NEXTAUTH_SECRET: "" }).NEXTAUTH_SECRET).toBeUndefined();
+  });
+
+  it("is required in production", () => {
+    const message = errorMessageFor({ ...validEnv, NODE_ENV: "production" });
+
+    expect(message).toContain("NEXTAUTH_SECRET: is required in production");
+  });
+
+  it("treats an empty value as missing in production", () => {
+    expect(
+      errorMessageFor({
+        ...validEnv,
+        NODE_ENV: "production",
+        NEXTAUTH_SECRET: "",
+      }),
+    ).toContain("NEXTAUTH_SECRET");
+  });
+
+  it("is accepted in production when set", () => {
+    expect(
+      parseEnv({ ...validEnv, NODE_ENV: "production", NEXTAUTH_SECRET: secret })
+        .NEXTAUTH_SECRET,
+    ).toBe(secret);
+  });
+
+  it("rejects a short value without repeating it", () => {
+    const message = errorMessageFor({ ...validEnv, NEXTAUTH_SECRET: "too-short" });
+
+    expect(message).toContain("NEXTAUTH_SECRET: must be at least 32 characters");
+    expect(message).not.toContain("too-short");
+  });
+});
+
 describe("parseEnv", () => {
   it("returns validated configuration", () => {
     expect(parseEnv(validEnv)).toEqual(validEnv);

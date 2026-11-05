@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { defineConfig, devices } from "@playwright/test";
 
 import { getEnv } from "./src/config/env";
@@ -30,7 +32,11 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: baseURL,
-    env: { DATABASE_URL: requireTestDatabaseUrl() },
+    env: {
+      DATABASE_URL: requireTestDatabaseUrl(),
+      // Generated per run, so tests never depend on a developer's or a known secret.
+      NEXTAUTH_SECRET: randomBytes(32).toString("base64url"),
+    },
     // A reused dev server would run the tests against the development database.
     reuseExistingServer: false,
     timeout: 120_000,

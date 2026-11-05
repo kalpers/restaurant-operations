@@ -159,7 +159,10 @@ describe("runSeeds", () => {
     expect(await totals()).toEqual({ markers: 0, records: 0 });
   });
 
-  it("registers no restaurant business seeds in Phase 1", () => {
-    expect(registeredSeeds).toEqual([]);
+  it("registers the Phase 2 foundation seeds, organization first", () => {
+    expect(registeredSeeds.map((seed) => seed.key)).toEqual([
+      "organization.initial",
+      "security.initial",
+    ]);
   });
 });

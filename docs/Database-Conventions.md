@@ -107,11 +107,11 @@ Each domain gets one file under `src/db/schema/`, re-exported from `src/db/schem
 |---|---|---|
 | Variable | `DATABASE_URL` | `TEST_DATABASE_URL` |
 | Local name | `restaurant_ops` | `restaurant_ops_test` |
-| Lifecycle | Persistent; changes only through commands you run | Dropped and recreated at the start of every integration or E2E run |
+| Lifecycle | Persistent; changes only through commands you run | Dropped, recreated, migrated and seeded at the start of every integration or E2E run |
 
 ### Test isolation
 
-- Vitest and Playwright both run `tests/helpers/global-setup.ts`, which guards, recreates and migrates the test database.
+- Vitest and Playwright both run `tests/helpers/global-setup.ts`, which guards, recreates, migrates and seeds the test database.
 - Test processes and the Playwright web server use `TEST_DATABASE_URL` as their `DATABASE_URL`.
 - Integration test files run one at a time, and each test clears the tables it uses first. Tests must not depend on order or on another test's data.
 - Fixture tables in `tests/fixtures/` exist only in the test database. They are not in `src/db/schema` and never reach a migration.

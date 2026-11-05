@@ -1,27 +1,45 @@
 import { z } from "zod";
 
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "test", "production"], {
-      error: "must be one of development, test, production",
-    })
-    .default("development"),
-  DATABASE_URL: z.url({
-    protocol: /^postgres(ql)?$/,
-    error: "must be a postgres:// or postgresql:// URL",
-  }),
-  // Only test tooling reads this. Its safety rules are in src/db/maintenance.
-  TEST_DATABASE_URL: z
-    .url({
+const envSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "test", "production"], {
+        error: "must be one of development, test, production",
+      })
+      .default("development"),
+    DATABASE_URL: z.url({
       protocol: /^postgres(ql)?$/,
       error: "must be a postgres:// or postgresql:// URL",
-    })
-    .optional(),
-  APP_BASE_URL: z.url({
-    protocol: /^https?$/,
-    error: "must be an http:// or https:// URL",
-  }),
-});
+    }),
+    // Only test tooling reads this. Its safety rules are in src/db/maintenance.
+    TEST_DATABASE_URL: z
+      .url({
+        protocol: /^postgres(ql)?$/,
+        error: "must be a postgres:// or postgresql:// URL",
+      })
+      .optional(),
+    APP_BASE_URL: z.url({
+      protocol: /^https?$/,
+      error: "must be an http:// or https:// URL",
+    }),
+    // An empty value, as in a copied .env.example, counts as unset.
+    NEXTAUTH_SECRET: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string({ error: "must be a string" })
+        .min(32, { error: "must be at least 32 characters" })
+        .optional(),
+    ),
+  })
+  .superRefine((env, context) => {
+    if (env.NODE_ENV === "production" && !env.NEXTAUTH_SECRET) {
+      context.addIssue({
+        code: "custom",
+        path: ["NEXTAUTH_SECRET"],
+        message: "is required in production",
+      });
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

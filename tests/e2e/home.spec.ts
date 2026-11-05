@@ -1,15 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test("home page identifies the application", async ({ page }) => {
+test("home page sends a signed-out visitor to the login page", async ({
+  page,
+}) => {
   await page.goto("/");
 
+  await expect(page).toHaveURL(/\/login$/);
   await expect(page).toHaveTitle("Restaurant Operations Management System");
-  await expect(
-    page.getByRole("heading", {
-      name: "Restaurant Operations Management System",
-    }),
-  ).toBeVisible();
-  await expect(page.getByText("Development Environment")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 });
 
 test("health endpoint reports a database connection", async ({ request }) => {
