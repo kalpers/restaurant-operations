@@ -58,7 +58,7 @@ These belong to later project phases.
 ## 2. Target Repository Structure
 
 ```text
-restaurant-ops/
+restaurant-operations/
 ├── .github/
 │   ├── copilot-instructions.md
 │   └── workflows/

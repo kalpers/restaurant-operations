@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Local environment files (never commit real credentials)
+.env
+.env.*
+!.env.example
+
+# Local uploaded files
+.local/
+uploads/
+
+# Runtime, editor and OS temporary files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/settings.local.json

@@ -47,6 +47,7 @@ Reports must never modify Orders, Settlements, Tenders, Inventory, Fulfillment, 
 5. Inventory Reporting
 6. Fulfillment Reporting
 7. Labor Reporting
+   - Labor cost uses the effective wage of the Employee for the Position worked (Employee + Position compensation), never a single per-employee or per-position rate
 8. Seating Analytics
 
 ## Dashboard

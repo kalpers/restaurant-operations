@@ -107,7 +107,7 @@ Do not implement these future domains during Phase 2:
 ```text
 employees
 employee_positions
-employee_compensation
+employee_position_compensation
 employee_certifications
 scheduling
 restaurant_tables

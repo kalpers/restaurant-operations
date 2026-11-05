@@ -364,7 +364,7 @@ positions
 employee_positions
 employee_addresses
 employee_emergency_contacts
-employee_compensation
+employee_position_compensation
 certification_types
 employee_certifications
 employee_documents
@@ -378,7 +378,7 @@ Employee locations support a primary location plus other eligible work locations
 
 Employee positions describe work performed. They do not grant software permissions.
 
-Compensation is effective-dated history. Never overwrite the old rate.
+Compensation is effective-dated history owned by the Employee + Position pair (`employee_position_compensation`). The Position holds no wage; an employee with several positions has a separate wage for each. Never overwrite the old rate.
 
 HR sensitivity levels:
 
@@ -1007,7 +1007,7 @@ Examples:
 - Historical item revenue uses submitted Order price snapshots.
 - Tender reporting uses Settlement and Tender history.
 - Inventory reporting uses inventory ledger history.
-- Labor reporting uses effective compensation history.
+- Labor reporting uses the effective compensation of the Employee for the Position worked.
 - Fulfillment reporting uses fulfillment status history.
 
 ### Exporting
@@ -1397,7 +1397,7 @@ An Employee is a person employed by the restaurant; a User is an application ide
 
 Employee creation records an initial `ACTIVE` status-history entry and an effective-dated primary location, with an optional independent initial position. Location and position changes require an expected employee version and preserve ended assignments. Employee termination preserves all HR history, ends active location/position eligibility, and disables a linked User in the same PostgreSQL transaction. Terminated employees are not physically deleted.
 
-Compensation uses effective-dated `NUMERIC(12,2)` values read and written as decimal strings. A change closes the prior period and creates a new row transactionally; overlapping periods and mixed HOURLY/SALARY fields are rejected. Phase 3 does not perform payroll.
+Compensation is keyed by Employee + Position and uses effective-dated `NUMERIC(12,2)` values read and written as decimal strings. A change closes the prior period for that Employee + Position and creates a new row transactionally; overlapping periods for the same Employee + Position and mixed HOURLY/SALARY fields are rejected. Phase 3 does not perform payroll.
 
 HR queries are purpose-specific: `employees.view` receives general employment data only. Personal addresses/emergency contacts, compensation, certifications, notes, performance reviews, disciplinary actions, and documents require their corresponding `hr.*` permissions. Manager/performance note types and explicitly sensitive notes require the separate `hr.notes.sensitive.*` permissions. APIs independently enforce these boundaries.
 

@@ -36,7 +36,7 @@ Organization
           |
           +-- Addresses
           +-- Emergency Contacts
-          +-- Compensation History
+          +-- Position Compensation History (per Employee + Position)
           +-- Certifications
           |      |
           |      +-- Certification Type
@@ -59,7 +59,7 @@ Phase 3 must deliver:
 - Optional one-to-one User-to-Employee linkage
 - Personal addresses
 - Emergency contacts
-- Effective-dated compensation history
+- Effective-dated compensation history per Employee and Position (an employee working several positions has a separate wage for each)
 - Certification types and employee certifications
 - Employee document metadata and file-storage abstraction usage
 - Employee notes with sensitivity classification
@@ -142,6 +142,8 @@ Employee availability belongs primarily to Phase 4 Scheduling. Do not prematurel
 Do not implement payroll processing.
 
 Compensation history is HR data, not payroll.
+
+Compensation is determined by the Employee and Position pair, never by the Position alone and never by the Employee alone. Two employees in the same Position may earn different wages, and one employee working two Positions (for example Server and Cook) may earn a different wage in each.
 
 Do not implement AWS/S3 deployment in Phase 3. File storage must remain behind an abstraction that can support S3 later.
 
@@ -246,7 +248,7 @@ TEMPORARY
 
 Do not treat employment type as compensation type.
 
-For example, a part-time employee may be hourly, and compensation history is its own domain record.
+For example, a part-time employee may be hourly, and compensation history is its own domain record keyed by Employee and Position.
 
 ---
 
@@ -521,19 +523,23 @@ Implement service validation for one primary contact where appropriate without d
 
 ---
 
-## 17. Compensation History
+## 17. Position Compensation History
 
 Create:
 
 ```text
-employee_compensation
+employee_position_compensation
 ```
+
+Pay is owned by the Employee + Position pair. The `positions` table must not hold a wage, and there is no single per-employee pay record.
 
 Conceptual fields:
 
 ```text
 id                    UUID PK
+organization_id       UUID FK
 employee_id           UUID FK
+position_id           UUID FK
 compensation_type     required
 hourly_rate           NUMERIC(12,2) nullable
 annual_salary         NUMERIC(12,2) nullable
@@ -551,6 +557,21 @@ HOURLY
 SALARY
 ```
 
+This enables:
+
+```text
+Jane Smith
+  Server      -> HOURLY 9.50  (effective 2026-01-01)
+  Bartender   -> HOURLY 12.00 (effective 2026-03-01)
+
+Raj Patel
+  Server      -> HOURLY 11.25 (effective 2025-06-15)
+```
+
+Wage is keyed by (employee_id, position_id) and is not location-specific. An employee who holds the same Position at several locations has one wage for that Position.
+
+An effective `employee_positions` assignment for the same employee and position must exist on the compensation `effective_from` date. Compensation cannot be created for a Position the employee has never been assigned.
+
 Use exact numeric values according to Phase 1 conventions.
 
 Do not overwrite historical compensation.
@@ -559,7 +580,7 @@ Do not calculate payroll, taxes, withholding, checks, or direct deposits.
 
 ---
 
-## 18. Compensation Business Rules
+## 18. Position Compensation Business Rules
 
 Implement and test:
 
@@ -570,6 +591,13 @@ Implement and test:
 - A new compensation change closes the previous active compensation period atomically when applicable.
 - Historical compensation records are not edited to simulate a new pay change.
 - Compensation access requires restricted HR permissions.
+- Compensation is unique per Employee + Position for any effective date: effective periods must not overlap for the same (employee_id, position_id), but periods for different positions of the same employee are independent.
+- Employee, Position and compensation row must belong to the same organization.
+- Compensation requires an effective employee position assignment for that Employee + Position on the `effective_from` date.
+- Changing the wage for one Position must not change the wage for any other Position the employee holds.
+- Ending or deactivating a position assignment does not delete compensation history.
+- A Position has no wage of its own. Do not add a default or fallback rate to `positions`.
+- Phase 4 and Phase 12 must resolve a shift's wage from the Employee + the shift's Position and effective date.
 
 Use PostgreSQL constraints where practical plus domain validation.
 
@@ -1025,7 +1053,7 @@ Prefer purpose-specific query models, for example conceptually:
 EmployeeDirectorySummary
 EmployeeManagementDetail
 EmployeePersonalDetail
-EmployeeCompensationHistory
+EmployeePositionCompensationHistory
 EmployeeDisciplinaryDetail
 ```
 
@@ -1227,7 +1255,7 @@ Examples:
 Create employee + initial location + initial position + status history
 Change primary employee location
 Change primary position
-Change compensation and close previous compensation period
+Change compensation for one Employee + Position and close that pair's previous compensation period
 Terminate employee + append history + disable linked user
 Verify certification with verifier metadata
 ```
@@ -1347,18 +1375,24 @@ This set of tests protects one of the architecture's most important boundaries.
 
 ---
 
-## 48. Compensation Tests
+## 48. Position Compensation Tests
 
 Test:
 
 ```text
-create initial hourly compensation
+create initial hourly compensation for an employee and position
 change hourly rate with new effective date
-prior period closes correctly
+prior period closes correctly for that employee and position only
+employee with two positions holds two independent wages
+changing one position wage leaves the other position wage unchanged
+two employees in the same position hold different wages
+compensation rejected for a position the employee is not assigned to
+position has no wage field
 history remains intact
 salary record validates salary field
 invalid mixed hourly/salary values rejected
-overlapping compensation period rejected
+overlapping compensation period for the same employee and position rejected
+non-overlapping periods for different positions of the same employee allowed
 unauthorized compensation read denied
 unauthorized compensation write denied
 exact NUMERIC values preserved as decimal strings
@@ -1677,7 +1711,7 @@ Phase 3 should leave the repository with:
 ✓ employee_positions
 ✓ employee_addresses
 ✓ employee_emergency_contacts
-✓ employee_compensation
+✓ employee_position_compensation
 ✓ certification_types
 ✓ employee_certifications
 ✓ employee_documents
@@ -1737,7 +1771,7 @@ Create Employee
 Manage appropriate HR information
       |
       +-- certifications
-      +-- compensation history if authorized
+      +-- position compensation history if authorized
       +-- personal data if authorized
       +-- documents if authorized
       +-- performance/disciplinary records if authorized
@@ -1789,7 +1823,7 @@ Employee Schema
 - employee_positions: PASS / FAIL
 - employee_addresses: PASS / FAIL
 - employee_emergency_contacts: PASS / FAIL
-- employee_compensation: PASS / FAIL
+- employee_position_compensation: PASS / FAIL
 - certification_types: PASS / FAIL
 - employee_certifications: PASS / FAIL
 - employee_documents: PASS / FAIL
@@ -1818,6 +1852,8 @@ Employee Workflows
 Compensation
 - Effective-dated history: PASS / FAIL
 - Previous period closure: PASS / FAIL
+- Per Employee + Position wage independence: PASS / FAIL
+- Assignment-required rule: PASS / FAIL
 - Overlap validation: PASS / FAIL
 - HOURLY validation: PASS / FAIL
 - SALARY validation: PASS / FAIL
@@ -1911,7 +1947,7 @@ After placing this file at `docs/Phase-3-Employees-HR.md`, use:
 
 > Read `README.md`, `.github/copilot-instructions.md`, `docs/accepted-risks.md`, and all Phase 0 through Phase 3 implementation plans completely. Treat `README.md` as the architectural source of truth.
 >
-> Review the completed Phase 0, Phase 1, and Phase 2 implementation before modifying files. Implement Phase 3 only: Employees and HR, including employees, employee locations, configurable positions, employee position assignments, the optional one-to-one User/Employee link, addresses, emergency contacts, effective-dated compensation, certification types and employee certifications, employee document metadata and local FileStorageService integration, notes, disciplinary actions, performance reviews, employee status history, HR permission boundaries, minimal responsive Employee administration UI, Phase 3 seeds, and the required automated tests.
+> Review the completed Phase 0, Phase 1, and Phase 2 implementation before modifying files. Implement Phase 3 only: Employees and HR, including employees, employee locations, configurable positions, employee position assignments, the optional one-to-one User/Employee link, addresses, emergency contacts, effective-dated compensation per Employee and Position, certification types and employee certifications, employee document metadata and local FileStorageService integration, notes, disciplinary actions, performance reviews, employee status history, HR permission boundaries, minimal responsive Employee administration UI, Phase 3 seeds, and the required automated tests.
 >
 > Preserve the critical boundaries: User is not Employee; Security Role is not Employee Position. Creating or changing an Employee Position must not automatically create or change a Security Role, and changing a Security Role must not automatically create or change an Employee Position.
 >
