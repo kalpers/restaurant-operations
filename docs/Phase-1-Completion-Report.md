@@ -4,12 +4,11 @@ This report merges the plan §36 template with the sections required by README �
 
 ## Summary
 
-The database foundation is complete, with one validation item not fully met and the new CI workflow not yet run.
+The database foundation is complete. It is committed and pushed as `83533de`, and the project owner reports the GitHub Actions run passed.
 
 - **Delivered:** shared column conventions, a transaction context, the migration lifecycle, empty-database reconstruction, a guarded `db:reset`, an idempotent seed framework, an isolated test database for integration and E2E tests, and PostgreSQL-backed CI.
 - **Tables:** the only migrated table is the infrastructure table `seed_runs`. No restaurant business tables exist.
-- **Not fully met:** plan §33 asks for `npm ci` without known unresolved tooling warnings. Install-script warnings are resolved and the audit findings are accepted as DEV-002, but three deprecation warnings remain (see Risks).
-- **Not yet run:** nothing is committed or pushed, so the new workflow hasn't run on GitHub. Its steps pass locally.
+- **Install warnings:** plan §33 asks for `npm ci` without known unresolved tooling warnings. Install-script warnings are resolved, the audit findings are accepted as DEV-002, and three remaining deprecation warnings are accepted as DEV-003 (see Risks).
 
 ## Environment
 
@@ -33,6 +32,7 @@ The Phase 1 plan has no "Approved Policies" section. README §33 supplied the bi
 | E2E database | Isolated now. Playwright recreates the test database and starts its own server against it |
 | `npm ci` warnings | DEV-002 accepted; DEV-001 kept with a dated note, and its typo and heading fixed; esbuild install scripts explicitly denied |
 | Phase 0 CI | Reported by the owner as passing for `9a24795` and `b684ed3`. This environment can't read the runs, so this is the owner's confirmation |
+| `npm ci` deprecation warnings | Accepted as DEV-003 at the close of Phase 1 |
 
 ## Database conventions
 
@@ -135,18 +135,20 @@ Error output contained no URLs or credentials. Unit tests also cover an unset `N
 
 | Check | Result |
 |---|---|
-| PostgreSQL service | NOT RUN ON GITHUB |
-| Migrations | NOT RUN ON GITHUB |
-| Integration tests | NOT RUN ON GITHUB |
+| PostgreSQL service | PASS, reported by the owner |
+| Migrations | PASS, reported by the owner |
+| Integration tests | PASS, reported by the owner |
 
-The workflow's steps all passed locally in a clean copy with no `.env`, using CI-style variables and a new, empty PostgreSQL 17 container. That included the drift check against a temporary git repository. The workflow file itself, including its service definition, has not been executed.
+The project owner reports the GitHub Actions run for `83533de` completed green. This environment can't read the runs, so the result is the owner's confirmation rather than something checked directly.
+
+Before the push, the workflow's steps also passed locally in a clean copy with no `.env`, using CI-style variables and a new, empty PostgreSQL 17 container. That included the drift check against a temporary git repository.
 
 ### Validation
 
 | Check | Result |
 |---|---|
 | PostgreSQL healthy | PASS |
-| `npm ci` | PASS, with 3 deprecation warnings outstanding (see Risks) |
+| `npm ci` | PASS, with 3 deprecation warnings accepted as DEV-003 (see Risks) |
 | Lint | PASS |
 | Typecheck | PASS |
 | Unit tests | PASS: 73 of 73 |
@@ -200,7 +202,7 @@ NONE. The migrated tables are `public.seed_runs` and Drizzle's `drizzle.__drizzl
 
 ## Risks
 
-**Unresolved `npm ci` deprecation warnings.** Plan §33 asks for no known unresolved tooling warnings. These three remain, and they are not accepted risks:
+**`npm ci` deprecation warnings, accepted as DEV-003.** Plan §33 asks for no known unresolved tooling warnings. These three remain, tracked in `docs/accepted-risks.md`:
 
 | Package | Warning | Why it remains |
 |---|---|---|
@@ -218,10 +220,10 @@ All three are development-only. Phase 0 had the same warnings, but its report di
 
 ## Remaining issues
 
-1. **Decide on the deprecation warnings.** The options are to record them as a tracked risk or leave plan §33 open. This requires the owner's decision.
-2. **Commit and push, then confirm CI.** This is the first run of the PostgreSQL service definition. Check that the Actions run passes.
-3. **Carried over from Phase 0:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`.
+No Phase 1 functionality is outstanding.
+
+**Carried over from Phase 0, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`.
 
 ## Next-phase readiness
 
-**Phase 2 readiness: READY, with two conditions:** the owner's decision on the deprecation warnings, and a passing CI run after push. All local checks in plan §33 pass except the clean-install warnings item, and the plan §35 lifecycle (empty database, `db:migrate`, `db:seed`, `test:integration`) runs with no manual SQL.
+**Phase 2 readiness: READY.** All checks in plan §33 pass, with the clean-install warnings tracked as DEV-002 and DEV-003. The plan §35 lifecycle (empty database, `db:migrate`, `db:seed`, `test:integration`) runs with no manual SQL, and the owner reports CI passed for `83533de`.

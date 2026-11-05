@@ -80,3 +80,37 @@ Reevaluate this risk when:
 - The findings' severity rises above moderate.
 - The project's threat model changes.
 - Before the Phase 14 AWS deployment.
+
+## DEV-003: Deprecated development packages (`eslint`, `@esbuild-kit`)
+
+Accepted by the project owner on 2026-11-05, at the close of Phase 1.
+
+### Scope
+
+Development dependencies only. `npm ci` prints three deprecation warnings. These are not `npm audit` findings, except that `@esbuild-kit/core-utils` is also the path to the `esbuild` advisory in DEV-002.
+
+| Package | Warning | Reaches the project through |
+|---|---|---|
+| `eslint@9.39.5` | No longer supported | Direct dependency |
+| `@esbuild-kit/esm-loader@2.6.5` | Merged into `tsx` | `drizzle-kit` 0.31.11 |
+| `@esbuild-kit/core-utils@3.3.2` | Merged into `tsx` | `drizzle-kit` 0.31.11 |
+
+### Decision
+
+Accept temporarily, as tracked warnings that satisfy the Phase 1 plan §33 clean-install item. No compatible fix exists: `eslint-plugin-react`, `-import` and `-jsx-a11y`, required by `eslint-config-next`, don't accept ESLint 10, and the `@esbuild-kit` packages are dependencies of the current `drizzle-kit`. The fix is to upgrade when those packages catch up.
+
+### Controls
+
+- These packages are never part of the production dependency tree.
+- Do not force ESLint 10 with overrides or `--legacy-peer-deps`.
+- Read `npm ci` warnings unfiltered whenever dependencies change, and treat any new warning as unresolved until it is reviewed.
+
+### Review Triggers
+
+Reevaluate this risk when:
+
+- `eslint-config-next` and its plugins support ESLint 10.
+- A `drizzle-kit` release drops `@esbuild-kit`.
+- `eslint`, `eslint-config-next`, `drizzle-kit`, or Next.js is upgraded.
+- An audit advisory is published against any of these packages.
+- Before the Phase 14 AWS deployment.
