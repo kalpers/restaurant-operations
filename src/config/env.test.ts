@@ -45,6 +45,20 @@ describe("parseEnv", () => {
     expect(errorMessageFor({ ...validEnv, [name]: undefined })).toContain(name);
   });
 
+  it("does not require TEST_DATABASE_URL", () => {
+    expect(parseEnv(validEnv).TEST_DATABASE_URL).toBeUndefined();
+  });
+
+  it("rejects a malformed TEST_DATABASE_URL without showing its value", () => {
+    const message = errorMessageFor({
+      ...validEnv,
+      TEST_DATABASE_URL: "mysql://admin:s3cret-value@localhost/db_test",
+    });
+
+    expect(message).toContain("TEST_DATABASE_URL");
+    expect(message).not.toContain("s3cret-value");
+  });
+
   it("reports every invalid variable at once", () => {
     const message = errorMessageFor({ NODE_ENV: "staging" });
 

@@ -21,7 +21,7 @@ npm run lint
 npm run typecheck
 npm run test:unit
 npm run test:integration      # uses TEST_DATABASE_URL (isolated *_test DB, recreated each run)
-npm run test:e2e              # Playwright, isolated test DB
+npm run test:e2e              # Playwright, isolated test DB; stop `npm run dev` first
 npm run build
 npm run db:generate           # generate migration; review before applying
 npm run db:migrate

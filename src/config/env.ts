@@ -10,6 +10,13 @@ const envSchema = z.object({
     protocol: /^postgres(ql)?$/,
     error: "must be a postgres:// or postgresql:// URL",
   }),
+  // Only test tooling reads this. Its safety rules are in src/db/maintenance.
+  TEST_DATABASE_URL: z
+    .url({
+      protocol: /^postgres(ql)?$/,
+      error: "must be a postgres:// or postgresql:// URL",
+    })
+    .optional(),
   APP_BASE_URL: z.url({
     protocol: /^https?$/,
     error: "must be an http:// or https:// URL",

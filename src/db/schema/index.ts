@@ -1,2 +1,2 @@
-// Drizzle schema entry point. Phase 0 defines no tables; Phase 1 owns the schema.
-export {};
+// Drizzle schema entry point. Each domain gets one file here, re-exported below.
+export * from "./seed-runs";

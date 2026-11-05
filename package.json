@@ -17,7 +17,9 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.4",
@@ -38,7 +40,11 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.5",
     "tailwindcss": "4.3.4",
+    "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
+  },
+  "allowScripts": {
+    "esbuild": false
   }
 }

@@ -38,7 +38,7 @@ export async function checkDatabaseHealth(
 }
 
 /** Drizzle wraps driver errors, so the driver's code can be on the `cause` chain. */
-function readErrorCode(error: unknown): string | undefined {
+export function readErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) {
     return undefined;
   }

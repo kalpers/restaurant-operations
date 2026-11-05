@@ -11,6 +11,28 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: restaurant_ops
+          POSTGRES_USER: restaurant_app
+          POSTGRES_PASSWORD: ci_only_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U restaurant_app -d restaurant_ops"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Throwaway credentials for the service above, which exists only for this job.
+    env:
+      APP_BASE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://restaurant_app:ci_only_password@localhost:5432/restaurant_ops
+      TEST_DATABASE_URL: postgresql://restaurant_app:ci_only_password@localhost:5432/restaurant_ops_test
+
     steps:
       - uses: actions/checkout@v7
 
@@ -20,7 +42,18 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Check the schema matches the checked-in migrations
+        run: |
+          npm run db:generate
+          git diff --exit-code drizzle/
+          test -z "$(git status --porcelain drizzle/)"
+
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:unit
+      - run: npm run test:integration
       - run: npm run build

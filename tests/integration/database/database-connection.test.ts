@@ -9,6 +9,14 @@ describe("application database layer", () => {
     await closeDatabase();
   });
 
+  it("uses the isolated test database, never the development database", async () => {
+    const rows = await getDatabase().execute(
+      sql`SELECT current_database() AS name`,
+    );
+
+    expect(rows).toEqual([{ name: "restaurant_ops_test" }]);
+  });
+
   it("executes a query against PostgreSQL", async () => {
     const rows = await getDatabase().execute(sql`SELECT 1 AS value`);
 
