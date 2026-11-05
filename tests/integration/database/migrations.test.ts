@@ -22,6 +22,8 @@ const EXPECTED_TABLES = [
   "drizzle.__drizzle_migrations",
   "public.certification_types",
   "public.employee_addresses",
+  "public.employee_availability",
+  "public.employee_availability_exceptions",
   "public.employee_certifications",
   "public.employee_disciplinary_actions",
   "public.employee_documents",
@@ -31,6 +33,7 @@ const EXPECTED_TABLES = [
   "public.employee_performance_reviews",
   "public.employee_position_compensation",
   "public.employee_positions",
+  "public.employee_scheduling_preferences",
   "public.employee_status_history",
   "public.employees",
   "public.location_settings",
@@ -41,7 +44,16 @@ const EXPECTED_TABLES = [
   "public.restaurant_areas",
   "public.role_permissions",
   "public.roles",
+  "public.schedule_generation_runs",
+  "public.schedule_periods",
+  "public.scheduling_rules",
   "public.seed_runs",
+  "public.shift_assignments",
+  "public.shift_swap_requests",
+  "public.shifts",
+  "public.staffing_template_requirements",
+  "public.staffing_templates",
+  "public.time_off_requests",
   "public.user_roles",
   "public.users",
 ];
@@ -125,6 +137,7 @@ describe("reconstruction from checked-in migrations", () => {
       "employee_locations_no_overlap",
       "employee_position_compensation_no_overlap",
       "employee_positions_no_overlap",
+      "schedule_periods_no_overlap",
     ]);
   });
 

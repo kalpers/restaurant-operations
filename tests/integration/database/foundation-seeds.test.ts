@@ -19,11 +19,13 @@ import {
   rolePermissions,
   roles,
   restaurantAreas,
+  schedulingRules,
   seedRuns,
   users,
 } from "@/db/schema";
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
+import { securitySchedulingPermissionsSeed } from "@/db/seeds/scheduling-foundation";
 import { securityHrPermissionsSeed } from "@/db/seeds/security-hr-permissions";
 import { PERMISSION_CATALOG } from "@/modules/auth/permission-catalog";
 import { ROLE_CATALOG } from "@/modules/auth/role-catalog";
@@ -68,12 +70,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 64,
+    permissions: 72,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 4,
+    seedRuns: 6,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -104,6 +106,8 @@ describe("foundation seeds, on a fresh database", () => {
       "security.initial",
       "security.hr-permissions-v2",
       "employees.reference-data",
+      "security.scheduling-permissions",
+      "scheduling.default-rules",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -112,7 +116,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(4);
+    expect(result.skipped).toHaveLength(6);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -203,13 +207,14 @@ describe("foundation seeds, on a fresh database", () => {
           ),
         );
 
-      expect(await countPermissions()).toBe(44);
+      // The Phase 4 codes stay, because this test only rewinds Phase 3.
+      expect(await countPermissions()).toBe(52);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(64);
+      expect(await countPermissions()).toBe(72);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -231,6 +236,89 @@ describe("foundation seeds, on a fresh database", () => {
 
       return row?.total;
     }
+  });
+
+  describe("upgrading a Phase 3 database", () => {
+    const grantsOf = async (roleCode: string) => {
+      const rows = await database
+        .select({ code: permissions.code })
+        .from(rolePermissions)
+        .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+        .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+        .where(eq(roles.code, roleCode));
+
+      return rows.map((row) => row.code).sort();
+    };
+
+    it("adds the scheduling grants and restores nothing an admin removed", async () => {
+      const newCodes = PERMISSION_CATALOG.map((row) => row.code).filter(
+        (code) =>
+          code.startsWith("schedule.") &&
+          !["schedule.view", "schedule.edit", "schedule.generate", "schedule.publish"].includes(code),
+      );
+      const newRows = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(inArray(permissions.code, newCodes));
+      const newIds = newRows.map((row) => row.id);
+
+      await database
+        .delete(rolePermissions)
+        .where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+
+      const [server] = await database
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.code, "SERVER"));
+      const [menuView] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "menu.view"));
+
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, server!.id),
+            eq(rolePermissions.permissionId, menuView!.id),
+          ),
+        );
+
+      await database.transaction((transaction) =>
+        securitySchedulingPermissionsSeed.run(transaction),
+      );
+
+      const expected = ROLE_CATALOG.find((role) => role.code === "SERVER")!
+        .permissions.filter((code) => code !== "menu.view")
+        .sort();
+
+      expect(await grantsOf("SERVER")).toEqual(expected);
+      expect(await grantsOf("OWNER")).toEqual(
+        [...PERMISSION_CATALOG.map((row) => row.code)].sort(),
+      );
+
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: server!.id, permissionId: menuView!.id });
+    });
+  });
+
+  it("seeds default rules, and no staffing demand or employee records", async () => {
+    const rules = await database.select().from(schedulingRules);
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({
+      avoidOvertime: true,
+      weeklyOvertimeThreshold: "40.00",
+      minimumRestHours: "8.00",
+      minimumRestHard: false,
+      maximumDaysPerWeek: null,
+      weekStartDay: 1,
+    });
+    expect(await database.select().from(schema.staffingTemplates)).toEqual([]);
+    expect(await database.select().from(schema.schedulePeriods)).toEqual([]);
+    expect(await database.select().from(schema.employeeAvailability)).toEqual([]);
   });
 
   it("seeds the organization and location values", async () => {

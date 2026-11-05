@@ -165,6 +165,8 @@ describe("runSeeds", () => {
       "security.initial",
       "security.hr-permissions-v2",
       "employees.reference-data",
+      "security.scheduling-permissions",
+      "scheduling.default-rules",
     ]);
   });
 });

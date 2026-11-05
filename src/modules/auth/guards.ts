@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { getDatabase } from "@/db";
-import { AuthenticationError } from "@/shared/errors/app-error";
+import { AuthenticationError, AuthorizationError } from "@/shared/errors/app-error";
 
 import type { PermissionCode } from "./permission-catalog";
 import {
@@ -68,6 +68,27 @@ export async function requireApiPermission(
   return requirePermission(auth, { permission, locationId: targetLocationId });
 }
 
+/**
+ * For Route Handlers whose service decides among several permissions, such as self-service
+ * or manager access. Every such service asserts what it needs: this only says who is
+ * acting and where. Throws errors that map to 401 and 403.
+ */
+export async function requireApiActor(): Promise<Actor> {
+  const auth = await requireCurrentUser();
+  const location = await resolveCurrentLocation(auth);
+
+  if (!location) {
+    throw new AuthorizationError();
+  }
+
+  return {
+    userId: auth.userId,
+    organizationId: location.organizationId,
+    locationId: location.locationId,
+    permissions: new Set(location.permissions),
+  };
+}
+
 /** For pages. Signed-out users go to the login page. */
 export async function requirePageUser(): Promise<AuthContext> {
   const auth = await getCurrentAuth();
@@ -92,6 +113,35 @@ export async function requirePagePermission(permission: PermissionCode): Promise
   }
 
   return { auth, location };
+}
+
+/** For pages reachable with any one of several permissions. */
+export async function requirePageActorWithAny(
+  permissions: readonly PermissionCode[],
+): Promise<{
+  auth: AuthContext;
+  location: AuthorizedLocation;
+  actor: Actor;
+}> {
+  const auth = await requirePageUser();
+  const location = await resolveCurrentLocation(auth);
+  const held = permissions.find(
+    (permission) =>
+      location && hasPermission(auth, permission, location.locationId),
+  );
+
+  if (!location || !held) {
+    redirect("/access-denied");
+  }
+
+  return {
+    auth,
+    location,
+    actor: requirePermission(auth, {
+      permission: held,
+      locationId: location.locationId,
+    }),
+  };
 }
 
 /** For pages whose services take an actor and enforce permissions themselves. */

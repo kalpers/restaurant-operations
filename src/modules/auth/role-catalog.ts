@@ -19,12 +19,20 @@ const GENERAL_MANAGER_EXCLUDED: readonly PermissionCode[] = [
   "hr.compensation.edit",
 ];
 
+/** What anyone on staff can do for themselves in Scheduling. */
+const SCHEDULE_SELF_SERVICE: readonly PermissionCode[] = [
+  "schedule.view",
+  "schedule.availability.self",
+  "schedule.time-off.request",
+  "schedule.swap.request",
+];
+
 const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "restaurant.view",
   "menu.view",
   "orders.create",
   "orders.submit",
-  "schedule.view",
+  ...SCHEDULE_SELF_SERVICE,
   "settlements.complete",
 ];
 
@@ -66,6 +74,14 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "schedule.edit",
       "schedule.generate",
       "schedule.publish",
+      "schedule.availability.self",
+      "schedule.availability.manage",
+      "schedule.time-off.request",
+      "schedule.time-off.approve",
+      "schedule.swap.request",
+      "schedule.swap.approve",
+      "schedule.templates.manage",
+      "schedule.rules.manage",
       "restaurant.view",
       "restaurant.manage",
       "reservations.view",
@@ -113,20 +129,20 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "restaurant.manage",
       "reservations.view",
       "reservations.manage",
-      "schedule.view",
+      ...SCHEDULE_SELF_SERVICE,
     ],
   },
   {
     code: "COOK",
     name: "Cook",
     description: "Fulfills kitchen tickets.",
-    permissions: ["kitchen.view", "kitchen.manage", "menu.view", "schedule.view"],
+    permissions: ["kitchen.view", "kitchen.manage", "menu.view", ...SCHEDULE_SELF_SERVICE],
   },
   {
     code: "WAIT_STAFF",
     name: "Wait Staff",
     description: "Support staff who run food and clear tables, without order entry.",
-    permissions: ["restaurant.view", "menu.view", "kitchen.view", "schedule.view"],
+    permissions: ["restaurant.view", "menu.view", "kitchen.view", ...SCHEDULE_SELF_SERVICE],
   },
   {
     code: "INVENTORY_MANAGER",
@@ -138,7 +154,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "inventory.adjust",
       "inventory.count",
       "menu.view",
-      "schedule.view",
+      ...SCHEDULE_SELF_SERVICE,
       "reports.view",
       "reports.inventory",
     ],

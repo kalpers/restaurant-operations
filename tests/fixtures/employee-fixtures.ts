@@ -16,6 +16,18 @@ import {
   employees,
   employeeStatusHistory,
   positions,
+  scheduleGenerationRuns,
+  schedulePeriods,
+  schedulingRules,
+  shiftAssignments,
+  shifts,
+  shiftSwapRequests,
+  staffingTemplateRequirements,
+  staffingTemplates,
+  timeOffRequests,
+  employeeAvailability,
+  employeeAvailabilityExceptions,
+  employeeSchedulingPreferences,
 } from "@/db/schema";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
@@ -135,6 +147,18 @@ export function createEmployeeFixture(
  * those tables, so each employee test file removes its rows when it finishes.
  */
 export async function clearEmployeeData(database: Database): Promise<void> {
+  await database.delete(shiftSwapRequests);
+  await database.delete(shiftAssignments);
+  await database.delete(scheduleGenerationRuns);
+  await database.delete(shifts);
+  await database.delete(schedulePeriods);
+  await database.delete(staffingTemplateRequirements);
+  await database.delete(staffingTemplates);
+  await database.delete(schedulingRules);
+  await database.delete(timeOffRequests);
+  await database.delete(employeeSchedulingPreferences);
+  await database.delete(employeeAvailabilityExceptions);
+  await database.delete(employeeAvailability);
   await database.delete(employeeCertifications);
   await database.delete(employeeDocuments);
   await database.delete(employeeNotes);

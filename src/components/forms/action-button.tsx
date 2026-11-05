@@ -6,7 +6,7 @@ import { useState } from "react";
 import { sendApiRequest } from "./api-request";
 
 type ActionButtonProps = {
-  method: "PATCH" | "PUT" | "DELETE";
+  method: "POST" | "PATCH" | "PUT" | "DELETE";
   url: string;
   body?: unknown;
   label: string;

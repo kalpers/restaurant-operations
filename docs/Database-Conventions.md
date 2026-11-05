@@ -78,7 +78,7 @@ PostgreSQL constraints are the final integrity layer, in addition to application
 
 Add indexes for known access patterns, foreign keys, uniqueness or measured query needs, not by default.
 
-Drizzle's schema language can't express exclusion constraints. Put them in a custom migration (`npm run db:generate -- --custom --name=<short_description>`), and say so in a comment on the table in the schema. Drift checks don't see them, so `tests/integration/database/migrations.test.ts` asserts they exist. `employee_locations`, `employee_positions` and `employee_position_compensation` use one to refuse overlapping effective periods, treating each period as an inclusive `daterange` where a `NULL` end is open-ended. They need the `btree_gist` extension.
+Drizzle's schema language can't express exclusion constraints. Put them in a custom migration (`npm run db:generate -- --custom --name=<short_description>`), and say so in a comment on the table in the schema. Drift checks don't see them, so `tests/integration/database/migrations.test.ts` asserts they exist. `employee_locations`, `employee_positions` and `employee_position_compensation` use one to refuse overlapping effective periods, treating each period as an inclusive `daterange` where a `NULL` end is open-ended. They need the `btree_gist` extension. `schedule_periods` uses a partial one, where `status = 'PUBLISHED'`, to refuse two published periods sharing a date at a location.
 
 Prefer constrained strings and configurable tables to native PostgreSQL enums for lifecycle states.
 

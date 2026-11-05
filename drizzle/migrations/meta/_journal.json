@@ -29,6 +29,20 @@
       "when": 1793898319589,
       "tag": "0003_employee_overlap_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793904303942,
+      "tag": "0004_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793904305914,
+      "tag": "0005_scheduling_overlap_constraints",
+      "breakpoints": true
     }
   ]
 }

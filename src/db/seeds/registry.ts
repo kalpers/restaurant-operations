@@ -1,6 +1,10 @@
 import { employeeReferenceDataSeed } from "./employee-reference-data";
 import { organizationFoundationSeed } from "./organization-foundation";
 import type { Seed } from "./run-seeds";
+import {
+  schedulingDefaultRulesSeed,
+  securitySchedulingPermissionsSeed,
+} from "./scheduling-foundation";
 import { securityFoundationSeed } from "./security-foundation";
 import { securityHrPermissionsSeed } from "./security-hr-permissions";
 
@@ -10,4 +14,6 @@ export const seeds: readonly Seed[] = [
   securityFoundationSeed,
   securityHrPermissionsSeed,
   employeeReferenceDataSeed,
+  securitySchedulingPermissionsSeed,
+  schedulingDefaultRulesSeed,
 ];
