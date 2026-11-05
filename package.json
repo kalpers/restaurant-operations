@@ -1,0 +1,10 @@
+{
+  "name": "restaurant-operations",
+  "version": "1.0.0",
+  "description": "Restaurant Operations ",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
