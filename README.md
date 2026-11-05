@@ -1352,7 +1352,7 @@ Environment variables are parsed and validated centrally under `src/config/`. Do
 
 ### Phase 0 setup
 
-Requirements: Node.js 20.9 or newer, npm, and Docker Compose.
+Requirements: Node.js 26 (current LTS, pinned in `.nvmrc`; `package.json` `engines` floor is `>=22.12.0`), npm, and Docker Compose.
 
 ```text
 npm ci

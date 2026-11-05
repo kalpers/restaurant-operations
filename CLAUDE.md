@@ -2,7 +2,7 @@
 
 Responsive web app for a full-service bar/restaurant (Dining Room, Bar, Takeout). One location now, multi-location-capable data model. Settlement is **recorded only**; no payment processing.
 
-Full domain specs, table lists, status enums and phase policies live in `README.md` (the architecture contract). This file holds the rules and workflow to follow every session. **Before working on a domain, read its section in `README.md`** (e.g. "Domain 10: Orders"). This is a greenfield project: no code exists yet. Phase completion reports go in `docs/` as each phase finishes and must be reviewed before the next phase begins.
+Full domain specs, table lists, status enums and phase policies live in `README.md` (the architecture contract). This file holds the rules and workflow to follow every session. **Before working on a domain, read its section in `README.md`** (e.g. "Domain 10: Orders"). The application is built phase by phase; inspect the repository for what exists today. Phase completion reports go in `docs/` as each phase finishes and must be reviewed before the next phase begins.
 
 `docs/User-Guide.md` describes the operator workflows (reservation -> seating -> order -> kitchen -> settlement -> close -> clean table) as built in an earlier version of this app. Use it as a UX and workflow reference when building those screens, not as a record of existing code. Where it conflicts with `README.md` (for example, it says audit viewing and the Overview dashboard are unimplemented), `README.md` wins: build the audit-viewing capability as specified, and treat the Overview page as a real dashboard unless told otherwise.
 
@@ -29,7 +29,7 @@ npm run db:seed               # idempotent, keyed via seed_runs
 npm run db:reset              # destructive; dev + loopback + DB named restaurant_ops only
 npm run bootstrap:owner       # interactive; never pass password as an argument
 ```
-These scripts are created during the phases that introduce them (lint/typecheck/test/build in Phase 0; `db:*` in Phase 1; `bootstrap:owner` in Phase 2). Until then they will not exist. Requires Node 20.9+. Never use schema push for persistent environments; commit generated migrations in `drizzle/migrations/`. Never point `TEST_DATABASE_URL` at a shared or production DB.
+These scripts are created during the phases that introduce them (lint/typecheck/test/build and `db:generate`/`db:migrate` in Phase 0; `db:seed`/`db:reset` in Phase 1; `bootstrap:owner` in Phase 2). Until then they will not exist. Requires Node 26 (current LTS, pinned in `.nvmrc`; `package.json` `engines` floor is `>=22.12.0`). Never use schema push for persistent environments; commit generated migrations in `drizzle/migrations/`. Never point `TEST_DATABASE_URL` at a shared or production DB.
 
 ## Layout and dependency direction
 ```
@@ -86,7 +86,7 @@ Flow: `UI -> HTTP boundary -> command/query or workflow -> domain service -> rep
 - **Notifications:** in-app only (no SMS/email/push).
 
 ## Phases
-0 Bootstrap, 1 DB foundation, 2 Org+Auth+RBAC, 3 Employees+HR, 4 Scheduling, 5 Restaurant+Seating, 6 Reservations+Waitlist, 7 Menu+Recipes, 8 Inventory+Purchasing, 9 Orders, 10 Kitchen+Bar+Realtime, 11 Settlements, 12 Reporting, 13 Full E2E, 14 AWS deployment (EC2 + RDS, no ALB/ECS/EKS), 15 AWS acceptance. **Nothing is implemented yet; start at Phase 0.** Deliverables per phase are in `README.md` section 36. Complete and validate each phase in order before starting the next.
+0 Bootstrap, 1 DB foundation, 2 Org+Auth+RBAC, 3 Employees+HR, 4 Scheduling, 5 Restaurant+Seating, 6 Reservations+Waitlist, 7 Menu+Recipes, 8 Inventory+Purchasing, 9 Orders, 10 Kitchen+Bar+Realtime, 11 Settlements, 12 Reporting, 13 Full E2E, 14 AWS deployment (EC2 + RDS, no ALB/ECS/EKS), 15 AWS acceptance. **A phase is finished once `docs/Phase-N-Completion-Report.md` exists; the next phase is the first without one.** Deliverables per phase are in `README.md` section 36. Complete and validate each phase in order before starting the next.
 
 ## Working protocol (Claude Code)
 1. Identify the requested phase. Implement **only** that phase; do not build future phases.

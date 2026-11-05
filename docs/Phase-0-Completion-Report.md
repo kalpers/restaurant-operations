@@ -6,7 +6,7 @@ This report merges the plan §24 template with the sections required by README �
 
 Phase 0 is complete and ready for review. The repository now has a Next.js application, Docker PostgreSQL, Drizzle, centralized environment validation, unit, integration and E2E test infrastructure, and an initial CI workflow. There is no restaurant functionality, no domain table and no authentication.
 
-Nothing has been committed. The GitHub Actions workflow has not run on GitHub; its steps were run locally instead (see Validation results).
+The work is committed and pushed to `origin/main` as `9a24795`. All local checks were re-run on that commit and pass. The GitHub Actions result is not confirmed, because it couldn't be read from this environment (see Validation results).
 
 ## Environment
 
@@ -93,7 +93,7 @@ None were created, as Phase 0 defines no tables. `npm run db:generate` reported 
 | Production build | PASS: `/api/health` is dynamic, `/` is static |
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 12 moderate, 0 high or critical (see Risks) |
-| GitHub Actions run | NOT RUN: nothing has been pushed |
+| GitHub Actions run | NOT CONFIRMED: `9a24795` is pushed, but the GitHub API returned "Not Found" and `gh` isn't installed. Check the repository's Actions tab |
 
 ### Additional checks
 
@@ -151,7 +151,7 @@ The last two integration tests go beyond the plan. `postgres` 4.0.0 is a new maj
 | GHSA-67mh-4wv8-2f99 (dev server request exposure) | `esbuild` `<=0.24.2` (0.18.20 installed) | `drizzle-kit` | The project doesn't run esbuild's dev server |
 | GHSA-g3hv-75wg-m249 (denial of service) | `minimatch` `>=7.0.0 <11.0.1` | `eslint-config-next` | Lint tooling only, on the project's own files |
 
-Neither is in the production dependency tree, and `npm audit --omit=dev` is clean. `npm audit fix --force` was not used. The owner needs to accept these findings (see Remaining issues).
+Neither is in the production dependency tree, and `npm audit --omit=dev` is clean. npm's only offered fixes are major-version changes that move backward: `drizzle-kit` 0.18.1 and `eslint-config-next` 15.5.29, the second of which would downgrade the Next.js toolchain. `npm audit fix --force` was not used. These findings are not yet accepted (see Remaining issues).
 
 **Other risks**
 
@@ -163,12 +163,11 @@ Neither is in the production dependency tree, and `npm audit --omit=dev` is clea
 
 No Phase 0 functionality is outstanding. These need an owner's attention:
 
-1. **Review and commit.** All Phase 0 work is uncommitted, alongside the earlier `phase.md` move and plan rename. CI runs only after a push.
-2. **Accept or reject the new dev-only audit findings,** and update `docs/accepted-risks.md`. The file also has a typo on line 3 (`s### Description`) and no `DEV-001` heading. It was left unchanged.
-3. **Stale wording in `CLAUDE.md`.** "This is a greenfield project: no code exists yet" and "Nothing is implemented yet; start at Phase 0" are no longer true. They were left unchanged because they weren't part of the agreed edits.
-4. **Old Docker leftovers.** An exited `restaurant-ops-postgres-1` container and a `restaurant-ops_postgres_data` volume remain from an earlier project folder. They were left untouched. If that data isn't needed, this deletes it permanently: `docker rm restaurant-ops-postgres-1; docker volume rm restaurant-ops_postgres_data`.
-5. **Stray lockfile.** Next.js warns that it is ignoring `C:\Users\kneal\package-lock.json`, which is outside this repository. The warning is harmless and specific to this machine.
+1. **Confirm CI.** Check that the GitHub Actions run for `9a24795` passed.
+2. **Approve or reject a risk entry for the new dev-only audit findings.** `CLAUDE.md` requires approval before they are recorded in `docs/accepted-risks.md`. That file also has a typo on line 3 (`s### Description`) and no `DEV-001` heading. It was left unchanged.
+3. **Old Docker leftovers.** An exited `restaurant-ops-postgres-1` container and a `restaurant-ops_postgres_data` volume remain from an earlier project folder. They were left untouched. If that data isn't needed, this deletes it permanently: `docker rm restaurant-ops-postgres-1; docker volume rm restaurant-ops_postgres_data`.
+4. **Stray lockfile.** Next.js warns that it is ignoring `C:\Users\kneal\package-lock.json`, which is outside this repository. The warning is harmless and specific to this machine.
 
 ## Next-phase readiness
 
-**Phase 1 readiness: READY,** subject to review of this report. Every plan §23 condition is met, and all the existing-foundation checks in Phase 1 plan §3 pass locally except CI, which has not yet run on GitHub.
+**Phase 1 readiness: READY,** subject to review of this report. Every plan §23 condition is met, and all the existing-foundation checks in Phase 1 plan §3 pass locally. The CI result on GitHub is still to be confirmed.
