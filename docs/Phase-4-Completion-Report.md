@@ -10,7 +10,7 @@ Manual assignment, generation, Fill Open Shifts, swaps and publishing all call o
 
 **Not yet confirmed:**
 
-- **CI:** the work is uncommitted, so the workflow hasn't run on GitHub. The Phase 3 result is also still unconfirmed here.
+- **CI:** GitHub Actions failed on the first push: 1 of 51 E2E tests got a 404 from the coverage API. An unanchored `coverage/` rule in `.gitignore` had kept that route file out of the commit, so the bug shipped in the first push even though every local check passed. Commit `7840586` anchors the rule and adds the file, and the owner reports the workflow then passed. This environment can't read the runs, so that is the owner's confirmation. The run covers the Phase 3 code too, but it doesn't establish what the Phase 3 commits did on their own.
 - **`db:reset` on your real development database:** deliberately not run, because it would delete your Owner account. The same command was proven on a throwaway PostgreSQL container. See Migrations.
 
 ## Environment
@@ -249,7 +249,7 @@ Production build, signed out: `/api/scheduling/periods`, `/me` and `/rules` retu
 | Production build | PASS |
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 12 moderate, unchanged, recorded as DEV-002 |
-| GitHub Actions | NOT RUN: work is uncommitted |
+| GitHub Actions | PASS after one fix, reported by the owner following `7840586`. The first push failed 1 of 51 E2E tests (see Summary). This environment can't read the runs |
 
 An earlier E2E run failed intermittently because my own test named which equally scored employee would win a tie, and the tie-break used random employee numbers. The test now asserts provenance instead. The product behaved correctly.
 
@@ -315,9 +315,9 @@ None of these block Phase 5.
 
 1. **Where does the audit domain get built? Still your decision,** carried from Phase 3. The Phase 2 and 3 plans place full audit in Phase 12, but README §36's Phase 12 deliverables don't list it, and each phase adds more actions that need auditing.
 2. **Some working APIs have no form yet.** Plan §46 lists what the UI must support, and these go beyond it: editing an existing shift or period, editing a recurring availability row (remove and add works), and a manager requesting time off for an employee. All have tested services and routes. Say if you want them before Phase 5.
-3. **Commit and confirm CI,** which still covers Phase 3 as well.
+3. **Prevent a repeat of the ignored-file failure, optional.** Local checks use the working folder, so they can't see a file git ignores. Running `git status --ignored` before a push, or validating from a clean clone, would catch it. `out/` and `uploads/` in `.gitignore` are also unanchored and could catch a future route folder with that name.
 4. **Carried over, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`. Next.js still warns about the second.
 
 ## Next-phase readiness
 
-**Phase 5 readiness: READY,** subject to review of this report and a green CI run once committed. Published schedules and `ACTIVE` assignments are in place for the server-assignment policy in Phase 5's plan §25, which `shift_assignments.status` can answer directly.
+**Phase 5 readiness: READY,** subject to review of this report. CI is green, as reported by the owner. Published schedules and `ACTIVE` assignments are in place for the server-assignment policy in Phase 5's plan §25, which `shift_assignments.status` can answer directly.
