@@ -16,6 +16,16 @@ describe("visibleNavigation", () => {
     expect(labels(["admin.users.view"])).toEqual(["Dashboard", "Users"]);
   });
 
+  it("shows the menu to anyone who can view it, and management only with its permissions", () => {
+    expect(labels(["menu.view"])).toEqual(["Dashboard", "Menu"]);
+    expect(labels(["menu.view", "menu.edit", "recipes.view"])).toEqual([
+      "Dashboard",
+      "Menu",
+      "Manage menu",
+      "Recipes",
+    ]);
+  });
+
   it("shows two items that share a permission", () => {
     expect(labels(["locations.view"])).toEqual([
       "Dashboard",
@@ -38,6 +48,11 @@ describe("visibleNavigation", () => {
       "Floor",
       "Reservations",
       "Waitlist",
+      "Menu",
+      "Manage menu",
+      "Modifiers",
+      "Prep stations",
+      "Recipes",
       "Tables",
       "Sections",
       "Organization",

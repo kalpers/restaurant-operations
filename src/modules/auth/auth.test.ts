@@ -54,14 +54,15 @@ describe("password hashing", () => {
 });
 
 describe("permission catalog", () => {
-  it("has 87 unique codes", () => {
-    expect(ALL_PERMISSION_CODES).toHaveLength(87);
-    expect(new Set(ALL_PERMISSION_CODES).size).toBe(87);
+  it("has 93 unique codes", () => {
+    expect(ALL_PERMISSION_CODES).toHaveLength(93);
+    expect(new Set(ALL_PERMISSION_CODES).size).toBe(93);
   });
 
   it("uses the domain.action format", () => {
     for (const code of ALL_PERMISSION_CODES) {
-      expect(code).toMatch(/^[a-z]+(\.[a-z-]+)+$/);
+      // A hyphen joins words within the domain (`prep-stations`) or the action.
+      expect(code).toMatch(/^[a-z]+(-[a-z]+)*(\.[a-z]+(-[a-z]+)*)+$/);
     }
   });
 

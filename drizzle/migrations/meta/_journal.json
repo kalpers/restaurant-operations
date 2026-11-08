@@ -64,6 +64,20 @@
       "when": 1794159308502,
       "tag": "0008_reservations_waitlist",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794166009847,
+      "tag": "0009_menu_recipes",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794166027994,
+      "tag": "0010_menu_recipes_constraints",
+      "breakpoints": true
     }
   ]
 }

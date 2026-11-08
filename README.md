@@ -609,12 +609,17 @@ menu_item_placements
 modifier_groups
 modifiers
 menu_item_modifier_groups
+modifier_group_modifiers
+menu_item_prices
 prep_stations
+menu_item_prep_routing
 ```
 
 A menu item definition may appear in multiple menus/categories using `menu_item_placements`.
 
-A placement may define display order and optional price override.
+A placement defines display order and active state. Placement-level price overrides are deferred: a price is resolved only from `menu_item_prices` (a location price first, then the organization default).
+
+`menu_item_prices` is effective-dated (`[effective_from, effective_to)`) and a price change closes the open row and inserts a new one. `modifier_group_modifiers` lets one modifier belong to several groups. `menu_item_prep_routing` is the location-aware link from an item to its prep stations.
 
 Menu item `active` and `available` are distinct:
 - `active`: belongs to the catalog/configuration.
@@ -637,10 +642,15 @@ The architecture may later support multiple fulfillment components for a single 
 Tables:
 
 ```text
+units_of_measure
+unit_conversions
 recipes
-recipe_ingredients
-modifier_ingredient_adjustments
+recipe_versions
+recipe_ingredients                  (Phase 8)
+modifier_ingredient_adjustments     (Phase 8)
 ```
+
+Recipe identity (`recipes`), immutable revisions (`recipe_versions`) and the unit vocabulary arrive in Phase 7. `recipe_ingredients` and `modifier_ingredient_adjustments` reference Inventory Items, which do not exist until Phase 8, so they are built there (see the Phase 7 policies in section 33).
 
 Relationship:
 
@@ -1478,6 +1488,30 @@ The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 a
 
 **Permissions.** `reservations.view`, `.manage`, `.override-hold` and `waitlist.view`, `.manage`, `.notify`, `.seat`. Owner, General Manager and Manager hold all of them. Host holds all except `reservations.override-hold`. Seating a reservation or waitlist party needs `restaurant.seat` as well. The `security.reservations-permissions` seed adds the new codes. No reservation, party or waitlist data is seeded.
 
+### Phase 7 Menu and Recipes
+
+**Menu Item is not Recipe, and Recipe is not Inventory.** A Menu Item is what is sold and has no category column: it reaches a Category through `menu_item_placements` (menu, category, item, display order, active), and one item may have many placements. A Recipe is a durable identity (optionally linked to one Menu Item) with immutable revisions. Neither stores stock. Recipe revisions carry yield and preparation notes only. **Recipe ingredients, quantities and persisted modifier ingredient effects are Phase 8**, when a revision can reference an Inventory Item. Phase 7 builds no ingredient catalog.
+
+**Active versus available.** `active` keeps an item in the catalog and its history. `available` says it can be sold now. The operational menu returns an item only when the menu is active and offered at the location (and inside an availability window, if it has any), the category, placement and item are active, the item is available, and a price is in effect. Nothing infers availability from stock or recipes.
+
+**Prices** are `NUMERIC(12,2)` decimal strings, effective-dated and half-open `[effective_from, effective_to)`. A location price wins over the organization default (`location_id` null). An exclusion constraint forbids two prices in force in one scope. A change takes the item row lock, closes the open row where the new one begins and inserts the new row, in one transaction; an optional `expectedCurrentPriceId` rejects a stale editor. A new price can't start in the past, can't start at or before the one it replaces, and can't jump ahead of one already scheduled. `resolveMenuItemPrice` is the only lookup; Orders will call it, not read the rows. Placement price overrides are deferred.
+
+**Exact arithmetic without a library.** `src/shared/decimal/` does addition, comparison, scale checks and multiplication on decimal strings with `BigInt`. It refuses extra precision instead of rounding, and nothing converts a price or quantity to a JavaScript `number`. No dependency was added.
+
+**Modifier groups** have four selection types (`OPTIONAL_SINGLE`, `REQUIRED_SINGLE`, `OPTIONAL_MULTIPLE`, `REQUIRED_MULTIPLE`) with minimum and maximum counts that the type constrains, in the service and in a check constraint. An item's attachment can override: `required_override` true means at least one, false means none, and explicit minimum or maximum overrides win; a single-choice group never allows more than one. `validateSelection` (pure) and `validateModifierSelection` (loads an item's groups) are the one server-side validator Phase 9 will reuse. Selections name the group and the modifier, so a modifier in two groups is unambiguous. Inactive groups are not required; inactive modifiers are refused. `calculateItemAmount` adds the resolved base price and each chosen adjustment exactly; it has no tax, discount or order total.
+
+**Modifier behavior has three separate kinds.** Price effect (`price_adjustment`), preparation effect (`preparation_effect_type` plus an instruction, which never affects inventory) and recipe effect. Recipe effects are a typed contract only: `ADD`, `REMOVE` and `ADJUST` with a positive exact quantity and an Inventory Item ID, and a substitution is a `REMOVE` plus an `ADD`. A preparation-only effect can't become an ingredient delta. Nothing is persisted and no Inventory Item or unit compatibility is checked until Phase 8.
+
+**Prep stations** are location-scoped configuration (`GRILL`, `FRY`, `SALAD`, `BAR`, `EXPO` are seeded). `menu_item_prep_routing` links an item to one or more stations at a location, for Phase 10 to read. No ticket, claim or fire exists.
+
+**Units of measure.** `units_of_measure` (`EACH`, `OZ_WEIGHT`, `LB`, `G`, `KG`, `FL_OZ`, `ML`, `L`; never an ambiguous `OZ`) and explicit `unit_conversions` with a positive `NUMERIC(14,6)` factor. A conversion is allowed only within one measurement type (a composite foreign key enforces it), is never chained, uses no density, and is refused if its exact result needs more than four decimal places. Only exact conversions are seeded (`LB`/`OZ_WEIGHT`, `G`/`KG`, `ML`/`L`); fluid ounces to milliliters is not approved.
+
+**Recipe revisions.** `DRAFT -> PUBLISHED -> RETIRED`, numbered from 1 per recipe. A draft is editable and has no interval. Publishing (under a recipe row lock) closes the earlier revision where the new one begins and sets the new interval, `[effective_from, effective_to)`; it can't start in the past or at or before an earlier revision. An exclusion constraint allows at most one revision in effect at any instant. Content (yield `NUMERIC(14,4)` and unit, notes, number) is frozen by a trigger once a revision leaves `DRAFT`, and published revisions can't be deleted. Retiring ends the interval now, or gives a never-effective revision an empty one. `resolveEffectiveRevision` and `resolveEffectiveRevisionForMenuItem` return the revision in effect at an instant, which Phases 8 and 9 will use.
+
+**Permissions.** Six new codes (93 in all): `menu.pricing.view`, `menu.pricing.edit`, `menu.modifiers.manage`, `prep-stations.manage`, `recipes.view`, `recipes.edit`. Owner, General Manager and Manager hold them. Servers, bartenders, hosts, cooks and wait staff hold `menu.view` only. `menu.edit` covers categories, menus, items, placements and attaching groups; `menu.modifiers.manage` covers group and modifier definitions. The `security.menu-permissions` seed adds the codes; the `recipes.units-of-measure` and `menu.initial-configuration` seeds add the units, conversions, categories, stations and an empty Main Menu offered at MAIN. No menu item, price or recipe is seeded.
+
+**Extension points.** Phase 8 adds `recipe_version_ingredients` (revision, Inventory Item, `NUMERIC(14,4)` quantity, unit, note) and persists the modifier effect contract. Phase 9 snapshots the operational menu query's item, price and modifier choices into order items. Phase 10 reads `menu_item_prep_routing` and `prep_stations`.
+
 ## 34. AWS POC Deployment Target
 
 The POC must be deployable to AWS while keeping application code cloud-provider independent.
@@ -1577,7 +1611,7 @@ Deliver reservations, walk-ins, check-in, waitlist, table planning, seating inte
 
 ### Phase 7: Menu + Recipes
 
-Deliver menus, categories/placements, menu items, availability, modifiers, prep routing, versioned recipes, and ingredient-adjustment logic.
+Deliver menus, categories/placements, menu items, availability, modifiers, prep routing, versioned recipe identity and immutable revisions, the unit vocabulary, and typed modifier recipe-effect contracts. Recipe ingredient rows and ingredient-adjustment persistence are delivered in Phase 8, when Inventory Items exist.
 
 ### Phase 8: Inventory + Purchasing
 

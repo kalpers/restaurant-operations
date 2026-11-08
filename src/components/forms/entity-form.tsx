@@ -15,6 +15,7 @@ export type FormField = {
     | "number"
     | "time"
     | "date"
+    | "datetime-local"
     | "checkbox"
     | "select"
     | "textarea";
@@ -50,6 +51,11 @@ function readField(field: FormField, data: FormData): unknown {
 
   if (field.type === "number") {
     return value === "" ? null : Number(value);
+  }
+
+  // The browser gives local wall-clock time; the API takes an exact instant.
+  if (field.type === "datetime-local") {
+    return value === "" ? null : new Date(value).toISOString();
   }
 
   // Passwords are sent exactly as typed. Blank optional text is stored as null.

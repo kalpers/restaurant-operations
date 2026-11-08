@@ -170,6 +170,9 @@ describe("runSeeds", () => {
       "security.restaurant-permissions",
       "restaurant.initial-floor",
       "security.reservations-permissions",
+      "security.menu-permissions",
+      "recipes.units-of-measure",
+      "menu.initial-configuration",
     ]);
   });
 });

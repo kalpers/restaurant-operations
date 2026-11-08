@@ -1,4 +1,9 @@
 import { employeeReferenceDataSeed } from "./employee-reference-data";
+import {
+  menuInitialConfigurationSeed,
+  securityMenuPermissionsSeed,
+  unitsOfMeasureSeed,
+} from "./menu-foundation";
 import { organizationFoundationSeed } from "./organization-foundation";
 import {
   restaurantInitialFloorSeed,
@@ -24,4 +29,7 @@ export const seeds: readonly Seed[] = [
   securityRestaurantPermissionsSeed,
   restaurantInitialFloorSeed,
   securityReservationsPermissionsSeed,
+  securityMenuPermissionsSeed,
+  unitsOfMeasureSeed,
+  menuInitialConfigurationSeed,
 ];

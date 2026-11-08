@@ -48,10 +48,25 @@ const EXPECTED_TABLES = [
   "public.guest_parties",
   "public.location_settings",
   "public.locations",
+  "public.menu_availability",
+  "public.menu_categories",
+  "public.menu_item_modifier_groups",
+  "public.menu_item_placements",
+  "public.menu_item_prep_routing",
+  "public.menu_item_prices",
+  "public.menu_items",
+  "public.menu_locations",
+  "public.menus",
+  "public.modifier_group_modifiers",
+  "public.modifier_groups",
+  "public.modifiers",
   "public.organizations",
   "public.party_status_history",
   "public.permissions",
   "public.positions",
+  "public.prep_stations",
+  "public.recipe_versions",
+  "public.recipes",
   "public.reservation_hold_overrides",
   "public.reservation_table_assignments",
   "public.reservations",
@@ -76,6 +91,8 @@ const EXPECTED_TABLES = [
   "public.table_session_tables",
   "public.table_sessions",
   "public.time_off_requests",
+  "public.unit_conversions",
+  "public.units_of_measure",
   "public.user_roles",
   "public.users",
   "public.waitlist_entries",
@@ -161,6 +178,9 @@ describe("reconstruction from checked-in migrations", () => {
       "employee_locations_no_overlap",
       "employee_position_compensation_no_overlap",
       "employee_positions_no_overlap",
+      "menu_availability_no_overlap",
+      "menu_item_prices_no_overlap",
+      "recipe_versions_no_overlap",
       "schedule_periods_no_overlap",
     ]);
   });
@@ -250,13 +270,21 @@ describe("reconstruction from checked-in migrations", () => {
   });
 
   it("upgrades a Phase 5 database in place, keeping its data", async () => {
+    await upgradeFromMigrationIndex(7);
+  });
+
+  it("upgrades a Phase 6 database in place, keeping its data", async () => {
+    await upgradeFromMigrationIndex(8);
+  });
+
+  async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {
     // Apply only the migrations Phase 5 shipped, from a copy with a shortened journal.
-    const phase5Folder = mkdtempSync(path.join(tmpdir(), "phase5-migrations-"));
+    const oldFolder = mkdtempSync(path.join(tmpdir(), "old-migrations-"));
 
     try {
-      cpSync(MIGRATIONS_FOLDER, phase5Folder, { recursive: true });
+      cpSync(MIGRATIONS_FOLDER, oldFolder, { recursive: true });
 
-      const journalPath = path.join(phase5Folder, "meta", "_journal.json");
+      const journalPath = path.join(oldFolder, "meta", "_journal.json");
       const full = JSON.parse(readFileSync(journalPath, "utf8")) as {
         entries: { idx: number }[];
       };
@@ -265,22 +293,22 @@ describe("reconstruction from checked-in migrations", () => {
         journalPath,
         JSON.stringify({
           ...full,
-          entries: full.entries.filter((entry) => entry.idx <= 7),
+          entries: full.entries.filter((entry) => entry.idx <= lastIndex),
         }),
       );
 
       const client = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 
       try {
-        await migrate(drizzle(client), { migrationsFolder: phase5Folder });
+        await migrate(drizzle(client), { migrationsFolder: oldFolder });
       } finally {
         await client.end();
       }
     } finally {
-      rmSync(phase5Folder, { recursive: true, force: true });
+      rmSync(oldFolder, { recursive: true, force: true });
     }
 
-    expect(await countAppliedMigrations()).toBe(journal.entries.length - 1);
+    expect(await countAppliedMigrations()).toBe(lastIndex + 1);
     await query(`
       WITH org AS (
         INSERT INTO organizations (name, default_timezone, default_currency)
@@ -317,7 +345,8 @@ describe("reconstruction from checked-in migrations", () => {
     ).toEqual([{ party_size: 3, guest_party_id: null, status: "ACTIVE" }]);
     expect(await query("SELECT * FROM reservations")).toEqual([]);
     expect(await query("SELECT * FROM guest_parties")).toEqual([]);
-  });
+    expect(await query("SELECT * FROM menu_items")).toEqual([]);
+  }
 
   it("rebuilds to the same state, removing all data and extra tables", async () => {
     await applyMigrations(databaseUrl);

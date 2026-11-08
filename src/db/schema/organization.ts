@@ -65,6 +65,8 @@ export const locations = pgTable(
       table.organizationId,
       table.locationCode,
     ),
+    // Lets Menu records prove a location belongs to the same organization.
+    unique("locations_id_organization_id_unique").on(table.id, table.organizationId),
   ],
 );
 

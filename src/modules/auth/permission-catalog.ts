@@ -76,6 +76,13 @@ export const PERMISSION_CATALOG = [
 
   { code: "menu.view", name: "View menu", category: "Menu" },
   { code: "menu.edit", name: "Edit menu", category: "Menu" },
+  { code: "menu.pricing.view", name: "View menu pricing history", category: "Menu" },
+  { code: "menu.pricing.edit", name: "Change menu prices", category: "Menu" },
+  { code: "menu.modifiers.manage", name: "Manage modifier groups and modifiers", category: "Menu" },
+  { code: "prep-stations.manage", name: "Manage preparation stations and routing", category: "Menu" },
+
+  { code: "recipes.view", name: "View recipes", category: "Recipes" },
+  { code: "recipes.edit", name: "Edit and publish recipes", category: "Recipes" },
 
   { code: "inventory.view", name: "View inventory", category: "Inventory" },
   { code: "inventory.receive", name: "Receive inventory", category: "Inventory" },
