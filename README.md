@@ -646,11 +646,11 @@ units_of_measure
 unit_conversions
 recipes
 recipe_versions
-recipe_ingredients                  (Phase 8)
-modifier_ingredient_adjustments     (Phase 8)
+recipe_version_ingredients
+modifier_inventory_effects
 ```
 
-Recipe identity (`recipes`), immutable revisions (`recipe_versions`) and the unit vocabulary arrive in Phase 7. `recipe_ingredients` and `modifier_ingredient_adjustments` reference Inventory Items, which do not exist until Phase 8, so they are built there (see the Phase 7 policies in section 33).
+Recipe identity (`recipes`), immutable revisions (`recipe_versions`) and the unit vocabulary arrive in Phase 7. `recipe_version_ingredients` (a revision's requirements) and `modifier_inventory_effects` (how a modifier changes one Menu Item's requirements) reference Inventory Items and arrive in Phase 8. See sections 33 (Phase 7 and Phase 8 policies).
 
 Relationship:
 
@@ -681,25 +681,23 @@ Add Swiss Cheese
 Tables:
 
 ```text
-inventory_categories
 inventory_items
-units_of_measure
-unit_conversions
-inventory_storage_locations
-inventory_purchase_units
-inventory_balances
+inventory_item_locations
+inventory_item_unit_conversions
 inventory_transactions
+inventory_balances
 suppliers
 supplier_items
 supplier_item_cost_history
 purchase_orders
-purchase_order_items
-purchase_receipts
-purchase_receipt_items
+purchase_order_lines
+purchase_order_receipts
+purchase_order_receipt_lines
 inventory_counts
-inventory_count_items
-waste_records
+inventory_count_lines
 ```
+
+Units of measure and generic conversions are shared with Recipes (section 15). Inventory is tracked per restaurant Location; there are no storage locations or inventory categories within a Location, and waste is a ledger row with a reason code rather than a separate table.
 
 ### Inventory authority
 
@@ -714,30 +712,23 @@ positive = inventory added
 negative = inventory removed
 ```
 
-Transaction types may include:
+Transaction types:
 
 ```text
-RECEIPT
-SALE_CONSUMPTION
-SALE_REVERSAL
+RECEIVE
+CONSUME
 WASTE
-COUNT_ADJUSTMENT
-MANUAL_ADJUSTMENT
-TRANSFER_IN
+ADJUST_INCREASE
+ADJUST_DECREASE
+COUNT_INCREASE
+COUNT_DECREASE
 TRANSFER_OUT
-EMPLOYEE_MEAL
-COMP
+TRANSFER_IN
 ```
 
-Inventory storage locations may include:
-- Walk-in Cooler
-- Freezer
-- Dry Storage
-- Liquor Room
-- Bar
-- Kitchen Line
+Further types (for example an order-consumption reversal) are added deliberately in the phase that needs them.
 
-Transfers use matching transfer-out and transfer-in records and do not change total restaurant inventory.
+Transfers between Locations of one organization use a matching transfer-out and transfer-in with one shared reference and do not change total inventory.
 
 Creating a purchase order does not increase stock. Receiving does.
 
@@ -1510,7 +1501,41 @@ The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 a
 
 **Permissions.** Six new codes (93 in all): `menu.pricing.view`, `menu.pricing.edit`, `menu.modifiers.manage`, `prep-stations.manage`, `recipes.view`, `recipes.edit`. Owner, General Manager and Manager hold them. Servers, bartenders, hosts, cooks and wait staff hold `menu.view` only. `menu.edit` covers categories, menus, items, placements and attaching groups; `menu.modifiers.manage` covers group and modifier definitions. The `security.menu-permissions` seed adds the codes; the `recipes.units-of-measure` and `menu.initial-configuration` seeds add the units, conversions, categories, stations and an empty Main Menu offered at MAIN. No menu item, price or recipe is seeded.
 
-**Extension points.** Phase 8 adds `recipe_version_ingredients` (revision, Inventory Item, `NUMERIC(14,4)` quantity, unit, note) and persists the modifier effect contract. Phase 9 snapshots the operational menu query's item, price and modifier choices into order items. Phase 10 reads `menu_item_prep_routing` and `prep_stations`.
+**Extension points.** Phase 8 added `recipe_version_ingredients` and `modifier_inventory_effects` (see the Phase 8 policies, which also changed the effect semantics). Phase 9 snapshots the operational menu query's item, price and modifier choices into order items. Phase 10 reads `menu_item_prep_routing` and `prep_stations`.
+
+### Phase 8 Inventory and Purchasing
+
+The six approved Phase 8 policies (negative inventory, negative-balance costing, weighted-average rounding, count activity, over-receiving, supplier preference) are implemented as stated below. Each has focused automated tests.
+
+**Inventory Item is ingredient identity.** Recipes and stock use the same `inventory_items` row; there is no separate component catalog. An item has a measurement type and a base stock unit of that type (a composite foreign key enforces it); the stock unit can't change once the item has ledger history. `inventory_item_locations` says where it is stocked and holds par, reorder level and reorder target in base units (non-negative; reorder level at or below par and target).
+
+**Two conversion mechanisms.** Generic conversions (`unit_conversions`, same measurement type, e.g. LB to OZ_WEIGHT) and per-item packaging (`inventory_item_unit_conversions`, e.g. 1 CASE = 12 BOTTLE, 1 BOTTLE = 1 L). Packaging may cross measurement types for one item. Each unit has at most one active outgoing packaging conversion (a partial unique index) and saving refuses cycles, so the path to the base unit is unique: same unit, else a generic step, else follow the item's chain, optionally ending with one generic step. Results are exact and refused beyond four decimal places. Packaging units (`CASE`, `BOTTLE`, `CAN`, `BAG`, `BOX`, `PACK`, `SLICE`) are COUNT units; what they hold is always per item.
+
+**One posting service.** `postInventoryTransaction` (`src/modules/inventory/services/posting-service.ts`) is the only writer of `inventory_transactions` and `inventory_balances`; a test scans the module to prove it. It locks the item's balance row (created at zero if new), converts the entered quantity to base units, applies the negative policy and costing, appends the ledger row with `quantity_after` and `average_cost_after`, updates the balance, and returns the result, inside its caller's transaction. Business dates come from `BusinessDateService`. A trigger makes the ledger, receipts, receipt lines and supplier cost history append-only; corrections are compensating rows. `reconcileBalances` compares the projection with ledger sums, and `ledgerQuantityOnHand` recomputes QOH as of an instant or a business date. Concurrent postings for one item and Location serialize on the balance lock; a test of 20 simultaneous postings proves no lost update.
+
+**Negative inventory.** `location_settings.allow_negative_inventory` defaults to false. When false nothing may leave QOH below zero. When true, only `CONSUME` may; `WASTE`, `ADJUST_DECREASE`, `COUNT_DECREASE` and `TRANSFER_OUT` never may. Increases are always allowed. Nothing clamps. `postConsumption` is the Phase 9 entry point.
+
+**Weighted-average cost.** Per base unit, `NUMERIC(14,4)`, computed with exact `BigInt` arithmetic (`divideRoundHalfUp` in `src/shared/decimal/`) and rounded ROUND_HALF_UP to four places after each receipt; the persisted value is the next receipt's basis, with no hidden precision. A receipt enters as its exact total cost, so a base-unit cost needing more than four places isn't rounded twice. From QOH at or below zero the ordinary formula is never used: a receipt that leaves QOH at or below zero keeps the average, and one that lifts it above zero sets the average to that receipt's base-unit cost. Stock that arrived with no cost (an adjustment before any receipt) takes the next receipt's cost as its first average. Outgoing movements are valued at the current average and don't change it. Transfers carry the source's average to the destination. Costs and valuation are returned only to holders of `inventory.cost.view`.
+
+**Suppliers and purchasing.** `supplier_items` says how a supplier sells an item: a purchase unit and `base_units_per_purchase`, computed from the item's conversions when saved and refused if the unit can't convert. There is no preferred-supplier field and nothing chooses a supplier: an order names one explicitly, and low-stock results list every active supplier option. Listed costs and every receipt price are appended to `supplier_item_cost_history`. Purchase orders are numbered per Location (`PO-000001`) and move `DRAFT -> SUBMITTED -> PARTIALLY_RECEIVED -> RECEIVED`, or to `CANCELLED` from any but `RECEIVED`. Only drafts are edited. Lines snapshot the supplier item, unit, conversion and price; the order total is the exact sum of line totals; no tax or freight. Submitting moves no stock.
+
+**Receiving** locks the order, refuses over-receiving per line (no override), and in one transaction writes the receipt and its lines, posts a `RECEIVE` per line through the posting service at the actual cost, appends cost history, and sets the order status. The ordered price is never rewritten; the actual price lives on the receipt line. Any refused line rolls back the whole receipt. A cancelled order can't receive; stock already received stays.
+
+**Waste and adjustments.** Waste posts `WASTE` with a structured reason (`SPOILAGE`, `BREAKAGE`, `PREP_WASTE`, `EXPIRED`, `OTHER`). Adjustments post `ADJUST_INCREASE` or `ADJUST_DECREASE` with a reason (`RECEIVING_CORRECTION`, `FOUND_STOCK`, `THEFT_OR_LOSS`, `DATA_CORRECTION`, `OTHER`); a check constraint requires the reason. There is no "set quantity" field anywhere.
+
+**Transfers** post `TRANSFER_OUT` and `TRANSFER_IN` with a shared reference in one transaction, locking both balances in a stable order. The actor needs `inventory.transfer` at both Locations (the destination is re-checked against the database); both must stock the item; a transfer can't create negative stock.
+
+**Counts.** `DRAFT -> SUBMITTED -> APPROVED`, with `SUBMITTED -> DRAFT` to correct and `CANCELLED` from either. Starting a count snapshots each line's expected quantity and the item's latest ledger sequence together under the balance lock. Stock stays live while a count is open. Variance is counted minus expected. Approval locks the balances, so no posting can slip in, and if any ledger row has a higher sequence than a line's snapshot it requires an explicit acknowledgement, recording the actor and time. It then posts each non-zero variance as `COUNT_INCREASE` or `COUNT_DECREASE` against current stock (never setting stock to the count) and approves, atomically. A decrease that would take current stock below zero refuses the whole approval.
+
+**Replenishment** is a recommendation: an item is low when QOH is at or below its reorder level, and the suggestion is reorder target (else par) minus QOH, never below zero. Negative QOH is shown as it is. Nothing creates or submits an order.
+
+**Recipe ingredients.** `recipe_version_ingredients` reference Inventory Items with a positive quantity in any unit convertible to the item's base. They change only on a `DRAFT` revision (a trigger refuses changes to a published revision's rows); each change checks and bumps the revision's version. A draft may copy another revision's ingredients. `resolveRevisionRequirements` returns base-unit requirements for Phase 9. Saving moves no stock.
+
+**Modifier inventory effects** (approved Phase 8 semantics, replacing the Phase 7 contract). Each effect belongs to one modifier and one Menu Item. `ADD` adds a positive quantity; `REMOVE` has no quantity and drops the Menu Item recipe's requirement entirely; `ADJUST` changes it by a signed, non-zero quantity. A substitution is a `REMOVE` plus an `ADD`. The modifier must be offered on the Menu Item, and `REMOVE`/`ADJUST` must name an ingredient of the Menu Item's recipe revision in effect when saved. `applyModifierEffects` (pure) is the Phase 9 rule: `ADD` merges, `REMOVE` drops (a no-op if the recipe no longer has it) and wins over `ADJUST`, and a requirement adjusted to zero or below is dropped. Saving an effect moves no stock.
+
+**Permissions.** Nine new codes (102 in all): `inventory.count.approve`, `inventory.waste`, `inventory.transfer`, `inventory.configure`, `inventory.cost.view`, `purchasing.view`, `purchasing.manage`, `purchasing.submit`, `suppliers.manage`, alongside the older `inventory.view`, `.receive`, `.adjust` and `.count`. Owner, General Manager, Manager and Inventory Manager hold all of them. A Cook holds `inventory.view` and `inventory.waste`. Floor roles hold none. Counting and approving are separate. The `security.inventory-permissions`, `inventory.packaging-units` and `inventory.demo-catalog` seeds add the codes, packaging units, and six demo items stocked at MAIN with one demo supplier; no stock, ledger rows or orders are seeded.
+
+**Phase 9 extension points.** Order SEND resolves the Menu Item's effective revision (`resolveEffectiveRevisionForMenuItem`), its requirements (`resolveRevisionRequirements`), applies the selected modifiers' effects (`applyModifierEffects`), and posts each result with `postConsumption` in the SEND transaction, with its own reference for idempotency.
 
 ## 34. AWS POC Deployment Target
 
@@ -1615,7 +1640,7 @@ Deliver menus, categories/placements, menu items, availability, modifiers, prep 
 
 ### Phase 8: Inventory + Purchasing
 
-Deliver inventory ledger/balances, units, storage locations, suppliers, purchasing, partial receiving, waste, transfers, counts, variance, and weighted-average cost.
+Deliver inventory items and location stocking, product packaging conversions, the inventory ledger and balances, suppliers and supplier items, purchasing, partial receiving, waste, adjustments, Location transfers, counts and variance, par/reorder queries, weighted-average cost, recipe-version ingredients and modifier inventory effects.
 
 ### Phase 9: Orders
 

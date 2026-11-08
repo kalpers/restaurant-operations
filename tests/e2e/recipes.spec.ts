@@ -33,7 +33,7 @@ test.describe("recipe administration", () => {
     await add.getByRole("button", { name: "Add recipe" }).click();
     await page.getByRole("link", { name: `Open ${name}` }).click();
     await expect(page.getByRole("heading", { name })).toBeVisible();
-    await expect(page.getByText("Ingredients and their quantities are added when Inventory")).toBeVisible();
+    await expect(page.getByText("Saving a recipe never changes stock")).toBeVisible();
 
     // A draft revision with yield, unit and notes.
     const draft = page.getByRole("region", { name: "New revision" });

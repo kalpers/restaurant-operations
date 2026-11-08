@@ -1,5 +1,10 @@
 import { employeeReferenceDataSeed } from "./employee-reference-data";
 import {
+  inventoryDemoCatalogSeed,
+  packagingUnitsSeed,
+  securityInventoryPermissionsSeed,
+} from "./inventory-foundation";
+import {
   menuInitialConfigurationSeed,
   securityMenuPermissionsSeed,
   unitsOfMeasureSeed,
@@ -32,4 +37,7 @@ export const seeds: readonly Seed[] = [
   securityMenuPermissionsSeed,
   unitsOfMeasureSeed,
   menuInitialConfigurationSeed,
+  securityInventoryPermissionsSeed,
+  packagingUnitsSeed,
+  inventoryDemoCatalogSeed,
 ];

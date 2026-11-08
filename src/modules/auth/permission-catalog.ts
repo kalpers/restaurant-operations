@@ -88,6 +88,16 @@ export const PERMISSION_CATALOG = [
   { code: "inventory.receive", name: "Receive inventory", category: "Inventory" },
   { code: "inventory.adjust", name: "Adjust inventory", category: "Inventory" },
   { code: "inventory.count", name: "Count inventory", category: "Inventory" },
+  { code: "inventory.count.approve", name: "Approve inventory counts", category: "Inventory" },
+  { code: "inventory.waste", name: "Record waste", category: "Inventory" },
+  { code: "inventory.transfer", name: "Transfer inventory between locations", category: "Inventory" },
+  { code: "inventory.configure", name: "Configure inventory items", category: "Inventory" },
+  { code: "inventory.cost.view", name: "View inventory costs", category: "Inventory" },
+
+  { code: "purchasing.view", name: "View purchase orders", category: "Purchasing" },
+  { code: "purchasing.manage", name: "Create and edit draft purchase orders", category: "Purchasing" },
+  { code: "purchasing.submit", name: "Submit and cancel purchase orders", category: "Purchasing" },
+  { code: "suppliers.manage", name: "Manage suppliers and supplier items", category: "Purchasing" },
 
   { code: "orders.create", name: "Create orders", category: "Orders" },
   { code: "orders.submit", name: "Submit orders", category: "Orders" },

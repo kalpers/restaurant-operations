@@ -1,4 +1,6 @@
+import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm, type FormField } from "@/components/forms/entity-form";
+import { formatQuantity } from "@/components/inventory/format";
 import {
   describeSelection,
   formatMoney,
@@ -7,6 +9,12 @@ import {
 } from "@/components/menu/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
+import {
+  listInventoryItemChoices,
+  listUnitPickerChoices,
+} from "@/modules/inventory/queries/item-facts";
+import { listItems } from "@/modules/menu/services/catalog-service";
+import { listModifierEffects } from "@/modules/menu/services/modifier-effect-service";
 import { listGroups, listModifiers } from "@/modules/menu/services/modifier-service";
 
 export default async function ModifiersPage() {
@@ -17,6 +25,14 @@ export default async function ModifiersPage() {
     listModifiers(database, actor),
   ]);
   const modifierById = new Map(modifiers.map((modifier) => [modifier.id, modifier]));
+  const [menuItems, inventoryChoices, units, effects] = await Promise.all([
+    listItems(database, actor),
+    listInventoryItemChoices(database, actor.organizationId),
+    listUnitPickerChoices(database),
+    Promise.all(modifiers.map((modifier) => listModifierEffects(database, actor, modifier.id))),
+  ]);
+  const effectsOf = new Map(modifiers.map((modifier, index) => [modifier.id, effects[index]!]));
+  const unitOptions = [{ value: "", label: "No unit (REMOVE)" }, ...units.map((unit) => ({ value: unit.id, label: unit.code }))];
 
   const groupFields = (group?: (typeof groups)[number]): FormField[] => [
     { name: "name", label: "Name", required: true, defaultValue: group?.name },
@@ -156,6 +172,48 @@ export default async function ModifiersPage() {
                 fields={[
                   ...modifierFields(modifier),
                   { name: "active", label: "Active", type: "checkbox", defaultValue: modifier.active },
+                ]}
+              />
+
+              <h4 className="mb-1 mt-4 text-sm font-semibold">Inventory effects</h4>
+              <p className="mb-2 text-sm text-neutral-600">
+                Per menu item. ADD a quantity, REMOVE an ingredient of the item&apos;s recipe, or
+                ADJUST it by a signed quantity. Saving an effect doesn&apos;t move stock.
+              </p>
+              <ul className="mb-3 grid gap-2 text-sm">
+                {effectsOf.get(modifier.id)!.map((effect) => (
+                  <li key={effect.id} aria-label={`Effect ${effect.effectType} ${effect.inventoryItemName}`} className="flex flex-wrap items-center gap-3">
+                    {effect.menuItemName}: {effect.effectType} {effect.inventoryItemName}
+                    {effect.quantity !== null && ` ${formatQuantity(effect.quantity)} ${effect.unitCode ?? ""}`}
+                    <ActionButton
+                      method="DELETE"
+                      url={`/api/menu/modifiers/${modifier.id}/effects/${effect.id}`}
+                      label="Remove effect"
+                    />
+                  </li>
+                ))}
+              </ul>
+              <EntityForm
+                method="POST"
+                url={`/api/menu/modifiers/${modifier.id}/effects`}
+                submitLabel="Add effect"
+                resetOnSuccess
+                fields={[
+                  { name: "menuItemId", label: "On menu item", type: "select", required: true, options: menuItems.map((item) => ({ value: item.id, label: item.name })) },
+                  {
+                    name: "effectType",
+                    label: "Effect",
+                    type: "select",
+                    required: true,
+                    options: [
+                      { value: "ADD", label: "ADD" },
+                      { value: "REMOVE", label: "REMOVE" },
+                      { value: "ADJUST", label: "ADJUST" },
+                    ],
+                  },
+                  { name: "inventoryItemId", label: "Inventory item", type: "select", required: true, options: inventoryChoices.map((item) => ({ value: item.id, label: item.name })) },
+                  { name: "quantity", label: "Quantity (blank for REMOVE; signed for ADJUST)" },
+                  { name: "unitOfMeasureId", label: "Unit", type: "select", options: unitOptions, defaultValue: "" },
                 ]}
               />
             </li>

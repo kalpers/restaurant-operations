@@ -179,3 +179,20 @@ export const setRoutingSchema = z.object({
   /** The stations that prepare this item at the actor's location, in order. */
   prepStationIds: z.array(z.uuid()).max(10),
 });
+
+export const effectParamsSchema = z.object({ modifierId: z.uuid(), effectId: z.uuid() });
+
+const effectFields = {
+  effectType: z.enum(["ADD", "REMOVE", "ADJUST"]),
+  /** Null for REMOVE. Signed for ADJUST. A decimal string; the service checks the rest. */
+  quantity: decimalString.nullable().default(null),
+  unitOfMeasureId: z.uuid().nullable().default(null),
+};
+
+export const addEffectSchema = z.object({
+  menuItemId: z.uuid(),
+  inventoryItemId: z.uuid(),
+  ...effectFields,
+});
+
+export const updateEffectSchema = z.object({ ...effectFields, expectedVersion });

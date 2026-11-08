@@ -107,6 +107,56 @@ export function sumDecimals(values: readonly string[], scale: number): string {
   return toScale(total, scale);
 }
 
+export function negateDecimal(value: string): string {
+  const parsed = parse(value);
+
+  return format(-parsed.units, parsed.scale);
+}
+
+export function subtractDecimals(a: string, b: string): string {
+  return addDecimals(a, negateDecimal(b));
+}
+
+/** The exact product, at the combined scale of both factors. */
+export function multiplyExact(a: string, b: string): string {
+  const left = parse(a);
+  const right = parse(b);
+
+  return format(left.units * right.units, left.scale + right.scale);
+}
+
+/**
+ * `a / b` rounded ROUND_HALF_UP (halves away from zero) to `scale` places. This is the one
+ * place a rounding rule is applied; callers choose to use it only where policy allows.
+ */
+export function divideRoundHalfUp(a: string, b: string, scale: number): string {
+  const left = parse(a);
+  const right = parse(b);
+
+  if (right.units === 0n) {
+    throw new DecimalError("Division by zero.");
+  }
+
+  // a/b * 10^scale = (ua * 10^(sb + scale)) / (ub * 10^sa)
+  const numerator = left.units * 10n ** BigInt(right.scale + scale);
+  const denominator = right.units * 10n ** BigInt(left.scale);
+  const negative = numerator < 0n !== denominator < 0n;
+  const n = numerator < 0n ? -numerator : numerator;
+  const d = denominator < 0n ? -denominator : denominator;
+  let quotient = n / d;
+
+  if ((n % d) * 2n >= d) {
+    quotient += 1n;
+  }
+
+  return format(negative ? -quotient : quotient, scale);
+}
+
+/** Rounds ROUND_HALF_UP to `scale` places. */
+export function roundHalfUp(value: string, scale: number): string {
+  return divideRoundHalfUp(value, "1", scale);
+}
+
 /**
  * Exact product, returned at `scale` places. Throws if the exact product needs more
  * places than `scale`, so a conversion never silently rounds.

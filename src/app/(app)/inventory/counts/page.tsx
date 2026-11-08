@@ -1,0 +1,63 @@
+import Link from "next/link";
+
+import { EntityForm } from "@/components/forms/entity-form";
+import { COUNT_STATUS_LABELS } from "@/components/inventory/format";
+import { InventoryTabs } from "@/components/inventory/inventory-tabs";
+import { getDatabase } from "@/db";
+import { requirePageActorWithAny } from "@/modules/auth/guards";
+import { actorHolds } from "@/modules/inventory/services/access";
+import { listCounts } from "@/modules/inventory/services/count-service";
+
+export default async function CountsPage() {
+  const { location, actor } = await requirePageActorWithAny(["inventory.count", "inventory.count.approve"]);
+  const counts = await listCounts(getDatabase(), actor);
+
+  return (
+    <>
+      <h1 className="mb-1 text-2xl font-semibold">Inventory counts</h1>
+      <p className="mb-4 text-neutral-600">{location.locationName}</p>
+      <InventoryTabs current="/inventory/counts" permissions={location.permissions} />
+
+      {actorHolds(actor, "inventory.count") && (
+        <section aria-label="Start a count" className="mb-8 rounded border border-neutral-200 p-4">
+          <h2 className="mb-1 font-semibold">Start a count</h2>
+          <p className="mb-3 text-sm text-neutral-600">
+            Covers every active item stocked here. Expected quantities are captured now. Stock
+            stays live while you count; anything that moves before approval is flagged.
+          </p>
+          <EntityForm
+            method="POST"
+            url="/api/inventory/counts"
+            submitLabel="Start count"
+            resetOnSuccess
+            fields={[{ name: "name", label: "Count name", required: true }]}
+          />
+        </section>
+      )}
+
+      {counts.length === 0 ? (
+        <p className="text-neutral-600">No counts yet.</p>
+      ) : (
+        <ul className="grid gap-2">
+          {counts.map((count) => (
+            <li
+              key={count.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+            >
+              <span>
+                <span className="font-medium">{count.name}</span>{" "}
+                <span className="text-neutral-600">{COUNT_STATUS_LABELS[count.status] ?? count.status}</span>
+              </span>
+              <Link
+                href={`/inventory/counts/${count.id}`}
+                className="inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+              >
+                Open {count.name}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}

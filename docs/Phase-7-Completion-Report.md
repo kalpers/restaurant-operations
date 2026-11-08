@@ -8,7 +8,6 @@ Phase 7 is implemented and validated locally. Authorized staff can configure cat
 
 **Not yet confirmed:**
 
-- **GitHub Actions** has not run on this work (nothing was pushed).
 - **`db:reset` on your real development database** was deliberately not run, because it would delete your Owner account. The same command was proven on a throwaway PostgreSQL container.
 
 **Please review these decisions:**
@@ -237,7 +236,7 @@ Real `npm run db:reset` refusals on the throwaway container, with a probe row in
 | Production build | PASS |
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | Advisories remain; no dependency changed |
-| GitHub Actions | Not run |
+| GitHub Actions | PASS: reported by the project owner after the work was pushed; I did not see the run |
 
 ### Problems found during validation
 

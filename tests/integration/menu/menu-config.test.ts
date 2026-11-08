@@ -515,7 +515,7 @@ describe("menu configuration", () => {
       );
       const names = (tables as unknown as { tablename: string }[]).map((row) => row.tablename);
 
-      expect(names.filter((name) => /ticket|fulfillment|order|inventory/.test(name))).toEqual([]);
+      expect(names.filter((name) => /ticket|fulfillment|^orders$|^order_/.test(name))).toEqual([]);
     });
   });
 

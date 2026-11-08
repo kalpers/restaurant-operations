@@ -77,9 +77,10 @@ describe("menu module boundaries", () => {
     }
   });
 
-  it("does not import Inventory, Orders, Kitchen or other domains' modules", () => {
+  it("reaches Inventory only through its read door, and no other domain at all", () => {
     for (const file of files) {
-      const text = readFileSync(file, "utf8");
+      // The one allowed Inventory import: item identity and unit convertibility, read-only.
+      const text = readFileSync(file, "utf8").replaceAll("modules/inventory/queries/item-facts", "");
 
       expect(`${file}: ${/modules\/(inventory|orders|kitchen|restaurant|reservations|employees|scheduling)/.test(text)}`).toBe(
         `${file}: false`,
@@ -102,7 +103,7 @@ describe("menu module boundaries", () => {
       const checks = (text.match(/assert(Any)?Permission\(/g) ?? []).length;
 
       // Internal resolvers (price, revision, selection loading) document that callers check.
-      const internal = (text.match(/export async function (resolve\w+|loadSelectionGroups|loadUnitRules)/g) ?? []).length;
+      const internal = (text.match(/export async function (resolve\w+|loadSelectionGroups|loadUnitRules|listIngredients)/g) ?? []).length;
 
       expect(`${file}: ${checks >= exported - internal}`).toBe(`${file}: true`);
     }

@@ -63,3 +63,23 @@ export const convertUnitsSchema = z.object({
   fromUnit: z.string().trim().min(1).max(20),
   toUnit: z.string().trim().min(1).max(20),
 });
+
+export const ingredientParamsSchema = z.object({
+  recipeId: z.uuid(),
+  revisionId: z.uuid(),
+  ingredientId: z.uuid(),
+});
+
+const ingredientFields = {
+  quantity: decimalString,
+  unitOfMeasureId: z.uuid(),
+  preparationNote: optionalText(300),
+  sortOrder: z.int().min(0).max(100000).default(0),
+  /** The revision's version, which every ingredient change checks and bumps. */
+  expectedVersion,
+};
+
+export const addIngredientSchema = z.object({ inventoryItemId: z.uuid(), ...ingredientFields });
+export const updateIngredientSchema = z.object(ingredientFields);
+export const removeIngredientSchema = z.object({ expectedVersion });
+export const copyIngredientsSchema = z.object({ fromRevisionId: z.uuid(), expectedVersion });

@@ -4,8 +4,13 @@ import {
   addDecimals,
   compareDecimals,
   DecimalError,
+  divideRoundHalfUp,
   isPositiveDecimal,
   multiplyDecimals,
+  multiplyExact,
+  negateDecimal,
+  roundHalfUp,
+  subtractDecimals,
   sumDecimals,
   toScale,
 } from "./decimal";
@@ -41,6 +46,25 @@ describe("decimal arithmetic", () => {
     expect(isPositiveDecimal("0.0001")).toBe(true);
     expect(isPositiveDecimal("0")).toBe(false);
     expect(isPositiveDecimal("-1")).toBe(false);
+  });
+
+  it("subtracts and negates exactly", () => {
+    expect(subtractDecimals("10.0000", "12.5")).toBe("-2.5000");
+    expect(negateDecimal("3.25")).toBe("-3.25");
+    expect(negateDecimal("0.00")).toBe("0.00");
+    expect(multiplyExact("1.5", "2.25")).toBe("3.375");
+  });
+
+  it("divides with ROUND_HALF_UP, halves away from zero", () => {
+    expect(divideRoundHalfUp("50", "20", 4)).toBe("2.5000");
+    expect(divideRoundHalfUp("1", "3", 4)).toBe("0.3333");
+    expect(divideRoundHalfUp("2", "3", 4)).toBe("0.6667");
+    expect(divideRoundHalfUp("0.00005", "1", 4)).toBe("0.0001");
+    expect(divideRoundHalfUp("0.00004999", "1", 4)).toBe("0.0000");
+    expect(divideRoundHalfUp("-0.00005", "1", 4)).toBe("-0.0001");
+    expect(divideRoundHalfUp("10", "-4", 2)).toBe("-2.50");
+    expect(roundHalfUp("2.34565", 4)).toBe("2.3457");
+    expect(() => divideRoundHalfUp("1", "0", 4)).toThrow(DecimalError);
   });
 
   it("multiplies exactly and refuses a product that needs more places", () => {

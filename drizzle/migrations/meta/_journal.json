@@ -78,6 +78,20 @@
       "when": 1794166027994,
       "tag": "0010_menu_recipes_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794170754855,
+      "tag": "0011_inventory_purchasing",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794170765594,
+      "tag": "0012_inventory_constraints",
+      "breakpoints": true
     }
   ]
 }

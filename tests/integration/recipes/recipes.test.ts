@@ -425,7 +425,7 @@ describe("recipes", () => {
   });
 
   describe("detail and phase boundaries", () => {
-    it("exposes identity, revisions, yield and notes, with no ingredient or inventory data", async () => {
+    it("exposes identity, revisions, yield, notes and ingredients, with no cost or stock data", async () => {
       const recipe = await recipeFixture();
 
       await draft(recipe.id, "64", "Whisk");
@@ -433,20 +433,20 @@ describe("recipes", () => {
       const detail = await getRecipeDetail(database(), scenario.admin, recipe.id);
       const keys = JSON.stringify(detail).toLowerCase();
 
-      expect(detail.revisions[0]).toMatchObject({ yieldQuantity: "64.0000", yieldUnitCode: "EACH" });
-      for (const forbidden of ["ingredient", "inventory", "onhand", "cost"]) {
+      expect(detail.revisions[0]).toMatchObject({ yieldQuantity: "64.0000", yieldUnitCode: "EACH", ingredients: [] });
+      for (const forbidden of ["onhand", "quantityonhand", "cost", "balance"]) {
         expect(keys).not.toContain(forbidden);
       }
     });
 
-    it("has no ingredient, inventory, order or ticket tables", async () => {
+    it("has no order, ticket or settlement tables", async () => {
       const result = await database().execute(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public'` as never,
       );
       const names = (result as unknown as { tablename: string }[]).map((row) => row.tablename);
 
       expect(
-        names.filter((name) => /ingredient|inventory|order|ticket|supplier|purchase|component/.test(name)),
+        names.filter((name) => /^orders$|^order_|ticket|settlement|fulfillment/.test(name)),
       ).toEqual([]);
     });
   });

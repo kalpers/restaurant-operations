@@ -99,6 +99,8 @@ export const locationSettings = pgTable(
     allowReservations: boolean("allow_reservations").notNull().default(true),
     allowTakeout: boolean("allow_takeout").notNull().default(true),
     inventoryEnabled: boolean("inventory_enabled").notNull().default(true),
+    /** Approved policy: only CONSUME may take stock below zero, and only when true. */
+    allowNegativeInventory: boolean("allow_negative_inventory").notNull().default(false),
     schedulingEnabled: boolean("scheduling_enabled").notNull().default(true),
     kitchenDisplayEnabled: boolean("kitchen_display_enabled")
       .notNull()

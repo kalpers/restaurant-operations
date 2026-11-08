@@ -46,6 +46,13 @@ const EXPECTED_TABLES = [
   "public.employee_status_history",
   "public.employees",
   "public.guest_parties",
+  "public.inventory_balances",
+  "public.inventory_count_lines",
+  "public.inventory_counts",
+  "public.inventory_item_locations",
+  "public.inventory_item_unit_conversions",
+  "public.inventory_items",
+  "public.inventory_transactions",
   "public.location_settings",
   "public.locations",
   "public.menu_availability",
@@ -59,12 +66,18 @@ const EXPECTED_TABLES = [
   "public.menus",
   "public.modifier_group_modifiers",
   "public.modifier_groups",
+  "public.modifier_inventory_effects",
   "public.modifiers",
   "public.organizations",
   "public.party_status_history",
   "public.permissions",
   "public.positions",
   "public.prep_stations",
+  "public.purchase_order_lines",
+  "public.purchase_order_receipt_lines",
+  "public.purchase_order_receipts",
+  "public.purchase_orders",
+  "public.recipe_version_ingredients",
   "public.recipe_versions",
   "public.recipes",
   "public.reservation_hold_overrides",
@@ -86,6 +99,9 @@ const EXPECTED_TABLES = [
   "public.shifts",
   "public.staffing_template_requirements",
   "public.staffing_templates",
+  "public.supplier_item_cost_history",
+  "public.supplier_items",
+  "public.suppliers",
   "public.table_condition_history",
   "public.table_session_overrides",
   "public.table_session_tables",
@@ -277,6 +293,14 @@ describe("reconstruction from checked-in migrations", () => {
     await upgradeFromMigrationIndex(8);
   });
 
+  it("upgrades a Phase 7 database in place, keeping its data", async () => {
+    await upgradeFromMigrationIndex(10);
+    expect(
+      await query("SELECT allow_negative_inventory FROM location_settings"),
+    ).toEqual([{ allow_negative_inventory: false }]);
+    expect(await query("SELECT * FROM inventory_transactions")).toEqual([]);
+  });
+
   async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {
     // Apply only the migrations Phase 5 shipped, from a copy with a shortened journal.
     const oldFolder = mkdtempSync(path.join(tmpdir(), "old-migrations-"));
@@ -358,5 +382,6 @@ describe("reconstruction from checked-in migrations", () => {
     expect(await listTables()).toEqual(EXPECTED_TABLES);
     expect(await query("SELECT seed_key FROM seed_runs")).toEqual([]);
     expect(await countAppliedMigrations()).toBe(journal.entries.length);
-  });
+    // It builds the whole schema twice, so it needs more than the default 5 seconds.
+  }, 30_000);
 });

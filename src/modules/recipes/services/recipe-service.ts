@@ -4,7 +4,13 @@ import type { Database } from "@/db";
 import { isExclusionViolation, isUniqueViolation } from "@/db/helpers/database-errors";
 import { updateVersioned } from "@/db/helpers/versioned-update";
 import { nextVersion } from "@/db/helpers/versioning";
-import { menuItems, recipes, recipeVersions, unitsOfMeasure } from "@/db/schema";
+import {
+  menuItems,
+  recipes,
+  recipeVersionIngredients,
+  recipeVersions,
+  unitsOfMeasure,
+} from "@/db/schema";
 import { withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
@@ -21,10 +27,10 @@ import {
   type RevisionStatus,
 } from "../rules/revision-lifecycle";
 import { assertPermission } from "./access";
+import { listIngredients } from "./ingredient-service";
 
-// Recipe identity and revisions only. Ingredient rows and their quantities arrive in
-// Phase 8, when a revision can reference an Inventory Item. Nothing here reads or writes
-// inventory, and no operation here depends on stock.
+// Recipe identity and revisions. Ingredients (Inventory Item references) are managed in
+// `ingredient-service.ts`. Nothing here reads or writes stock.
 
 type RecipeInput = {
   name: string;
@@ -169,9 +175,17 @@ export async function getRecipeDetail(
       .orderBy(desc(recipeVersions.revisionNumber))
   ).map(({ revision, yieldUnitCode }) => ({ ...toRow(revision), yieldUnitCode }));
 
+  const ingredients = await listIngredients(
+    executor,
+    revisions.map((revision) => revision.id),
+  );
+
   return {
     recipe,
-    revisions,
+    revisions: revisions.map((revision) => ({
+      ...revision,
+      ingredients: ingredients.filter((row) => row.recipeVersionId === revision.id),
+    })),
     effectiveRevisionId: resolveRevisionAt(revisions, now)?.id ?? null,
   };
 }
@@ -415,6 +429,9 @@ export async function deleteDraftRevision(
   await withTransaction(database, async (transaction) => {
     await lockRecipe(transaction, actor, recipeId);
     assertEditable((await requireRevision(transaction, recipeId, revisionId)).status);
+    await transaction
+      .delete(recipeVersionIngredients)
+      .where(eq(recipeVersionIngredients.recipeVersionId, revisionId));
     await transaction.delete(recipeVersions).where(eq(recipeVersions.id, revisionId));
   });
 }

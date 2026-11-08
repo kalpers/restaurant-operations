@@ -4,9 +4,11 @@ import { z } from "zod";
 
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm, type FormField } from "@/components/forms/entity-form";
+import { formatQuantity } from "@/components/inventory/format";
 import { formatInstant } from "@/components/menu/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
+import { listInventoryItemChoices } from "@/modules/inventory/queries/item-facts";
 import { listItems } from "@/modules/menu/services/catalog-service";
 import { getRecipeDetail } from "@/modules/recipes/services/recipe-service";
 import { listUnits } from "@/modules/recipes/services/unit-service";
@@ -42,6 +44,12 @@ export default async function RecipeDetailPage({
     { value: "", label: "No unit" },
     ...units.map((unit) => ({ value: unit.id, label: `${unit.name} (${unit.code})` })),
   ];
+  const ingredientUnitOptions = units.map((unit) => ({ value: unit.id, label: unit.code }));
+  const inventoryChoices =
+    canEdit && revisions.some((revision) => revision.status === "DRAFT")
+      ? await listInventoryItemChoices(database, actor.organizationId)
+      : [];
+  const withIngredients = revisions.filter((revision) => revision.ingredients.length > 0);
 
   const draftFields = (revision?: (typeof revisions)[number]): FormField[] => [
     { name: "yieldQuantity", label: "Yield quantity", required: true, defaultValue: revision?.yieldQuantity },
@@ -62,8 +70,8 @@ export default async function RecipeDetailPage({
         {recipe.active ? "" : " · Inactive"}
       </p>
       <p className="mb-6 text-sm text-neutral-600">
-        A recipe says how something is prepared and what one batch yields. Ingredients and their
-        quantities are added when Inventory is introduced.
+        A recipe says how something is prepared, what one batch yields and which inventory items
+        it requires. Saving a recipe never changes stock; a published revision can&apos;t be edited.
       </p>
 
       {canEdit && (
@@ -117,6 +125,83 @@ export default async function RecipeDetailPage({
               )}
               {revision.preparationNotes && (
                 <p className="mt-2 whitespace-pre-wrap text-sm">{revision.preparationNotes}</p>
+              )}
+
+              <h4 className="mb-1 mt-3 text-sm font-semibold">Ingredients</h4>
+              {revision.ingredients.length === 0 ? (
+                <p className="text-sm text-neutral-600">None yet.</p>
+              ) : (
+                <ul className="grid gap-2 text-sm">
+                  {revision.ingredients.map((ingredient) => (
+                    <li key={ingredient.id} aria-label={`Ingredient ${ingredient.inventoryItemName}`}>
+                      {ingredient.inventoryItemName}: {formatQuantity(ingredient.quantity)} {ingredient.unitCode}
+                      {ingredient.preparationNote ? ` (${ingredient.preparationNote})` : ""}
+                      {canEdit && revision.status === "DRAFT" && (
+                        <div className="mt-2 grid gap-2 rounded border border-neutral-100 p-2">
+                          <EntityForm
+                            method="PATCH"
+                            url={`/api/recipes/${recipe.id}/revisions/${revision.id}/ingredients/${ingredient.id}`}
+                            submitLabel={`Save ${ingredient.inventoryItemName}`}
+                            hidden={{ expectedVersion: revision.version, sortOrder: ingredient.sortOrder }}
+                            fields={[
+                              { name: "quantity", label: "Quantity", required: true, defaultValue: ingredient.quantity },
+                              { name: "unitOfMeasureId", label: "Unit", type: "select", required: true, options: ingredientUnitOptions, defaultValue: ingredient.unitOfMeasureId },
+                              { name: "preparationNote", label: "Note", defaultValue: ingredient.preparationNote },
+                            ]}
+                          />
+                          <ActionButton
+                            method="DELETE"
+                            url={`/api/recipes/${recipe.id}/revisions/${revision.id}/ingredients/${ingredient.id}`}
+                            body={{ expectedVersion: revision.version }}
+                            label={`Remove ${ingredient.inventoryItemName}`}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {canEdit && revision.status === "DRAFT" && (
+                <div className="mt-3 grid gap-3 rounded border border-neutral-200 p-3">
+                  <h4 className="text-sm font-semibold">Add an ingredient</h4>
+                  <EntityForm
+                    method="POST"
+                    url={`/api/recipes/${recipe.id}/revisions/${revision.id}/ingredients`}
+                    submitLabel="Add ingredient"
+                    resetOnSuccess
+                    hidden={{ expectedVersion: revision.version, sortOrder: revision.ingredients.length }}
+                    fields={[
+                      {
+                        name: "inventoryItemId",
+                        label: "Inventory item",
+                        type: "select",
+                        required: true,
+                        options: inventoryChoices.map((item) => ({ value: item.id, label: `${item.name} (stocked in ${item.baseUnitCode})` })),
+                      },
+                      { name: "quantity", label: "Quantity", required: true },
+                      { name: "unitOfMeasureId", label: "Unit", type: "select", required: true, options: ingredientUnitOptions },
+                      { name: "preparationNote", label: "Note" },
+                    ]}
+                  />
+                  {revision.ingredients.length === 0 && withIngredients.length > 0 && (
+                    <EntityForm
+                      method="POST"
+                      url={`/api/recipes/${recipe.id}/revisions/${revision.id}/ingredients/copy`}
+                      submitLabel="Copy ingredients"
+                      hidden={{ expectedVersion: revision.version }}
+                      fields={[
+                        {
+                          name: "fromRevisionId",
+                          label: "Copy ingredients from",
+                          type: "select",
+                          required: true,
+                          options: withIngredients.map((source) => ({ value: source.id, label: `Revision ${source.revisionNumber}` })),
+                        },
+                      ]}
+                    />
+                  )}
+                </div>
               )}
 
               {canEdit && revision.status === "DRAFT" && (

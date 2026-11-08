@@ -25,6 +25,7 @@ import {
 } from "@/db/schema";
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
+import { securityInventoryPermissionsSeed } from "@/db/seeds/inventory-foundation";
 import { securityMenuPermissionsSeed } from "@/db/seeds/menu-foundation";
 import { securitySchedulingPermissionsSeed } from "@/db/seeds/scheduling-foundation";
 import { securityReservationsPermissionsSeed } from "@/db/seeds/reservations-foundation";
@@ -73,12 +74,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 93,
+    permissions: 102,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 12,
+    seedRuns: 15,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -117,6 +118,9 @@ describe("foundation seeds, on a fresh database", () => {
       "security.menu-permissions",
       "recipes.units-of-measure",
       "menu.initial-configuration",
+      "security.inventory-permissions",
+      "inventory.packaging-units",
+      "inventory.demo-catalog",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -125,7 +129,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(12);
+    expect(result.skipped).toHaveLength(15);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -217,13 +221,13 @@ describe("foundation seeds, on a fresh database", () => {
         );
 
       // The Phase 4 codes stay, because this test only rewinds Phase 3.
-      expect(await countPermissions()).toBe(73);
+      expect(await countPermissions()).toBe(82);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(93);
+      expect(await countPermissions()).toBe(102);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -562,6 +566,126 @@ describe("foundation seeds, on a fresh database", () => {
     });
   });
 
+  describe("upgrading a Phase 7 database", () => {
+    const PHASE_8 = [
+      "inventory.count.approve",
+      "inventory.waste",
+      "inventory.transfer",
+      "inventory.configure",
+      "inventory.cost.view",
+      "purchasing.view",
+      "purchasing.manage",
+      "purchasing.submit",
+      "suppliers.manage",
+    ];
+
+    const grantsOf = async (roleCode: string) =>
+      (
+        await database
+          .select({ code: permissions.code })
+          .from(rolePermissions)
+          .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+          .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+          .where(eq(roles.code, roleCode))
+      )
+        .map((row) => row.code)
+        .sort();
+
+    it("adds the inventory permissions, grants the Cook stock view, and restores nothing removed", async () => {
+      const newRows = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(inArray(permissions.code, PHASE_8));
+      const newIds = newRows.map((row) => row.id);
+
+      expect(newIds).toHaveLength(PHASE_8.length);
+
+      await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+
+      const [cook] = await database.select({ id: roles.id }).from(roles).where(eq(roles.code, "COOK"));
+      const [manager] = await database.select({ id: roles.id }).from(roles).where(eq(roles.code, "MANAGER"));
+      const [inventoryView] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "inventory.view"));
+      const [inventoryAdjust] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "inventory.adjust"));
+
+      // A Phase 7 Cook had no inventory.view; an administrator removed a Manager grant.
+      await database
+        .delete(rolePermissions)
+        .where(and(eq(rolePermissions.roleId, cook!.id), eq(rolePermissions.permissionId, inventoryView!.id)));
+      await database
+        .delete(rolePermissions)
+        .where(and(eq(rolePermissions.roleId, manager!.id), eq(rolePermissions.permissionId, inventoryAdjust!.id)));
+
+      await database.transaction((transaction) => securityInventoryPermissionsSeed.run(transaction));
+
+      expect(
+        await database.select().from(permissions).where(inArray(permissions.code, PHASE_8)),
+      ).toHaveLength(PHASE_8.length);
+      expect(await grantsOf("COOK")).toEqual(
+        ROLE_CATALOG.find((role) => role.code === "COOK")!.permissions.slice().sort(),
+      );
+      expect(await grantsOf("MANAGER")).toEqual(
+        ROLE_CATALOG.find((role) => role.code === "MANAGER")!
+          .permissions.filter((code) => code !== "inventory.adjust")
+          .sort(),
+      );
+      expect(await grantsOf("INVENTORY_MANAGER")).toEqual(expect.arrayContaining(PHASE_8));
+
+      for (const code of ["SERVER", "BARTENDER", "HOST", "WAIT_STAFF"]) {
+        expect((await grantsOf(code)).filter((grant) => PHASE_8.includes(grant))).toEqual([]);
+      }
+
+      expect((await grantsOf("COOK")).filter((grant) => PHASE_8.includes(grant))).toEqual([
+        "inventory.waste",
+      ]);
+
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: manager!.id, permissionId: inventoryAdjust!.id });
+    });
+  });
+
+  it("seeds a demo inventory catalog with no stock and no ledger rows", async () => {
+    const items = await database.select().from(schema.inventoryItems);
+    const itemLocations = await database.select().from(schema.inventoryItemLocations);
+    const supplierRows = await database.select().from(schema.suppliers);
+    const supplierItemRows = await database
+      .select({
+        code: schema.inventoryItems.code,
+        baseUnitsPerPurchase: schema.supplierItems.baseUnitsPerPurchase,
+      })
+      .from(schema.supplierItems)
+      .innerJoin(schema.inventoryItems, eq(schema.inventoryItems.id, schema.supplierItems.inventoryItemId));
+
+    expect(items.map((item) => item.code).sort()).toEqual([
+      "AMERICAN_CHEESE",
+      "BACON",
+      "BRIOCHE_BUN",
+      "GROUND_BEEF",
+      "LIME_JUICE",
+      "TITOS_VODKA",
+    ]);
+    expect(itemLocations).toHaveLength(6);
+    expect(supplierRows.map((supplier) => supplier.code)).toEqual(["DEMO_FOODS"]);
+    expect(Object.fromEntries(supplierItemRows.map((row) => [row.code, row.baseUnitsPerPurchase]))).toEqual({
+      AMERICAN_CHEESE: "120.0000",
+      BACON: "300.0000",
+      BRIOCHE_BUN: "12.0000",
+      GROUND_BEEF: "16.0000",
+      LIME_JUICE: "32.0000",
+      TITOS_VODKA: "12000.0000",
+    });
+    expect(await database.select().from(schema.inventoryTransactions)).toEqual([]);
+    expect(await database.select().from(schema.inventoryBalances)).toEqual([]);
+    expect(await database.select().from(schema.purchaseOrders)).toEqual([]);
+  });
+
   it("seeds units, conversions, categories, stations and an empty Main Menu", async () => {
     const units = await database.select().from(schema.unitsOfMeasure);
     const conversions = await database.select().from(schema.unitConversions);
@@ -571,6 +695,11 @@ describe("foundation seeds, on a fresh database", () => {
     const menuLocationRows = await database.select().from(schema.menuLocations);
 
     expect(units.map((unit) => unit.code).sort()).toEqual([
+      "BAG",
+      "BOTTLE",
+      "BOX",
+      "CAN",
+      "CASE",
       "EACH",
       "FL_OZ",
       "G",
@@ -579,6 +708,8 @@ describe("foundation seeds, on a fresh database", () => {
       "LB",
       "ML",
       "OZ_WEIGHT",
+      "PACK",
+      "SLICE",
     ]);
     expect(conversions).toHaveLength(6);
     expect(categories.map((category) => category.code).sort()).toEqual([

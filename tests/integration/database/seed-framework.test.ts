@@ -173,6 +173,9 @@ describe("runSeeds", () => {
       "security.menu-permissions",
       "recipes.units-of-measure",
       "menu.initial-configuration",
+      "security.inventory-permissions",
+      "inventory.packaging-units",
+      "inventory.demo-catalog",
     ]);
   });
 });
