@@ -57,6 +57,13 @@
       "when": 1793925673596,
       "tag": "0007_restaurant_seating",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794159308502,
+      "tag": "0008_reservations_waitlist",
+      "breakpoints": true
     }
   ]
 }

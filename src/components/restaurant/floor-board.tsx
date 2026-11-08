@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { ActionButton } from "@/components/forms/action-button";
 import { sendApiRequest } from "@/components/forms/api-request";
+import type { TableHoldIndicator } from "@/modules/reservations/services/hold-service";
 import type { FloorSession, FloorTable } from "@/modules/restaurant/services/floor-service";
 import type { ServerCandidate } from "@/modules/restaurant/services/server-eligibility-service";
 
@@ -25,10 +26,14 @@ export type FloorAbilities = {
   assignServer: boolean;
   capacityOverride: boolean;
   scheduleOverride: boolean;
+  holdOverride: boolean;
 };
 
 type FloorBoardProps = {
   tables: FloorTable[];
+  /** Near-term reservation plans per table. A hold is never occupancy. */
+  holds: TableHoldIndicator[];
+  timeZone: string;
   abilities: FloorAbilities;
   /** Area ID to who can work there. */
   candidates: Record<string, ServerCandidate[]>;
@@ -84,6 +89,14 @@ function useSubmit() {
   return { submit, pending, error };
 }
 
+function formatClock(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(iso));
+}
+
 function ErrorText({ error }: { error: string | null }) {
   return error ? (
     <p role="alert" className="text-sm text-red-700">
@@ -135,11 +148,13 @@ const NO_SERVER = "__none__";
 
 function SeatPartyPanel({
   selected,
+  holdsByTable,
   abilities,
   candidates,
   onSeated,
 }: {
   selected: readonly FloorTable[];
+  holdsByTable: ReadonlyMap<string, TableHoldIndicator>;
   abilities: FloorAbilities;
   candidates: Record<string, ServerCandidate[]>;
   onSeated: () => void;
@@ -149,6 +164,8 @@ function SeatPartyPanel({
   const [server, setServer] = useState(SECTION_DEFAULT);
   const [capacityReason, setCapacityReason] = useState("");
   const [scheduleReason, setScheduleReason] = useState("");
+  const [holdReason, setHoldReason] = useState("");
+  const heldTables = selected.filter((table) => holdsByTable.get(table.id)?.active);
   const capacity = selected.reduce((sum, table) => sum + table.capacity, 0);
   const party = Number(partySize);
   const overCapacity = party > capacity;
@@ -169,12 +186,14 @@ function SeatPartyPanel({
         : { serverEmployeeId: server === NO_SERVER ? null : server }),
       capacityOverrideReason: capacityReason.trim() || null,
       scheduleOverrideReason: scheduleReason.trim() || null,
+      holdOverrideReason: holdReason.trim() || null,
       notes: null,
     });
 
     if (seated) {
       setCapacityReason("");
       setScheduleReason("");
+      setHoldReason("");
       onSeated();
     }
   }
@@ -228,6 +247,26 @@ function SeatPartyPanel({
               <input
                 value={capacityReason}
                 onChange={(event) => setCapacityReason(event.target.value)}
+                className={INPUT_CLASS}
+              />
+            </label>
+          ) : (
+            <p className="text-sm">A manager can override this.</p>
+          )}
+        </div>
+      )}
+      {heldTables.length > 0 && (
+        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+          <p className="text-sm font-medium">
+            {heldTables.map((table) => table.tableNumber).join(", ")}{" "}
+            {heldTables.length === 1 ? "is" : "are"} on a reservation hold.
+          </p>
+          {abilities.holdOverride ? (
+            <label className="grid gap-1 text-sm font-medium">
+              Hold override reason
+              <input
+                value={holdReason}
+                onChange={(event) => setHoldReason(event.target.value)}
                 className={INPUT_CLASS}
               />
             </label>
@@ -541,7 +580,11 @@ function TableCard({
   selected,
   onToggle,
   now,
+  hold,
+  timeZone,
 }: {
+  hold: TableHoldIndicator | undefined;
+  timeZone: string;
   table: FloorTable;
   tables: readonly FloorTable[];
   abilities: FloorAbilities;
@@ -581,6 +624,14 @@ function TableCard({
             </p>
           )}
         </div>
+      )}
+      {hold && table.availability !== "OCCUPIED" && (
+        <p role="status" className="mt-1 text-sm font-medium text-purple-900">
+          {hold.active ? "Reservation hold" : "Reserved soon"} · reserved at{" "}
+          {formatClock(hold.reservationAt, timeZone)}
+          {hold.active ? "" : ` · hold begins ${formatClock(hold.holdStartsAt, timeZone)}`}
+          {hold.guestName ? ` · ${hold.guestName}` : ""}
+        </p>
       )}
       {table.warnings.map((warning) => (
         <p key={warning} role="status" className="mt-1 text-sm font-medium text-amber-900">
@@ -642,10 +693,29 @@ function TableCard({
   );
 }
 
-export function FloorBoard({ tables, abilities, candidates, now }: FloorBoardProps) {
+export function FloorBoard({
+  tables,
+  holds,
+  timeZone,
+  abilities,
+  candidates,
+  now,
+}: FloorBoardProps) {
   useFloorRefresh();
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // The soonest plan per table is the one worth showing.
+  const holdsByTable = useMemo(() => {
+    const map = new Map<string, TableHoldIndicator>();
+
+    for (const hold of [...holds].sort((a, b) => a.reservationAt.localeCompare(b.reservationAt))) {
+      if (!map.has(hold.tableId)) {
+        map.set(hold.tableId, hold);
+      }
+    }
+
+    return map;
+  }, [holds]);
   const visible = useMemo(
     // A party seated before its area was deactivated still has to be completed.
     () =>
@@ -672,6 +742,7 @@ export function FloorBoard({ tables, abilities, candidates, now }: FloorBoardPro
       {selected.length > 0 && (
         <SeatPartyPanel
           selected={selected}
+          holdsByTable={holdsByTable}
           abilities={abilities}
           candidates={candidates}
           onSeated={() => setSelectedIds([])}
@@ -690,6 +761,8 @@ export function FloorBoard({ tables, abilities, candidates, now }: FloorBoardPro
                   tables={visible}
                   abilities={abilities}
                   candidates={candidates}
+                  hold={holdsByTable.get(table.id)}
+                  timeZone={timeZone}
                   selected={selectedIds.includes(table.id)}
                   onToggle={() =>
                     setSelectedIds((current) =>

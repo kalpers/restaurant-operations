@@ -18,7 +18,14 @@ import {
   employeePositions,
   employees,
   employeeStatusHistory,
+  guestParties,
   locations,
+  partyStatusHistory,
+  reservationHoldOverrides,
+  reservations,
+  reservationTableAssignments,
+  waitlistEntries,
+  waitlistTableAssignments,
   positions,
   restaurantTables,
   scheduleGenerationRuns,
@@ -159,9 +166,16 @@ export function createEmployeeFixture(
  * only goes if a fixture location owns it: tests run on their own fixture locations.
  */
 export async function clearRestaurantData(database: Database): Promise<void> {
+  await database.delete(reservationHoldOverrides);
+  await database.delete(waitlistTableAssignments);
+  await database.delete(waitlistEntries);
+  await database.delete(reservationTableAssignments);
+  await database.delete(reservations);
   await database.delete(tableSessionOverrides);
   await database.delete(tableSessionTables);
   await database.delete(tableSessions);
+  await database.delete(partyStatusHistory);
+  await database.delete(guestParties);
   await database.delete(serverSectionAssignments);
 
   const main = await database

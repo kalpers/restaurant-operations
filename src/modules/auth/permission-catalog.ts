@@ -68,6 +68,11 @@ export const PERMISSION_CATALOG = [
 
   { code: "reservations.view", name: "View reservations", category: "Reservations" },
   { code: "reservations.manage", name: "Manage reservations", category: "Reservations" },
+  { code: "reservations.override-hold", name: "Seat a walk-in at a table under a reservation hold", category: "Reservations" },
+  { code: "waitlist.view", name: "View the waitlist", category: "Waitlist" },
+  { code: "waitlist.manage", name: "Manage the waitlist", category: "Waitlist" },
+  { code: "waitlist.notify", name: "Record waitlist notifications", category: "Waitlist" },
+  { code: "waitlist.seat", name: "Seat waitlist parties", category: "Waitlist" },
 
   { code: "menu.view", name: "View menu", category: "Menu" },
   { code: "menu.edit", name: "Edit menu", category: "Menu" },

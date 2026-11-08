@@ -245,9 +245,10 @@ describe("restaurant module boundaries", () => {
     }
   });
 
-  it("creates no order, reservation or guest-party concept", () => {
+  it("creates no order or reservation concept, and keeps the Guest Party link optional", () => {
     const schema = readFileSync("src/db/schema/restaurant.ts", "utf8");
 
-    expect(schema).not.toMatch(/order_id|orderId|guest_party_id|reservation_id/);
+    expect(schema).not.toMatch(/order_id|orderId|reservation_id|reservationId/);
+    expect(schema).toContain('guestPartyId: uuid("guest_party_id"),');
   });
 });

@@ -18,6 +18,8 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/scheduling/availability", label: "Availability", permission: "schedule.availability.manage" },
   { href: "/scheduling/staffing", label: "Staffing & rules", permission: "schedule.templates.manage" },
   { href: "/restaurant/floor", label: "Floor", permission: "restaurant.view" },
+  { href: "/host/reservations", label: "Reservations", permission: "reservations.view" },
+  { href: "/host/waitlist", label: "Waitlist", permission: "waitlist.view" },
   { href: "/restaurant/tables", label: "Tables", permission: "restaurant.tables.manage" },
   { href: "/restaurant/sections", label: "Sections", permission: "restaurant.sections.manage" },
   { href: "/admin/organization", label: "Organization", permission: "organization.view" },

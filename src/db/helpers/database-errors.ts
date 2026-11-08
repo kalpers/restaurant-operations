@@ -10,3 +10,16 @@ export function isUniqueViolation(error: unknown): boolean {
 export function isExclusionViolation(error: unknown): boolean {
   return readErrorCode(error) === EXCLUSION_VIOLATION;
 }
+
+/** The violated constraint's name, from the driver error or the `cause` chain beneath it. */
+export function readConstraintName(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  if ("constraint_name" in error && typeof error.constraint_name === "string") {
+    return error.constraint_name;
+  }
+
+  return "cause" in error ? readConstraintName(error.cause) : undefined;
+}

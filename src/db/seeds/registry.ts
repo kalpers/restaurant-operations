@@ -4,6 +4,7 @@ import {
   restaurantInitialFloorSeed,
   securityRestaurantPermissionsSeed,
 } from "./restaurant-foundation";
+import { securityReservationsPermissionsSeed } from "./reservations-foundation";
 import type { Seed } from "./run-seeds";
 import {
   schedulingDefaultRulesSeed,
@@ -22,4 +23,5 @@ export const seeds: readonly Seed[] = [
   schedulingDefaultRulesSeed,
   securityRestaurantPermissionsSeed,
   restaurantInitialFloorSeed,
+  securityReservationsPermissionsSeed,
 ];

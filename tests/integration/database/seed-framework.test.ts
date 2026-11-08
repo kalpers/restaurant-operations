@@ -169,6 +169,7 @@ describe("runSeeds", () => {
       "scheduling.default-rules",
       "security.restaurant-permissions",
       "restaurant.initial-floor",
+      "security.reservations-permissions",
     ]);
   });
 });

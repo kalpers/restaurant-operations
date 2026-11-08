@@ -1,6 +1,6 @@
 import { getDatabase } from "@/db";
 import { requireApiActor } from "@/modules/auth/guards";
-import { cancelSession } from "@/modules/restaurant/services/session-service";
+import { cancelTableSession } from "@/workflows/end-table-session/end-table-session";
 import { cancelSessionSchema, sessionIdParamsSchema } from "@/modules/restaurant/validators/restaurant-validators";
 import { apiRoute, parseJsonBody, parseWith } from "@/shared/http/api-route";
 
@@ -11,6 +11,6 @@ export const POST = apiRoute<{ sessionId: string }>(
     const p = parseWith(sessionIdParamsSchema, params);
     const body = await parseJsonBody(request, cancelSessionSchema);
 
-    return { body: await cancelSession(getDatabase(), actor, p.sessionId, body) };
+    return { body: await cancelTableSession(getDatabase(), actor, p.sessionId, body) };
   },
 );

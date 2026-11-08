@@ -1,0 +1,162 @@
+import { z } from "zod";
+
+import {
+  CREATABLE_RESERVATION_STATUSES,
+  RESERVATION_SOURCES,
+  RESERVATION_STATUSES,
+} from "../types";
+
+// Shape only. Business rules are in the services and PostgreSQL has the final word.
+
+const expectedVersion = z.int().positive();
+const partySize = z.int().min(1).max(500);
+const minutes = z.int().min(1).max(24 * 60);
+const requiredText = (max: number) => z.string().trim().min(1).max(max);
+
+/** Blank becomes null, so "no value" has one representation. */
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .default(null)
+    .transform((value) => (value === "" ? null : value));
+
+const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const tableIds = z.array(z.uuid()).max(3);
+const seatTableIds = z.array(z.uuid()).min(1).max(30);
+
+const guestFields = {
+  guestName: requiredText(120),
+  partySize,
+  phone: optionalText(40),
+  email: optionalText(200),
+  specialRequests: optionalText(500),
+};
+
+export const reservationIdParamsSchema = z.object({ reservationId: z.uuid() });
+export const entryIdParamsSchema = z.object({ entryId: z.uuid() });
+export const expectedVersionSchema = z.object({ expectedVersion });
+
+export const createReservationSchema = z.object({
+  ...guestFields,
+  localDate,
+  localTime,
+  expectedDurationMinutes: minutes.nullable().default(null),
+  source: z.enum(RESERVATION_SOURCES),
+  notes: optionalText(500),
+  status: z.enum(CREATABLE_RESERVATION_STATUSES).default("CONFIRMED"),
+  tableIds: tableIds.default([]),
+});
+
+export const updateReservationSchema = z.object({
+  ...guestFields,
+  localDate,
+  localTime,
+  expectedDurationMinutes: minutes,
+  notes: optionalText(500),
+  /** Left out, the planned tables stay as they are. */
+  tableIds: tableIds.optional(),
+  expectedVersion,
+});
+
+export const cancelReservationSchema = z.object({
+  reason: optionalText(500),
+  expectedVersion,
+});
+
+export const plannedTablesSchema = z.object({
+  tableIds,
+  expectedVersion,
+});
+
+export const conflictPreviewSchema = z.object({
+  tableIds: z.array(z.uuid()).max(3),
+  localDate,
+  localTime,
+  expectedDurationMinutes: minutes,
+  partySize,
+  excludeReservationId: z.uuid().nullable().default(null),
+});
+
+export const listReservationsQuerySchema = z.object({
+  from: localDate.optional(),
+  to: localDate.optional(),
+  status: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value.split(",") : []))
+    .pipe(z.array(z.enum(RESERVATION_STATUSES))),
+});
+
+const seatOptions = {
+  tableIds: seatTableIds,
+  serverEmployeeId: z.uuid().nullable().optional(),
+  capacityOverrideReason: optionalText(500),
+  scheduleOverrideReason: optionalText(500),
+  holdOverrideReason: optionalText(500),
+  notes: optionalText(500),
+};
+
+export const seatReservationSchema = z.object({
+  ...seatOptions,
+  expectedVersion,
+});
+
+export const seatWaitlistSchema = z.object({
+  ...seatOptions,
+  expectedVersion,
+});
+
+export const seatWalkInSchema = z.object({
+  ...guestFields,
+  ...seatOptions,
+});
+
+export const addToWaitlistSchema = z
+  .object({
+    guestName: requiredText(120).optional(),
+    partySize: partySize.optional(),
+    phone: optionalText(40),
+    email: optionalText(200),
+    specialRequests: optionalText(500),
+    /** A reservation party joining the waitlist, so no second party is made. */
+    guestPartyId: z.uuid().optional(),
+    quotedWaitMinutes: z.int().min(0).max(24 * 60).nullable().default(null),
+    preferredAreaId: z.uuid().nullable().default(null),
+    notes: optionalText(500),
+  })
+  .refine(
+    (value) => value.guestPartyId || (value.guestName && value.partySize),
+    { message: "A name and party size, or an existing party, are required." },
+  );
+
+export const updateWaitlistSchema = z.object({
+  quotedWaitMinutes: z.int().min(0).max(24 * 60).nullable(),
+  preferredAreaId: z.uuid().nullable().optional(),
+  notes: optionalText(500).optional(),
+  expectedVersion,
+});
+
+export const waitlistTablesSchema = z.object({
+  tableIds,
+  expectedVersion,
+});
+
+export const removeWaitlistSchema = z.object({
+  outcome: z.enum(["CANCELLED", "LEFT"]),
+  reason: optionalText(500),
+  expectedVersion,
+});
+
+export const recommendationQuerySchema = z.object({
+  partySize: z.coerce.number().int().min(1).max(500),
+  areaId: z.uuid().optional(),
+  guestPartyId: z.uuid().optional(),
+});
+
+export const quoteQuerySchema = z.object({
+  partySize: z.coerce.number().int().min(1).max(500),
+});

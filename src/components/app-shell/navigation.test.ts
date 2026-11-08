@@ -36,6 +36,8 @@ describe("visibleNavigation", () => {
       "Availability",
       "Staffing & rules",
       "Floor",
+      "Reservations",
+      "Waitlist",
       "Tables",
       "Sections",
       "Organization",

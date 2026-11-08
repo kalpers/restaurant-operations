@@ -531,9 +531,13 @@ Tables:
 guest_parties
 reservations
 reservation_table_assignments
+reservation_hold_overrides
 waitlist_entries
+waitlist_table_assignments
 party_status_history
 ```
+
+`waitlist_table_assignments` keeps the host's planned table selection as replaceable history, and `reservation_hold_overrides` is the append-only record of a manager seating an unrelated party under a hold. Neither is an audit log, and the Guest Party link is a nullable `table_sessions.guest_party_id`.
 
 Guest Party is the common guest concept for reservations and walk-ins.
 
@@ -1438,7 +1442,7 @@ Scheduling permissions are separate for viewing/editing/generating/publishing (`
 
 **Condition and occupancy are separate facts.** `restaurant_tables.condition` is `CLEAN`, `DIRTY` or `OUT_OF_SERVICE`, and nothing else. Occupancy derives from open rows in `table_session_tables`, so a clean, occupied table is normal. The labels `AVAILABLE`, `OCCUPIED`, `DIRTY`, `OUT_OF_SERVICE` and `INACTIVE` are derived for screens and stored nowhere. A table is inactive if it, or its area, is. Takeout is never a table: a table or section can't be created in a Takeout area.
 
-**Table sessions** run `ACTIVE -> COMPLETED` or `ACTIVE -> CANCELLED`. A partial unique index allows one open membership per physical table, and every operation locks the session and then its tables, sorted by ID, before reading availability, so two hosts can't take one table. Combined tables are relational membership rows; table numbers never encode a combination. All tables in a session must be in one area, so server qualification has one answer, and there is no cap on how many. The three-table limit in section 13 applies to Phase 6 recommendations only.
+**Table sessions** run `ACTIVE -> COMPLETED` or `ACTIVE -> CANCELLED`. A partial unique index allows one open membership per physical table, and every operation locks the session and then its tables, sorted by ID, before reading availability, so two hosts can't take one table. Combined tables are relational membership rows; table numbers never encode a combination. All tables in a session must be in one area, so server qualification has one answer, and there is no cap on how many. The three-table limit in section 13 applies to Phase 6 recommendations and planned reservation tables, not to real sessions.
 
 **Capacity.** A party fits if it's no larger than the sum of its tables' capacities. `minimum_capacity` is guidance only. Going over needs `restaurant.capacity.override` and a reason, and it's checked again on each move and removal. Each override writes a row to the append-only `table_session_overrides`, which holds overrides only and isn't an audit log.
 
@@ -1452,7 +1456,27 @@ Scheduling permissions are separate for viewing/editing/generating/publishing (`
 
 **Permissions.** `restaurant.view`, `.tables.manage`, `.sections.manage`, `.seat`, `.move`, `.complete-session`, `.cancel-session`, `.clean-table`, `.condition.manage`, `.server.assign`, `.capacity.override` and `.schedule.override`. Phase 2's `restaurant.manage` was never enforced and is retired by the `security.restaurant-permissions` seed. Owner, General Manager and Manager hold all of them. Host holds `view`, `seat`, `move`, `complete-session`, `clean-table` and `server.assign`. Server and Bartender add `complete-session` and `clean-table`; Wait Staff adds `clean-table`. Only capacity and schedule matching can be overridden. Location, inactive, occupied, dirty, out-of-service and position rules cannot.
 
-The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Sessions have no Guest Party or order link yet: Phase 6 adds the Guest Party relationship to `table_sessions`, and Phase 9 adds orders that reference a session and an open-order precondition in `completeSession`. The floor refreshes every 30 seconds until realtime arrives in Phase 10.
+The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Sessions have no order link yet: Phase 9 adds orders that reference a session and an open-order precondition in `completeSession`. The floor refreshes every 30 seconds until realtime arrives in Phase 10.
+
+### Phase 6 Reservations and Waitlist
+
+**Guest Party, Reservation and Waitlist Entry are three records.** A Guest Party is the group served. A Reservation is one arrival plan for it (at most one per party), and a Waitlist Entry is a wait for a table (at most one open per party). A walk-in has a party and perhaps an entry, with no reservation. A reservation party seated at once never joins the waitlist, and one that has to wait joins it without a second party. `party_status_history` is append-only and each status change writes it in the same transaction. Contact fields (`phone`, `email`) exist only to run the two lists: they are never logged, never appear in conflict summaries, recommendations or the floor, and come back only to holders of `reservations.view` or `waitlist.view`.
+
+**Reservation statuses** are `PENDING`, `CONFIRMED`, `CHECKED_IN`, `SEATED`, `COMPLETED`, `CANCELLED` and `NO_SHOW`. Staff-created reservations are `CONFIRMED` unless entered as `PENDING`; `PENDING -> CONFIRMED` is an explicit step, a pending reservation can be cancelled but cannot check in, be seated or be a no-show, and it still blocks planned-table conflicts and holds. `CONFIRMED -> CHECKED_IN` records `checked_in_at`, and check-in creates no session. A confirmed or checked-in party can be seated, and seating from `CONFIRMED` records the arrival. `SEATED -> COMPLETED` is done by the `completeTableSession` workflow in the same transaction as the Table Session, with no trigger between domains. Cancelling a reservation after seating is refused. Cancelling a mistaken seating (`cancelTableSession`) returns the party to `CHECKED_IN` (or its waitlist entry to `WAITING`/`NOTIFIED`) and the history says so. Reservation times are entered as location-local date and time and converted with the location time zone; `business_date` comes from `BusinessDateService`.
+
+**Holds.** `location_settings.reservation_pre_hold_minutes` and `reservation_post_grace_minutes` (both 15 by default) define two separate half-open intervals, computed only in `src/modules/reservations/rules/hold-intervals.ts`: reservation planning conflicts use `[reservation_at - pre_hold, reservation_at + expected_duration + post_grace)` and walk-in hold protection uses `[reservation_at - pre_hold, reservation_at + post_grace)`. Adjacent intervals do not conflict. `PENDING`, `CONFIRMED` and `CHECKED_IN` reservations block and hold; `SEATED`, `COMPLETED`, `CANCELLED` and `NO_SHOW` do not, and a reservation whose window has ended is history rather than a conflict. A hold is a planning protection and never occupancy: a held table is physically `AVAILABLE`, and the floor shows it with a separate "Reservation hold" or "Reserved soon" indicator. No automated job changes a reservation.
+
+**Planned tables** (`reservation_table_assignments`) are ended, never deleted, when replaced, cancelled, marked no-show or seated, so what was planned stays beside what was used. At most three tables in one area may be planned, their combined capacity must seat the party (planning has no capacity override; the Phase 5 override applies when seating), and every table is locked before conflicts are checked so two hosts can't plan one table. Seating may use different tables, and the planned rows are not rewritten.
+
+**No-show** is manual, only for a `CONFIRMED` reservation, at or after `reservation_at + reservation_post_grace_minutes`. It records the actor and time, releases the planned tables, and never touches seating.
+
+**Waitlist statuses** are `WAITING`, `NOTIFIED`, `TABLE_ASSIGNED`, `SEATED`, `CANCELLED` and `LEFT`. `NOTIFIED` records that staff contacted the party; nothing is sent. `TABLE_ASSIGNED` is the host's saved selection and creates no occupancy. A quoted wait is an estimate staff may type or replace. The suggestion is a conservative function of what is seated now, the usual turn time (`default_table_turn_minutes`), active holds and the parties ahead, and it learns nothing from history. `LEFT` is the party giving up; `CANCELLED` is a removal. Neither deletes anything.
+
+**Recommendations** are a pure ranked list, never an action. Only `AVAILABLE` tables with no hold for another party qualify. One table ranks before a combination, then fewer tables, then the preferred Restaurant Area, then the smallest surplus of seats, then natural table number and ID. Combinations have at most three tables in one area and no table that isn't needed. Excluded tables come back with a reason. Viewing a suggestion reserves nothing.
+
+**Seating orchestration.** `seatReservationParty`, `seatWaitlistParty` and `seatWalkIn` (`src/workflows/seat-guest-party/`) lock the party, its reservation and its open waitlist entry in that order, check the version the host saw, then run the Phase 5 seating (`seatPartyInTransaction`) on the same transaction, then move the party, reservation and waitlist entry to `SEATED` and end the planned tables. A unique index allows one `ACTIVE` session per Guest Party. Reservation holds are checked after the Phase 5 rules: an ordinary host can't seat an unrelated party at a held table. A holder of `reservations.override-hold` can with a reason, which appends a `reservation_hold_overrides` row; the override never bypasses dirty, out-of-service, occupied, inactive, capacity, location or server rules, and never cancels the reservation. Orders in Phase 9 still reference the Table Session, not the reservation.
+
+**Permissions.** `reservations.view`, `.manage`, `.override-hold` and `waitlist.view`, `.manage`, `.notify`, `.seat`. Owner, General Manager and Manager hold all of them. Host holds all except `reservations.override-hold`. Seating a reservation or waitlist party needs `restaurant.seat` as well. The `security.reservations-permissions` seed adds the new codes. No reservation, party or waitlist data is seeded.
 
 ## 34. AWS POC Deployment Target
 

@@ -69,6 +69,8 @@ export const seatPartySchema = z.object({
   serverEmployeeId: z.uuid().nullable().optional(),
   capacityOverrideReason: optionalReason,
   scheduleOverrideReason: optionalReason,
+  /** For a table held for another party's reservation. Needs the override permission. */
+  holdOverrideReason: optionalReason,
   notes: optionalText(500),
 });
 

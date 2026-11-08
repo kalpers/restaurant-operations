@@ -428,6 +428,8 @@ export async function assignSessionServer(
   });
 }
 
+export type EndedSession = Versioned & { guestPartyId: string | null };
+
 /**
  * Guests have left: ends the session and marks every table it holds DIRTY, in one
  * transaction. Phase 9 adds its open-order precondition here, after the session is locked.
@@ -440,29 +442,43 @@ export async function completeSession(
 ): Promise<Versioned> {
   assertPermission(actor, "restaurant.complete-session");
 
-  return withTransaction(database, async (transaction) => {
-    const now = new Date();
+  const { id, version } = await withTransaction(database, (transaction) =>
+    completeSessionInTransaction(transaction, actor, sessionId, input),
+  );
 
-    await lockActiveSession(transaction, actor, sessionId, input.expectedVersion);
+  return { id, version };
+}
 
-    const tableIds = await currentTableIds(transaction, sessionId);
+/** Completion as part of a larger unit of work. The result says which party it was for. */
+export async function completeSessionInTransaction(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  sessionId: string,
+  input: { expectedVersion: number },
+): Promise<EndedSession> {
+  assertPermission(actor, "restaurant.complete-session");
 
-    await lockTablesAtLocation(transaction, actor.locationId, tableIds);
-    await endMemberships(transaction, { sessionId, tableIds, leftAt: now });
-    await markUsedTablesDirty(
-      transaction,
-      actor,
-      tableIds,
-      "Session completed",
-      now,
-    );
+  const now = new Date();
+  const session = await lockActiveSession(
+    transaction,
+    actor,
+    sessionId,
+    input.expectedVersion,
+  );
+  const tableIds = await currentTableIds(transaction, sessionId);
 
-    return bumpSession(transaction, sessionId, {
+  await lockTablesAtLocation(transaction, actor.locationId, tableIds);
+  await endMemberships(transaction, { sessionId, tableIds, leftAt: now });
+  await markUsedTablesDirty(transaction, actor, tableIds, "Session completed", now);
+
+  return {
+    ...(await bumpSession(transaction, sessionId, {
       status: "COMPLETED",
       completedAt: now,
       completedByUserId: actor.userId,
-    });
-  });
+    })),
+    guestPartyId: session.guestPartyId,
+  };
 }
 
 /**
@@ -477,21 +493,40 @@ export async function cancelSession(
 ): Promise<Versioned> {
   assertPermission(actor, "restaurant.cancel-session");
 
-  return withTransaction(database, async (transaction) => {
-    const now = new Date();
+  const { id, version } = await withTransaction(database, (transaction) =>
+    cancelSessionInTransaction(transaction, actor, sessionId, input),
+  );
 
-    await lockActiveSession(transaction, actor, sessionId, input.expectedVersion);
+  return { id, version };
+}
 
-    const tableIds = await currentTableIds(transaction, sessionId);
+export async function cancelSessionInTransaction(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  sessionId: string,
+  input: { reason: string; expectedVersion: number },
+): Promise<EndedSession> {
+  assertPermission(actor, "restaurant.cancel-session");
 
-    await lockTablesAtLocation(transaction, actor.locationId, tableIds);
-    await endMemberships(transaction, { sessionId, tableIds, leftAt: now });
+  const now = new Date();
+  const session = await lockActiveSession(
+    transaction,
+    actor,
+    sessionId,
+    input.expectedVersion,
+  );
+  const tableIds = await currentTableIds(transaction, sessionId);
 
-    return bumpSession(transaction, sessionId, {
+  await lockTablesAtLocation(transaction, actor.locationId, tableIds);
+  await endMemberships(transaction, { sessionId, tableIds, leftAt: now });
+
+  return {
+    ...(await bumpSession(transaction, sessionId, {
       status: "CANCELLED",
       cancelledAt: now,
       cancelledByUserId: actor.userId,
       cancelReason: input.reason,
-    });
-  });
+    })),
+    guestPartyId: session.guestPartyId,
+  };
 }

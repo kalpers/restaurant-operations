@@ -87,6 +87,12 @@ export const locationSettings = pgTable(
     defaultWaitQuoteMinutes: integer("default_wait_quote_minutes")
       .notNull()
       .default(15),
+    reservationPreHoldMinutes: integer("reservation_pre_hold_minutes")
+      .notNull()
+      .default(15),
+    reservationPostGraceMinutes: integer("reservation_post_grace_minutes")
+      .notNull()
+      .default(15),
     allowWalkIns: boolean("allow_walk_ins").notNull().default(true),
     allowReservations: boolean("allow_reservations").notNull().default(true),
     allowTakeout: boolean("allow_takeout").notNull().default(true),
@@ -103,6 +109,10 @@ export const locationSettings = pgTable(
     check(
       "location_settings_minutes_positive",
       sql`${table.defaultTableTurnMinutes} > 0 AND ${table.defaultReservationDurationMinutes} > 0 AND ${table.defaultWaitQuoteMinutes} > 0`,
+    ),
+    check(
+      "location_settings_reservation_hold_non_negative",
+      sql`${table.reservationPreHoldMinutes} >= 0 AND ${table.reservationPostGraceMinutes} >= 0`,
     ),
   ],
 );

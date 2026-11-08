@@ -21,6 +21,7 @@ import {
 import { versionColumn } from "../helpers/versioning";
 import { users } from "./auth";
 import { employees } from "./employees";
+import { guestParties } from "./guest-parties";
 import { locations, restaurantAreas } from "./organization";
 
 // Occupancy isn't a column here: it derives from `table_session_tables`, and a partial
@@ -109,7 +110,7 @@ export const tableConditionHistory = pgTable(
   ],
 );
 
-/** The seating of a party at one or more tables. Phase 6 adds the Guest Party link. */
+/** The seating of a party at one or more tables. `guest_party_id` links it to the Guest Party. */
 export const tableSessions = pgTable(
   "table_sessions",
   {
@@ -117,6 +118,7 @@ export const tableSessions = pgTable(
     locationId: uuid("location_id")
       .notNull()
       .references(() => locations.id, { onDelete: "restrict" }),
+    guestPartyId: uuid("guest_party_id"),
     partySize: integer("party_size").notNull(),
     status: text("status").notNull().default("ACTIVE"),
     assignedServerEmployeeId: uuid("assigned_server_employee_id").references(
@@ -146,6 +148,15 @@ export const tableSessions = pgTable(
       table.id,
       table.locationId,
     ),
+    foreignKey({
+      name: "table_sessions_guest_party_location_fk",
+      columns: [table.guestPartyId, table.locationId],
+      foreignColumns: [guestParties.id, guestParties.locationId],
+    }).onDelete("restrict"),
+    // A guest party can't be seated twice at once. Walk-ins without a party are exempt.
+    uniqueIndex("table_sessions_one_active_per_guest_party_unique")
+      .on(table.guestPartyId)
+      .where(sql`${table.status} = 'ACTIVE' AND ${table.guestPartyId} IS NOT NULL`),
     check("table_sessions_party_size_positive", sql`${table.partySize} > 0`),
     check(
       "table_sessions_status_valid",

@@ -1,6 +1,15 @@
-import { readFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -36,11 +45,16 @@ const EXPECTED_TABLES = [
   "public.employee_scheduling_preferences",
   "public.employee_status_history",
   "public.employees",
+  "public.guest_parties",
   "public.location_settings",
   "public.locations",
   "public.organizations",
+  "public.party_status_history",
   "public.permissions",
   "public.positions",
+  "public.reservation_hold_overrides",
+  "public.reservation_table_assignments",
+  "public.reservations",
   "public.restaurant_areas",
   "public.restaurant_tables",
   "public.role_permissions",
@@ -64,6 +78,8 @@ const EXPECTED_TABLES = [
   "public.time_off_requests",
   "public.user_roles",
   "public.users",
+  "public.waitlist_entries",
+  "public.waitlist_table_assignments",
 ];
 
 const journal = JSON.parse(
@@ -231,6 +247,76 @@ describe("reconstruction from checked-in migrations", () => {
     expect(await query("SELECT seed_key FROM seed_runs")).toEqual([
       { seed_key: "fixture.kept" },
     ]);
+  });
+
+  it("upgrades a Phase 5 database in place, keeping its data", async () => {
+    // Apply only the migrations Phase 5 shipped, from a copy with a shortened journal.
+    const phase5Folder = mkdtempSync(path.join(tmpdir(), "phase5-migrations-"));
+
+    try {
+      cpSync(MIGRATIONS_FOLDER, phase5Folder, { recursive: true });
+
+      const journalPath = path.join(phase5Folder, "meta", "_journal.json");
+      const full = JSON.parse(readFileSync(journalPath, "utf8")) as {
+        entries: { idx: number }[];
+      };
+
+      writeFileSync(
+        journalPath,
+        JSON.stringify({
+          ...full,
+          entries: full.entries.filter((entry) => entry.idx <= 7),
+        }),
+      );
+
+      const client = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+
+      try {
+        await migrate(drizzle(client), { migrationsFolder: phase5Folder });
+      } finally {
+        await client.end();
+      }
+    } finally {
+      rmSync(phase5Folder, { recursive: true, force: true });
+    }
+
+    expect(await countAppliedMigrations()).toBe(journal.entries.length - 1);
+    await query(`
+      WITH org AS (
+        INSERT INTO organizations (name, default_timezone, default_currency)
+        VALUES ('Upgrade Org', 'America/Detroit', 'USD') RETURNING id
+      ), loc AS (
+        INSERT INTO locations (organization_id, name, location_code, timezone)
+        SELECT id, 'Upgrade Location', 'UPGRADE', 'America/Detroit' FROM org RETURNING id
+      ), settings AS (
+        INSERT INTO location_settings (location_id) SELECT id FROM loc RETURNING location_id
+      ), usr AS (
+        INSERT INTO users (email, normalized_email, password_hash)
+        VALUES ('upgrade@example.test', 'upgrade@example.test', 'x') RETURNING id
+      ), area AS (
+        INSERT INTO restaurant_areas (location_id, code, name, area_type)
+        SELECT id, 'DINING_ROOM', 'Dining', 'DINING' FROM loc RETURNING id, location_id
+      ), tbl AS (
+        INSERT INTO restaurant_tables (location_id, restaurant_area_id, table_number, capacity)
+        SELECT location_id, id, 'U1', 4 FROM area RETURNING id
+      )
+      INSERT INTO table_sessions (location_id, party_size, created_by_user_id)
+      SELECT loc.id, 3, usr.id FROM loc, usr
+    `);
+
+    await applyMigrations(databaseUrl);
+
+    expect(await countAppliedMigrations()).toBe(journal.entries.length);
+    expect(
+      await query(
+        "SELECT reservation_pre_hold_minutes AS pre, reservation_post_grace_minutes AS post FROM location_settings",
+      ),
+    ).toEqual([{ pre: 15, post: 15 }]);
+    expect(
+      await query("SELECT party_size, guest_party_id, status FROM table_sessions"),
+    ).toEqual([{ party_size: 3, guest_party_id: null, status: "ACTIVE" }]);
+    expect(await query("SELECT * FROM reservations")).toEqual([]);
+    expect(await query("SELECT * FROM guest_parties")).toEqual([]);
   });
 
   it("rebuilds to the same state, removing all data and extra tables", async () => {

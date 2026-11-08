@@ -26,6 +26,7 @@ import {
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
 import { securitySchedulingPermissionsSeed } from "@/db/seeds/scheduling-foundation";
+import { securityReservationsPermissionsSeed } from "@/db/seeds/reservations-foundation";
 import { securityRestaurantPermissionsSeed } from "@/db/seeds/restaurant-foundation";
 import { securityHrPermissionsSeed } from "@/db/seeds/security-hr-permissions";
 import { PERMISSION_CATALOG } from "@/modules/auth/permission-catalog";
@@ -71,12 +72,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 82,
+    permissions: 87,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 8,
+    seedRuns: 9,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -111,6 +112,7 @@ describe("foundation seeds, on a fresh database", () => {
       "scheduling.default-rules",
       "security.restaurant-permissions",
       "restaurant.initial-floor",
+      "security.reservations-permissions",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -119,7 +121,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(8);
+    expect(result.skipped).toHaveLength(9);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -211,13 +213,13 @@ describe("foundation seeds, on a fresh database", () => {
         );
 
       // The Phase 4 codes stay, because this test only rewinds Phase 3.
-      expect(await countPermissions()).toBe(62);
+      expect(await countPermissions()).toBe(67);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(82);
+      expect(await countPermissions()).toBe(87);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -381,6 +383,95 @@ describe("foundation seeds, on a fresh database", () => {
     });
   });
 
+  describe("upgrading a Phase 5 database", () => {
+    const PHASE_6 = [
+      "reservations.override-hold",
+      "waitlist.view",
+      "waitlist.manage",
+      "waitlist.notify",
+      "waitlist.seat",
+    ];
+
+    it("adds the reservation and waitlist permissions and restores nothing an admin removed", async () => {
+      const newRows = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(inArray(permissions.code, PHASE_6));
+      const newIds = newRows.map((row) => row.id);
+
+      expect(newIds).toHaveLength(PHASE_6.length);
+
+      await database
+        .delete(rolePermissions)
+        .where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+
+      // An administrator removed a grant that is not part of Phase 6.
+      const [host] = await database
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.code, "HOST"));
+      const [reservationsManage] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "reservations.manage"));
+
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, host!.id),
+            eq(rolePermissions.permissionId, reservationsManage!.id),
+          ),
+        );
+
+      await database.transaction((transaction) =>
+        securityReservationsPermissionsSeed.run(transaction),
+      );
+
+      const grantsOf = async (roleCode: string) =>
+        (
+          await database
+            .select({ code: permissions.code })
+            .from(rolePermissions)
+            .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+            .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+            .where(eq(roles.code, roleCode))
+        )
+          .map((row) => row.code)
+          .sort();
+
+      expect(
+        await database
+          .select()
+          .from(permissions)
+          .where(inArray(permissions.code, PHASE_6)),
+      ).toHaveLength(PHASE_6.length);
+      expect(await grantsOf("HOST")).toEqual(
+        ROLE_CATALOG.find((role) => role.code === "HOST")!
+          .permissions.filter((code) => code !== "reservations.manage")
+          .sort(),
+      );
+      expect(await grantsOf("MANAGER")).toContain("reservations.override-hold");
+      expect(await grantsOf("HOST")).not.toContain("reservations.override-hold");
+      expect(await grantsOf("SERVER")).toEqual(
+        ROLE_CATALOG.find((role) => role.code === "SERVER")!.permissions.slice().sort(),
+      );
+
+      // Running it again changes nothing.
+      const before = await grantsOf("OWNER");
+
+      await database.transaction((transaction) =>
+        securityReservationsPermissionsSeed.run(transaction),
+      );
+      expect(await grantsOf("OWNER")).toEqual(before);
+
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: host!.id, permissionId: reservationsManage!.id });
+    });
+  });
+
   it("seeds the floor at MAIN, with no Takeout table and no sessions", async () => {
     const tables = await database
       .select({
@@ -415,6 +506,9 @@ describe("foundation seeds, on a fresh database", () => {
     expect(await database.select().from(schema.tableConditionHistory)).toHaveLength(6);
     expect(await database.select().from(schema.tableSessions)).toEqual([]);
     expect(await database.select().from(schema.serverSectionAssignments)).toEqual([]);
+    expect(await database.select().from(schema.guestParties)).toEqual([]);
+    expect(await database.select().from(schema.reservations)).toEqual([]);
+    expect(await database.select().from(schema.waitlistEntries)).toEqual([]);
   });
 
   it("seeds default rules, and no staffing demand or employee records", async () => {
