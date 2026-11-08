@@ -19,6 +19,9 @@ export default defineConfig({
   globalSetup: "./tests/helpers/global-setup.ts",
   forbidOnly: isCi(),
   retries: isCi() ? 2 : 0,
+  // `next dev` compiles each route on its first request. With more workers, those
+  // compiles take longer than the 5-second assertion wait, and unrelated tests fail.
+  workers: 2,
   reporter: "list",
   use: {
     baseURL,

@@ -167,6 +167,8 @@ describe("runSeeds", () => {
       "employees.reference-data",
       "security.scheduling-permissions",
       "scheduling.default-rules",
+      "security.restaurant-permissions",
+      "restaurant.initial-floor",
     ]);
   });
 });

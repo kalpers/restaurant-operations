@@ -105,6 +105,11 @@ describe("permission resolution", () => {
       const cases = [
         ["HOST", "reservations.manage", true],
         ["HOST", "orders.create", false],
+        ["HOST", "restaurant.seat", true],
+        ["HOST", "restaurant.capacity.override", false],
+        ["HOST", "restaurant.tables.manage", false],
+        ["MANAGER", "restaurant.capacity.override", true],
+        ["SERVER", "restaurant.seat", false],
         ["COOK", "kitchen.manage", true],
         ["COOK", "inventory.adjust", false],
         ["INVENTORY_MANAGER", "inventory.adjust", true],

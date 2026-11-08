@@ -27,8 +27,15 @@ const SCHEDULE_SELF_SERVICE: readonly PermissionCode[] = [
   "schedule.swap.request",
 ];
 
+/** Clearing up after a party, which floor staff do during service. */
+const SESSION_CLOSE_OUT: readonly PermissionCode[] = [
+  "restaurant.complete-session",
+  "restaurant.clean-table",
+];
+
 const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "restaurant.view",
+  ...SESSION_CLOSE_OUT,
   "menu.view",
   "orders.create",
   "orders.submit",
@@ -83,7 +90,17 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "schedule.templates.manage",
       "schedule.rules.manage",
       "restaurant.view",
-      "restaurant.manage",
+      "restaurant.tables.manage",
+      "restaurant.sections.manage",
+      "restaurant.seat",
+      "restaurant.move",
+      "restaurant.complete-session",
+      "restaurant.cancel-session",
+      "restaurant.clean-table",
+      "restaurant.condition.manage",
+      "restaurant.server.assign",
+      "restaurant.capacity.override",
+      "restaurant.schedule.override",
       "reservations.view",
       "reservations.manage",
       "menu.view",
@@ -126,7 +143,10 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
     description: "Manages seating, reservations and the waitlist.",
     permissions: [
       "restaurant.view",
-      "restaurant.manage",
+      "restaurant.seat",
+      "restaurant.move",
+      "restaurant.server.assign",
+      ...SESSION_CLOSE_OUT,
       "reservations.view",
       "reservations.manage",
       ...SCHEDULE_SELF_SERVICE,
@@ -142,7 +162,13 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
     code: "WAIT_STAFF",
     name: "Wait Staff",
     description: "Support staff who run food and clear tables, without order entry.",
-    permissions: ["restaurant.view", "menu.view", "kitchen.view", ...SCHEDULE_SELF_SERVICE],
+    permissions: [
+      "restaurant.view",
+      "restaurant.clean-table",
+      "menu.view",
+      "kitchen.view",
+      ...SCHEDULE_SELF_SERVICE,
+    ],
   },
   {
     code: "INVENTORY_MANAGER",

@@ -438,7 +438,7 @@ test.describe("administration", () => {
       has: page.getByRole("heading", { name: "Owner (OWNER)" }),
     });
 
-    await owner.getByText("72 permissions").click();
+    await owner.getByText("82 permissions").click();
 
     await expect(owner.getByRole("checkbox")).toHaveCount(0);
     await expect(

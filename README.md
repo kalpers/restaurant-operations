@@ -493,6 +493,7 @@ server_sections
 server_section_tables
 server_section_assignments
 table_condition_history
+table_session_overrides
 ```
 
 Physical condition is separate from occupancy.
@@ -1323,7 +1324,7 @@ Include:
 - Dining Room, Bar, Takeout
 - Owner, GM, manager, servers, bartenders, hosts, cooks, inventory manager
 - Roles and permissions
-- Restaurant tables/high-tops/bar seats
+- Restaurant tables/high-tops/bar seats (as of Phase 5, a modest floor at `MAIN`; see section 33)
 - Prep stations
 - Storage locations
 - Suppliers
@@ -1432,6 +1433,26 @@ Employment status is Management-tier data, so scheduling reports every non-`ACTI
 Automatic generation uses the shared eligibility service and deterministic scoring. Initial score adjustments are: below target hours `+20`, at/above target `-10`, crossing the overtime-avoidance threshold `-50`, preferred-time match `+12`/mismatch `-6`, weekend/closing fairness `+8` per shift, short-rest preference `-18`, pending time-off overlap `-24`, exceeding a soft weekly-day preference `-12` per day, and exceeding a soft consecutive-day preference `-15` per day. Fairness is `+8` per shift fewer than the most loaded candidate. Ties use employee number then UUID. Generated assignments retain hard-check and score reasons in `shift_assignments.generation_rationale`; unfilled slots keep structured eligibility codes and counts on the generation run, without employee identity, and rejected candidates aren't stored individually. Generation runs snapshot rules/weights and use schedule-version revalidation before an atomic write: the computation happens outside the transaction, and the write rechecks the version and all hard constraints on fresh data. A stale version or changed data writes no assignments and records the run as `FAILED` with a safe code. `GENERATE_DRAFT` requires an unassigned draft; `FILL_OPEN_SHIFTS` preserves existing assignments and fills only remaining slots. A generated assignment is an ordinary assignment with `GENERATED` provenance, changed by a manager through the same validation as a manual one.
 
 Scheduling permissions are separate for viewing/editing/generating/publishing (`schedule.view`, `.edit`, `.generate`, `.publish`), availability/preference management (`schedule.availability.self`, `.manage`), time-off requests/approval (`schedule.time-off.request`, `.approve`), swaps (`schedule.swap.request`, `.approve`), templates (`schedule.templates.manage`), and rules (`schedule.rules.manage`). `npm run db:seed` registers default scheduling rules for scheduling-enabled locations; it does not create fake employee or staffing demand records. See `docs/Phase-4-Completion-Report.md` for the implementation and validation checklist.
+
+### Phase 5 Restaurant and Seating
+
+**Condition and occupancy are separate facts.** `restaurant_tables.condition` is `CLEAN`, `DIRTY` or `OUT_OF_SERVICE`, and nothing else. Occupancy derives from open rows in `table_session_tables`, so a clean, occupied table is normal. The labels `AVAILABLE`, `OCCUPIED`, `DIRTY`, `OUT_OF_SERVICE` and `INACTIVE` are derived for screens and stored nowhere. A table is inactive if it, or its area, is. Takeout is never a table: a table or section can't be created in a Takeout area.
+
+**Table sessions** run `ACTIVE -> COMPLETED` or `ACTIVE -> CANCELLED`. A partial unique index allows one open membership per physical table, and every operation locks the session and then its tables, sorted by ID, before reading availability, so two hosts can't take one table. Combined tables are relational membership rows; table numbers never encode a combination. All tables in a session must be in one area, so server qualification has one answer, and there is no cap on how many. The three-table limit in section 13 applies to Phase 6 recommendations only.
+
+**Capacity.** A party fits if it's no larger than the sum of its tables' capacities. `minimum_capacity` is guidance only. Going over needs `restaurant.capacity.override` and a reason, and it's checked again on each move and removal. Each override writes a row to the append-only `table_session_overrides`, which holds overrides only and isn't an audit log.
+
+**Moving and condition.** A move is a set difference within the same session: tables in both sets stay, new tables must be clean and free, and vacated tables always become `DIRTY`. Removing a combined table does the same; a session's last table can't be removed. Completion ends all memberships and marks every table `DIRTY` in one transaction. Cancellation is for a mistaken seating, needs `restaurant.cancel-session` and a reason, and leaves tables as they are. Cleaning is the explicit `DIRTY -> CLEAN` step, never automatic. An occupied table can't change condition, be deactivated or change area; its session has to end first. Returning from `OUT_OF_SERVICE` names its target condition. Each change appends to `table_condition_history`, which is domain history, not the audit domain.
+
+**Server qualification** is an `ACTIVE` Employee, effective at the location, holding an effective position allowed in the area: `DINING` takes `SERVER` or `WAIT_STAFF`, `BAR` takes `BARTENDER`, `SERVER` or `WAIT_STAFF`, and Takeout takes nobody. The policy is one replaceable function in `src/modules/restaurant/rules/server-area-policy.ts`. Security Roles have no input to it. Effective dates use the location-local calendar date. Status, location and position failures share one code, `SERVER_NOT_QUALIFIED`, because employment status is Management-tier. No override reaches this rule.
+
+**Schedule match.** The server must also have an `ACTIVE` assignment on an uncancelled shift in a `PUBLISHED` period, at this location, in a position they hold and the area allows, with `start_at <= now < end_at`. Otherwise assignment needs `restaurant.schedule.override` and a reason, including when no schedule is published. It's evaluated at the moment of assignment, so assigning someone just before their shift needs the override. A server who later stops qualifying keeps the session and is flagged on the floor; a move into an area they can't work is refused until they're reassigned.
+
+**Sections.** A table has at most one active section, and a section's tables must be in its area when it has one. `server_section_assignments` records operational ownership for one business date, from `BusinessDateService` (`src/shared/time/business-date-service.ts`, the sole calculator). A section has one server per business date, and the current one must be ended before another is assigned. A section's server is separate from a session's server: a new session defaults to the section's server only if every selected table resolves to the same person and that person needs no override. Reassigning a session or changing a section never alters the other.
+
+**Permissions.** `restaurant.view`, `.tables.manage`, `.sections.manage`, `.seat`, `.move`, `.complete-session`, `.cancel-session`, `.clean-table`, `.condition.manage`, `.server.assign`, `.capacity.override` and `.schedule.override`. Phase 2's `restaurant.manage` was never enforced and is retired by the `security.restaurant-permissions` seed. Owner, General Manager and Manager hold all of them. Host holds `view`, `seat`, `move`, `complete-session`, `clean-table` and `server.assign`. Server and Bartender add `complete-session` and `clean-table`; Wait Staff adds `clean-table`. Only capacity and schedule matching can be overridden. Location, inactive, occupied, dirty, out-of-service and position rules cannot.
+
+The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Sessions have no Guest Party or order link yet: Phase 6 adds the Guest Party relationship to `table_sessions`, and Phase 9 adds orders that reference a session and an open-order precondition in `completeSession`. The floor refreshes every 30 seconds until realtime arrives in Phase 10.
 
 ## 34. AWS POC Deployment Target
 

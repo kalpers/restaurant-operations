@@ -54,7 +54,17 @@ export const PERMISSION_CATALOG = [
   { code: "schedule.rules.manage", name: "Manage scheduling rules", category: "Scheduling" },
 
   { code: "restaurant.view", name: "View tables and seating", category: "Restaurant / Seating" },
-  { code: "restaurant.manage", name: "Manage tables and seating", category: "Restaurant / Seating" },
+  { code: "restaurant.tables.manage", name: "Configure tables", category: "Restaurant / Seating" },
+  { code: "restaurant.sections.manage", name: "Configure server sections", category: "Restaurant / Seating" },
+  { code: "restaurant.seat", name: "Seat parties", category: "Restaurant / Seating" },
+  { code: "restaurant.move", name: "Move and combine table sessions", category: "Restaurant / Seating" },
+  { code: "restaurant.complete-session", name: "Complete table sessions", category: "Restaurant / Seating" },
+  { code: "restaurant.cancel-session", name: "Cancel table sessions", category: "Restaurant / Seating" },
+  { code: "restaurant.clean-table", name: "Mark tables clean", category: "Restaurant / Seating" },
+  { code: "restaurant.condition.manage", name: "Change table condition and service status", category: "Restaurant / Seating" },
+  { code: "restaurant.server.assign", name: "Assign servers to sections and sessions", category: "Restaurant / Seating" },
+  { code: "restaurant.capacity.override", name: "Override seating capacity", category: "Restaurant / Seating" },
+  { code: "restaurant.schedule.override", name: "Assign a server who isn't on a published shift", category: "Restaurant / Seating" },
 
   { code: "reservations.view", name: "View reservations", category: "Reservations" },
   { code: "reservations.manage", name: "Manage reservations", category: "Reservations" },

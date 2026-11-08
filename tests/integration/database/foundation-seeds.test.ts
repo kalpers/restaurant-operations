@@ -26,6 +26,7 @@ import {
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
 import { securitySchedulingPermissionsSeed } from "@/db/seeds/scheduling-foundation";
+import { securityRestaurantPermissionsSeed } from "@/db/seeds/restaurant-foundation";
 import { securityHrPermissionsSeed } from "@/db/seeds/security-hr-permissions";
 import { PERMISSION_CATALOG } from "@/modules/auth/permission-catalog";
 import { ROLE_CATALOG } from "@/modules/auth/role-catalog";
@@ -70,12 +71,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 72,
+    permissions: 82,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 6,
+    seedRuns: 8,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -108,6 +109,8 @@ describe("foundation seeds, on a fresh database", () => {
       "employees.reference-data",
       "security.scheduling-permissions",
       "scheduling.default-rules",
+      "security.restaurant-permissions",
+      "restaurant.initial-floor",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -116,7 +119,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(6);
+    expect(result.skipped).toHaveLength(8);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -208,13 +211,13 @@ describe("foundation seeds, on a fresh database", () => {
         );
 
       // The Phase 4 codes stay, because this test only rewinds Phase 3.
-      expect(await countPermissions()).toBe(52);
+      expect(await countPermissions()).toBe(62);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(72);
+      expect(await countPermissions()).toBe(82);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -302,6 +305,116 @@ describe("foundation seeds, on a fresh database", () => {
         .insert(rolePermissions)
         .values({ roleId: server!.id, permissionId: menuView!.id });
     });
+  });
+
+  describe("upgrading a Phase 4 database", () => {
+    it("retires restaurant.manage, adds the granular codes and restores nothing an admin removed", async () => {
+      const phase5 = PERMISSION_CATALOG.map((row) => row.code).filter(
+        (code) => code.startsWith("restaurant.") && code !== "restaurant.view",
+      );
+      const newRows = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(inArray(permissions.code, phase5));
+      const newIds = newRows.map((row) => row.id);
+
+      await database
+        .delete(rolePermissions)
+        .where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+
+      const [retired] = await database
+        .insert(permissions)
+        .values({
+          code: "restaurant.manage",
+          name: "Manage tables and seating",
+          category: "Restaurant / Seating",
+        })
+        .returning({ id: permissions.id });
+      const [host] = await database
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.code, "HOST"));
+
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: host!.id, permissionId: retired!.id });
+
+      const [reservationsView] = await database
+        .select({ id: permissions.id })
+        .from(permissions)
+        .where(eq(permissions.code, "reservations.view"));
+
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, host!.id),
+            eq(rolePermissions.permissionId, reservationsView!.id),
+          ),
+        );
+
+      await database.transaction((transaction) =>
+        securityRestaurantPermissionsSeed.run(transaction),
+      );
+
+      const hostGrants = await database
+        .select({ code: permissions.code })
+        .from(rolePermissions)
+        .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+        .where(eq(rolePermissions.roleId, host!.id));
+      const expected = ROLE_CATALOG.find((role) => role.code === "HOST")!
+        .permissions.filter((code) => code !== "reservations.view")
+        .sort();
+
+      expect(hostGrants.map((row) => row.code).sort()).toEqual(expected);
+      expect(
+        await database
+          .select()
+          .from(permissions)
+          .where(eq(permissions.code, "restaurant.manage")),
+      ).toEqual([]);
+
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: host!.id, permissionId: reservationsView!.id });
+    });
+  });
+
+  it("seeds the floor at MAIN, with no Takeout table and no sessions", async () => {
+    const tables = await database
+      .select({
+        tableNumber: schema.restaurantTables.tableNumber,
+        capacity: schema.restaurantTables.capacity,
+        areaCode: restaurantAreas.code,
+      })
+      .from(schema.restaurantTables)
+      .innerJoin(
+        restaurantAreas,
+        eq(restaurantAreas.id, schema.restaurantTables.restaurantAreaId),
+      )
+      .orderBy(schema.restaurantTables.tableNumber);
+
+    expect(tables).toEqual([
+      { tableNumber: "B01", capacity: 2, areaCode: "BAR" },
+      { tableNumber: "B02", capacity: 2, areaCode: "BAR" },
+      { tableNumber: "T01", capacity: 4, areaCode: "DINING_ROOM" },
+      { tableNumber: "T02", capacity: 4, areaCode: "DINING_ROOM" },
+      { tableNumber: "T03", capacity: 2, areaCode: "DINING_ROOM" },
+      { tableNumber: "T04", capacity: 6, areaCode: "DINING_ROOM" },
+    ]);
+
+    const sections = await database.select().from(schema.serverSections);
+    const memberships = await database.select().from(schema.serverSectionTables);
+
+    expect(sections.map((section) => section.code).sort()).toEqual([
+      "BAR",
+      "DINING_A",
+    ]);
+    expect(memberships).toHaveLength(6);
+    expect(await database.select().from(schema.tableConditionHistory)).toHaveLength(6);
+    expect(await database.select().from(schema.tableSessions)).toEqual([]);
+    expect(await database.select().from(schema.serverSectionAssignments)).toEqual([]);
   });
 
   it("seeds default rules, and no staffing demand or employee records", async () => {

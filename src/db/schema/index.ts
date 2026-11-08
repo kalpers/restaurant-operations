@@ -2,5 +2,6 @@
 export * from "./auth";
 export * from "./employees";
 export * from "./organization";
+export * from "./restaurant";
 export * from "./scheduling";
 export * from "./seed-runs";

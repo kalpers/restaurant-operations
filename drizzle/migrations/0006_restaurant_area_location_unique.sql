@@ -1,0 +1,1 @@
+ALTER TABLE "restaurant_areas" ADD CONSTRAINT "restaurant_areas_id_location_id_unique" UNIQUE("id","location_id");

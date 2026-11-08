@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 
+import { eq, inArray, ne } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+
 import type { Database } from "@/db";
 import {
   certificationTypes,
@@ -15,15 +18,24 @@ import {
   employeePositions,
   employees,
   employeeStatusHistory,
+  locations,
   positions,
+  restaurantTables,
   scheduleGenerationRuns,
   schedulePeriods,
   schedulingRules,
+  serverSectionAssignments,
+  serverSections,
+  serverSectionTables,
   shiftAssignments,
   shifts,
   shiftSwapRequests,
   staffingTemplateRequirements,
   staffingTemplates,
+  tableConditionHistory,
+  tableSessionOverrides,
+  tableSessions,
+  tableSessionTables,
   timeOffRequests,
   employeeAvailability,
   employeeAvailabilityExceptions,
@@ -143,10 +155,42 @@ export function createEmployeeFixture(
 }
 
 /**
+ * Everything a test created on the floor. The seeded floor at MAIN is kept, so a table
+ * only goes if a fixture location owns it: tests run on their own fixture locations.
+ */
+export async function clearRestaurantData(database: Database): Promise<void> {
+  await database.delete(tableSessionOverrides);
+  await database.delete(tableSessionTables);
+  await database.delete(tableSessions);
+  await database.delete(serverSectionAssignments);
+
+  const main = await database
+    .select({ id: locations.id })
+    .from(locations)
+    .where(eq(locations.locationCode, "MAIN"));
+  const notMain = (column: AnyPgColumn) =>
+    main.length > 0 ? ne(column, main[0]!.id) : undefined;
+  const fixtureTables = database
+    .select({ id: restaurantTables.id })
+    .from(restaurantTables)
+    .where(notMain(restaurantTables.locationId));
+
+  await database
+    .delete(tableConditionHistory)
+    .where(inArray(tableConditionHistory.restaurantTableId, fixtureTables));
+  await database
+    .delete(serverSectionTables)
+    .where(inArray(serverSectionTables.restaurantTableId, fixtureTables));
+  await database.delete(restaurantTables).where(notMain(restaurantTables.locationId));
+  await database.delete(serverSections).where(notMain(serverSections.locationId));
+}
+
+/**
  * Employee rows reference users and locations with RESTRICT. Other test files clear
  * those tables, so each employee test file removes its rows when it finishes.
  */
 export async function clearEmployeeData(database: Database): Promise<void> {
+  await clearRestaurantData(database);
   await database.delete(shiftSwapRequests);
   await database.delete(shiftAssignments);
   await database.delete(scheduleGenerationRuns);

@@ -127,6 +127,10 @@ export const restaurantAreas = pgTable(
       table.locationId,
       table.code,
     ),
+    unique("restaurant_areas_id_location_id_unique").on(
+      table.id,
+      table.locationId,
+    ),
     check(
       "restaurant_areas_area_type_valid",
       sql`${table.areaType} IN ('DINING', 'BAR', 'TAKEOUT')`,

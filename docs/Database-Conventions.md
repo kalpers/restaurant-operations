@@ -80,6 +80,10 @@ Add indexes for known access patterns, foreign keys, uniqueness or measured quer
 
 Drizzle's schema language can't express exclusion constraints. Put them in a custom migration (`npm run db:generate -- --custom --name=<short_description>`), and say so in a comment on the table in the schema. Drift checks don't see them, so `tests/integration/database/migrations.test.ts` asserts they exist. `employee_locations`, `employee_positions` and `employee_position_compensation` use one to refuse overlapping effective periods, treating each period as an inclusive `daterange` where a `NULL` end is open-ended. They need the `btree_gist` extension. `schedule_periods` uses a partial one, where `status = 'PUBLISHED'`, to refuse two published periods sharing a date at a location.
 
+Partial unique indexes are expressed in the schema with `uniqueIndex(...).where(...)`, so they reach migrations and drift checks. `table_session_tables` uses one so a physical table has only one open membership, `server_section_tables` so a table has one active section, and `server_section_assignments` so a section has one open assignment per business date.
+
+A new foreign key to a composite unique constraint added to an existing table needs that constraint in an earlier migration, because `drizzle-kit` writes new constraints on existing tables after the foreign keys. Migration `0006` exists for this reason, so check the order when reviewing generated SQL.
+
 Prefer constrained strings and configurable tables to native PostgreSQL enums for lifecycle states.
 
 ## Deletion and history
