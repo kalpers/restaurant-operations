@@ -24,6 +24,8 @@ import { createEmployee } from "../src/modules/employees/services/employee-servi
 import { updatePersonalContact } from "../src/modules/employees/services/personal-service";
 import { createPosition } from "../src/modules/employees/services/reference-service";
 
+import { seedDemoKitchen } from "./demo-kitchen";
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** Adds data, never removes it, but demo people don't belong in a shared database. */
@@ -181,6 +183,12 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo data: ${created} employees added, ${DEMO_EMPLOYEES.length - created} already present, ${addedPositions} positions added.`,
+    );
+
+    const kitchen = await seedDemoKitchen(database, actor);
+
+    console.log(
+      `Demo kitchen: ${kitchen.inventoryItems} inventory items, ${kitchen.supplierItems} supplier items, ${kitchen.orders} purchase orders, ${kitchen.menuItems} menu items, ${kitchen.recipes} recipes, ${kitchen.modifiers} modifiers added.`,
     );
   } finally {
     await closeDatabase();

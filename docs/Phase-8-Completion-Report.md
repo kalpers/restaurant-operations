@@ -8,7 +8,6 @@ Phase 8 is implemented and validated locally. An authorized manager can configur
 
 **Not yet confirmed:**
 
-- **GitHub Actions** has not run on this work (nothing has been pushed).
 - **`db:reset` on your real development database** was deliberately not run, because it would delete your Owner account. The same command was proven on a throwaway PostgreSQL container.
 
 **Please review these decisions** (the first four were your answers before coding; the rest were in the approved plan):
@@ -256,16 +255,16 @@ Real `npm run db:reset` refusals on the throwaway container, with a probe row in
 | Typecheck | PASS |
 | Unit tests | PASS: 531 of 531 (baseline 494) |
 | Integration tests | PASS: 868 of 868 (baseline 792) |
-| E2E tests | PASS: 97 of 98 in the full run, then the one failure fixed and its spec re-run 4 of 4 (see below) |
+| E2E tests | PASS: 98 of 98 (baseline 90) on a clean full run, after one earlier run of 97 of 98 (see below) |
 | Production build | PASS |
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 12 moderate, unchanged (DEV-002) |
-| GitHub Actions | Not run |
+| GitHub Actions | PASS: reported by the project owner after the work was pushed; I did not see the run |
 
 ### Problems found during validation
 
 - **I broke one E2E run myself.** While it was running, I re-ran two integration files, which recreate the shared test database. E2E tests then failed with missing tables. Later in that run the machine ran out of memory and the run was stopped. Those results were discarded; the suite was re-run alone.
-- **One real E2E failure, mine.** The Phase 7 recipe spec checked for a sentence ("Ingredients … are added when Inventory …") I deliberately rewrote. The assertion now checks the new text; that spec passes 4 of 4. **The full suite was not re-run after that one-line test change.**
+- **One real E2E failure, mine.** The Phase 7 recipe spec checked for a sentence ("Ingredients … are added when Inventory …") I deliberately rewrote. The assertion now checks the new text, and the full suite then passed 98 of 98.
 - **Two of my E2E tests had timing bugs.** One clicked Submit before the page refreshed with a new line, so the stale version was correctly refused. Another read the URL before navigation finished. Both fixed.
 - **A fixture used two different users** where a transfer needs one user at both locations; the service was right to refuse.
 - **Generated foreign key names were too long.** Fixed in the schema, then regenerated.
@@ -322,17 +321,16 @@ Real `npm run db:reset` refusals on the throwaway container, with a probe row in
 - **Entered times use the browser's local time; displays use UTC dates.** The same caveat as Phase 7.
 - **REMOVE/ADJUST effects are validated against the recipe in effect when saved.** A later revision can drop the ingredient; Phase 9 then treats the effect as a no-op, by the documented rule.
 - **No audit trail beyond provenance columns** (who posted, received, approved, acknowledged). The audit-domain decision is still open.
-- **Memory:** the full E2E suite was stopped twice by low memory before it ran cleanly once.
+- **Memory:** the full E2E suite was stopped twice by low memory on this machine before running cleanly. Close other heavy apps before running it.
 - **`btree_gist` on RDS** remains untested (Phases 3, 5–7); Phase 8 adds no exclusion constraint.
 
 ## Remaining issues
 
 None block Phase 9.
 
-1. **Run the full E2E suite once more** after the one-line recipe-spec fix, ideally in CI.
-2. **Where does the audit domain get built? Still your decision,** carried from Phase 3. Inventory adjustments and count approvals add to the list.
-3. **No UI to cancel a scheduled supplier price or to edit a received receipt.** Corrections are compensating adjustments, by design.
-4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+1. **Where does the audit domain get built? Still your decision,** carried from Phase 3. Inventory adjustments and count approvals add to the list.
+2. **No UI to cancel a scheduled supplier price or to edit a received receipt.** Corrections are compensating adjustments, by design.
+3. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
 
@@ -344,4 +342,4 @@ NONE. Tests assert there are no order, ticket, settlement or fulfillment tables.
 
 ## Next-phase readiness
 
-**Phase 9 readiness: READY,** subject to review of this report and one clean full E2E run. Order SEND will call `resolveEffectiveRevisionForMenuItem`, `resolveRevisionRequirements`, `applyModifierEffects` and `postConsumption` inside its transaction, with its own reference for idempotency.
+**Phase 9 readiness: READY,** subject to review of this report. Order SEND will call `resolveEffectiveRevisionForMenuItem`, `resolveRevisionRequirements`, `applyModifierEffects` and `postConsumption` inside its transaction, with its own reference for idempotency.
