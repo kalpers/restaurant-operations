@@ -20,6 +20,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:reset": "tsx scripts/reset-db.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed:demo": "tsx scripts/seed-demo.ts",
     "bootstrap:owner": "tsx scripts/bootstrap-owner.ts"
   },
   "dependencies": {

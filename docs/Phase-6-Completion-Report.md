@@ -8,7 +8,6 @@ Phase 6 is implemented and validated locally. A host can take a reservation, opt
 
 **Not yet confirmed:**
 
-- **CI:** the work is uncommitted, so the workflow hasn't run on GitHub.
 - **`db:reset` on your real development database:** deliberately not run, because it would delete your Owner account. The same command was proven on a throwaway PostgreSQL container.
 
 **Please review these decisions** (all but the first were in the plan I presented before coding; the first is a gap I found, not a choice):
@@ -252,7 +251,7 @@ Real `npm run db:reset` refusals on the throwaway container, with a probe row in
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 12 moderate, unchanged, recorded as DEV-002 |
 | `git status --ignored` | PASS: only `.env`, `.next/`, `next-env.d.ts`, `node_modules/`, `test-results/` and `tsconfig.tsbuildinfo` are ignored |
-| GitHub Actions | NOT RUN: work is uncommitted |
+| GitHub Actions | PASS: reported by the project owner after the work was pushed; I did not see the run |
 
 ### Problems found during validation
 
@@ -322,7 +321,7 @@ None of these block Phase 7, but item 1 is a gap in a rule the plan asks for.
 1. **Moving or combining a seated party onto a held table isn't checked.** Plan §16 describes seating, and that is covered. The Phase 5 `move` and `add table` operations don't consult holds, so a host can send an existing party to a held table. Closing it means adding the same check to those workflows, and Restaurant can't import Reservations, so it would go through a workflow like the seating one. Your decision.
 2. **Where does the audit domain get built? Still your decision,** carried from Phases 3 to 5. Hold overrides and cancellations are now more actions that want it.
 3. **Confirm that a single table outside the requested area ranks above a combination inside it.** I followed the plan's ordering of principles. Changing it is a small edit in `table-recommendation.ts`.
-4. **Commit and confirm CI.** The workflow gets the new migration and the E2E tests. CI retries twice, which could hide a flaky test.
+4. **CI retries twice,** which could hide a flaky test. The run passed, but check it didn't need a retry.
 5. **Carried over, all optional:** edit forms from the Phase 3 and 4 reports, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
@@ -335,4 +334,4 @@ NONE. A migration test asserts the exact table list. No menu, recipe, inventory,
 
 ## Next-phase readiness
 
-**Phase 7 readiness: READY,** subject to review of this report, your decision on Remaining issue 1, and a green CI run once committed. Phase 9 Orders will still reference `table_sessions`, which now carry the Guest Party link, and `completeTableSession` is where Phase 9 adds its open-order precondition.
+**Phase 7 readiness: READY,** subject to review of this report and your decision on Remaining issue 1. Phase 9 Orders will still reference `table_sessions`, which now carry the Guest Party link, and `completeTableSession` is where Phase 9 adds its open-order precondition.
