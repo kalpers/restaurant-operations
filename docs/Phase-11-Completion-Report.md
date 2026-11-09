@@ -6,7 +6,7 @@ This report follows the plan §87 template plus the sections CLAUDE.md requires.
 
 Phase 11 is implemented. Staff open a Settlement from an OPEN order. It snapshots the order's post-discount, pre-tax amount. Staff then record one or more tenders (cash, externally processed card, gift card, house account, other) until nothing remains, and complete it. Completion closes the order in the same transaction. A fully comped order closes with a zero-amount settlement and no tender. Settlement is record only: nothing charges a card or contacts a provider, and no card number, CVV, track data or PIN can be stored. Closing a dine-in order lifts the Table Session's open-order guard but does not end the session. The existing floor action still ends it and marks the tables DIRTY. Takeout closes with no session.
 
-**Validation is complete.** One full E2E run had a single failure in a Phase 5 restaurant test that doesn't touch Phase 11 code. That spec passed 18 of 18 when re-run alone (see Validation).
+**Validation: one CI fix is pending a CI rerun.** GitHub Actions on the pushed commit `00fa1f8` failed one E2E test: the settlements dine-in test, on all three attempts. The cause was my test isolation, not the application. The settlements spec reused the orders spec's E2E accounts, and the orders spec's `afterAll` cleanup, running on the other worker, disabled those accounts and deleted their roles mid-test. The fix gives the settlements spec its own accounts, roles and tables (see Problems found). Afterwards the full E2E suite passed 109 of 109 locally, and orders, settlements and kitchen passed 11 of 11 together on two workers. The fix is not yet committed or re-run in CI.
 
 **Please review these decisions.** The first two are your answers in planning; the rest are defaults I chose.
 
@@ -211,7 +211,7 @@ The plan's Approved Phase 11 Policies 1–13 are binding and implemented as writ
 | Phase 2 Auth/RBAC | PASS |
 | Phase 3 Employees/HR | PASS |
 | Phase 4 Scheduling | PASS |
-| Phase 5 Restaurant/Seating | PASS (integration). E2E: one flaky failure in the full run, then 18/18 alone; see below |
+| Phase 5 Restaurant/Seating | PASS (integration, and E2E in CI on `00fa1f8`). Locally: one flaky failure in the first full run, then 18/18 alone and 109/109 in the final full run |
 | Phase 6 Reservations/Waitlist | PASS |
 | Phase 7 Menu/Recipes | PASS |
 | Phase 8 Inventory/Purchasing | PASS |
@@ -230,7 +230,7 @@ The plan's Approved Phase 11 Policies 1–13 are binding and implemented as writ
 | typecheck | PASS |
 | unit tests | PASS: 605 of 605 (baseline 576) |
 | integration tests | PASS: 1009 of 1009 in 54 files (baseline 961) |
-| E2E tests | Full run: 108 passed, 1 failed. The failure was `restaurant.spec.ts` "configures a table and a section, and assigns a server": an "Assign server" button wasn't found within 5 s. It touches no Phase 11 code, and the restaurant spec then passed 18 of 18 alone. I'm treating it as load-related flakiness, which this machine also showed in Phase 10, but I have not proven that. The settlements spec passed 4 of 4 in both runs |
+| E2E tests | **CI on `00fa1f8`: FAIL**, reported by the project owner (107 passed, 1 failed, 1 flaky). The failure was `settlements.spec.ts` dine-in, on all three attempts, caused by shared E2E accounts (see Problems found). The flaky test was `scheduling.spec.ts` swap approval, which passed on retry and touches no Phase 11 code. After the fix, locally: full suite **109 of 109**, and the three order-related specs 11 of 11 on two workers. Still needs a CI rerun. Before the fix, locally: full run 108 passed, 1 failed. The failure was `restaurant.spec.ts` "configures a table and a section, and assigns a server": an "Assign server" button wasn't found within 5 s. It touches no Phase 11 code, and the restaurant spec then passed 18 of 18 alone. I'm treating it as load-related flakiness, which this machine also showed in Phase 10, but I have not proven that. The settlements spec passed 4 of 4 in both runs |
 | production build | PASS |
 | npm audit --omit=dev | PASS: 0 vulnerabilities |
 | npm audit (including dev) | 12 moderate, unchanged (DEV-002) |
@@ -241,6 +241,7 @@ The plan's Approved Phase 11 Policies 1–13 are binding and implemented as writ
 - **A 63-character generated FK name**, found before the first apply. I named it explicitly and regenerated 0019.
 - **Expected regressions**, updated deliberately: permission counts (112 → 121) in unit, seed and E2E tests; the seed list and run counts; the migration table list (plus a new Phase 10 upgrade test); the Phase 9 Orders boundary scan (Orders may now name settlement but still may not import the Settlements module or touch tender or ticket data); and the Phase 7 "no settlement tables" check, which now expects exactly the three Phase 11 tables.
 - **My own slip:** I placed `order_settlements` out of alphabetical order in the expected table list. Fixed.
+- **Shared E2E accounts (found by CI).** My settlements spec reused the orders spec's account markers (`@orders-e2e.example.test`, `ORDERS_E2E_` roles, `ORD-` tables). Playwright runs specs on two workers, so the orders spec's `afterAll` (`removeOrdersE2eData`) could disable those users and delete their roles while a settlements test ran. In CI, sign-in then went back to `/login`, or a page lost its permission mid-test. Locally the two specs never overlapped. Fix: `e2e-orders.ts` now takes an `E2eScope` (email domain, role prefix, table prefix), with `ORDERS_SCOPE` as the default, so the orders spec is unchanged. The settlements spec uses `SETTLEMENTS_SCOPE` for its accounts, tables and cleanup, as the kitchen spec already did with its own helper.
 - **Observed, not caused here:** each E2E run logs one `Outbox batch failed; it will be retried` at dev-server start. It appears to happen while global setup recreates the test database. It retries and no test depends on it. I did not investigate it further.
 
 ## Tests executed
@@ -275,7 +276,7 @@ The plan's Approved Phase 11 Policies 1–13 are binding and implemented as writ
 - Auth: `permission-catalog.ts` (121 codes), `role-catalog.ts`
 - Schema index, seed registry, migration journal
 - UI: the order page and workspace ("Settle check" / "View settlement" link, refresh on settlement events)
-- Tests: `order-cleanup.ts`, `e2e-orders.ts` (helpers and settlement cleanup), `auth.test.ts`, `tests/e2e/auth.spec.ts`, and the integration tests listed above
+- Tests: `order-cleanup.ts`, `e2e-orders.ts` (helpers, settlement cleanup, per-spec `E2eScope`), `auth.test.ts`, `tests/e2e/auth.spec.ts`, and the integration tests listed above
 - Docs: `README.md` §19 (tables), §33 (Phase 9 note, new "Phase 11 Settlements")
 
 ## Risks
@@ -289,9 +290,9 @@ The plan's Approved Phase 11 Policies 1–13 are binding and implemented as writ
 
 ## Remaining issues
 
-1. **The one E2E failure** (`restaurant.spec.ts`, assign server) passed alone. Please confirm it passes in GitHub Actions when you push. Not blocking.
+1. **CI failure in `settlements.spec.ts`: fixed, needs commit and a CI rerun.** See Problems found. The earlier local `restaurant.spec.ts` failure passed in CI on `00fa1f8`; that was local load flakiness. CI's flaky scheduling swap test passed on retry and is outside Phase 11.
 2. **Audit domain:** still your decision (carried since Phase 3). Settlement actions now add to the unaudited actions.
-3. **Not committed.** Nothing from Phase 11 is committed or pushed.
+3. **Committed:** Phase 11 was pushed in `00fa1f8`. The E2E isolation fix (`tests/helpers/e2e-orders.ts`, `tests/e2e/settlements.spec.ts`) and this report update are uncommitted.
 4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted Risks
@@ -304,4 +305,4 @@ NONE. No reporting, refund, tax, payment-processing or audit table exists.
 
 ## Next-Phase Readiness
 
-**Phase 12 readiness: READY**, subject to review of this report and a CI run of the full E2E suite. Reporting can read settlement and tender history (`completed_business_date`, tender `business_date`, the separate tip and change columns) without recalculating anything.
+**Phase 12 readiness: READY once CI passes** with the E2E isolation fix, and subject to review of this report. Reporting can read settlement and tender history (`completed_business_date`, tender `business_date`, the separate tip and change columns) without recalculating anything.

@@ -10,12 +10,16 @@ import {
   removeOrdersE2eData,
   seatE2eParty,
   sentOrderFor,
+  SETTLEMENTS_SCOPE,
   tenderTextFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
 
 // Settlement is record only: these flows record what happened at a register or an
-// external card terminal; nothing here processes a payment.
+// external card terminal; nothing here processes a payment. Accounts, tables and cleanup
+// use this spec's own scope, so the orders spec's cleanup on another worker can't touch them.
+
+const account = (roleCode: string) => createRoleAccount(roleCode, SETTLEMENTS_SCOPE);
 
 async function signIn(page: Page, account: OrdersAccount) {
   await page.goto("/login");
@@ -44,15 +48,15 @@ async function expectClosed(page: Page, orderId: string) {
 }
 
 test.afterAll(async () => {
-  await removeOrdersE2eData();
+  await removeOrdersE2eData(SETTLEMENTS_SCOPE);
 });
 
 test.describe("settlements", () => {
   test("dine-in cash with change closes the order; the session then completes on the floor", async ({ page }) => {
-    const manager = await createRoleAccount("MANAGER");
-    const server = await createRoleAccount("SERVER");
+    const manager = await account("MANAGER");
+    const server = await account("SERVER");
     const menu = await createOrderMenu(manager);
-    const { tableNumber, sessionId } = await seatE2eParty(manager);
+    const { tableNumber, sessionId } = await seatE2eParty(manager, SETTLEMENTS_SCOPE);
     const { orderId } = await sentOrderFor(manager, [menu.soda.id, menu.soda.id], { tableSessionId: sessionId });
     const ledgerBefore = await ledgerTypesFor(menu.pickles.id);
 
@@ -99,8 +103,8 @@ test.describe("settlements", () => {
   });
 
   test("takeout with partial cash, then the rest on an external card", async ({ page }) => {
-    const manager = await createRoleAccount("MANAGER");
-    const server = await createRoleAccount("SERVER");
+    const manager = await account("MANAGER");
+    const server = await account("SERVER");
     const menu = await createOrderMenu(manager);
     const { orderId } = await sentOrderFor(manager, [menu.soda.id, menu.soda.id]);
 
@@ -144,7 +148,7 @@ test.describe("settlements", () => {
   });
 
   test("a fully comped order closes with a zero-amount settlement and no tender", async ({ page }) => {
-    const manager = await createRoleAccount("MANAGER");
+    const manager = await account("MANAGER");
     const menu = await createOrderMenu(manager);
     const { orderId, version } = await sentOrderFor(manager, [menu.soda.id]);
 
@@ -160,8 +164,8 @@ test.describe("settlements", () => {
   });
 
   test("a view-only user sees the settlement but can't record or complete, on screen or by API", async ({ page }) => {
-    const manager = await createRoleAccount("MANAGER");
-    const viewer = await createPermissionAccount(["orders.view", "settlements.view"]);
+    const manager = await account("MANAGER");
+    const viewer = await createPermissionAccount(["orders.view", "settlements.view"], SETTLEMENTS_SCOPE);
     const menu = await createOrderMenu(manager);
     const { orderId } = await sentOrderFor(manager, [menu.soda.id]);
 

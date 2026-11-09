@@ -76,10 +76,23 @@ loadLocalEnv();
 pointAtTestDatabase();
 
 // Separate from the other specs' data and removed by these markers when the spec ends.
-const EMAIL_DOMAIN = "orders-e2e.example.test";
-const ROLE_PREFIX = "ORDERS_E2E_";
+// Specs run on parallel workers, so every spec that uses these helpers passes its own
+// scope: one spec's cleanup must never disable another's accounts mid-test.
+export type E2eScope = { emailDomain: string; rolePrefix: string; tablePrefix: string };
+
+export const ORDERS_SCOPE: E2eScope = {
+  emailDomain: "orders-e2e.example.test",
+  rolePrefix: "ORDERS_E2E_",
+  tablePrefix: "ORD-",
+};
+
+export const SETTLEMENTS_SCOPE: E2eScope = {
+  emailDomain: "settlements-e2e.example.test",
+  rolePrefix: "SETTLEMENTS_E2E_",
+  tablePrefix: "SET-",
+};
+
 export const CODE_PREFIX = "E2EO_";
-const TABLE_PREFIX = "ORD-";
 
 export type OrdersAccount = { id: string; email: string; password: string };
 
@@ -94,9 +107,9 @@ async function mainLocation() {
   return location!;
 }
 
-async function insertAccount(roleId: string): Promise<OrdersAccount> {
+async function insertAccount(roleId: string, scope: E2eScope): Promise<OrdersAccount> {
   const location = await mainLocation();
-  const email = `user-${randomUUID()}@${EMAIL_DOMAIN}`;
+  const email = `user-${randomUUID()}@${scope.emailDomain}`;
   const password = randomBytes(24).toString("base64url");
   const [user] = await getDatabase()
     .insert(users)
@@ -108,19 +121,22 @@ async function insertAccount(roleId: string): Promise<OrdersAccount> {
   return { id: user!.id, email, password };
 }
 
-export async function createRoleAccount(roleCode: string): Promise<OrdersAccount> {
+export async function createRoleAccount(roleCode: string, scope: E2eScope = ORDERS_SCOPE): Promise<OrdersAccount> {
   const [role] = await getDatabase().select({ id: roles.id }).from(roles).where(eq(roles.code, roleCode));
 
-  return insertAccount(role!.id);
+  return insertAccount(role!.id, scope);
 }
 
-export async function createPermissionAccount(codes: readonly PermissionCode[]): Promise<OrdersAccount> {
+export async function createPermissionAccount(
+  codes: readonly PermissionCode[],
+  scope: E2eScope = ORDERS_SCOPE,
+): Promise<OrdersAccount> {
   const { organizationId } = await mainLocation();
   const [role] = await getDatabase()
     .insert(roles)
     .values({
       organizationId,
-      code: `${ROLE_PREFIX}${randomUUID().replaceAll("-", "_").toUpperCase()}`,
+      code: `${scope.rolePrefix}${randomUUID().replaceAll("-", "_").toUpperCase()}`,
       name: "Orders E2E fixture",
     })
     .returning({ id: roles.id });
@@ -133,7 +149,7 @@ export async function createPermissionAccount(codes: readonly PermissionCode[]):
     .insert(rolePermissions)
     .values(rows.map((row) => ({ roleId: role!.id, permissionId: row.id })));
 
-  return insertAccount(role!.id);
+  return insertAccount(role!.id, scope);
 }
 
 async function actorOf(account: OrdersAccount): Promise<Actor> {
@@ -287,7 +303,7 @@ export async function createOrderMenu(owner: OrdersAccount) {
 }
 
 /** A new dining table at MAIN with a seated party of two. */
-export async function seatE2eParty(owner: OrdersAccount) {
+export async function seatE2eParty(owner: OrdersAccount, scope: E2eScope = ORDERS_SCOPE) {
   const database = getDatabase();
   const actor = await actorOf(owner);
   const location = await mainLocation();
@@ -295,7 +311,7 @@ export async function seatE2eParty(owner: OrdersAccount) {
     .select({ id: restaurantAreas.id })
     .from(restaurantAreas)
     .where(and(eq(restaurantAreas.locationId, location.id), eq(restaurantAreas.areaType, "DINING")));
-  const tableNumber = `${TABLE_PREFIX}${randomUUID().slice(0, 6)}`;
+  const tableNumber = `${scope.tablePrefix}${randomUUID().slice(0, 6)}`;
   const { id: tableId } = await createTable(database, actor, {
     restaurantAreaId: dining!.id,
     tableNumber,
@@ -431,9 +447,9 @@ const APPEND_ONLY = [
  * append-only, so the triggers are lifted for this transaction only. Menu, recipe and
  * stock configuration stays, marked by its code prefix, in the disposable test database.
  */
-export async function removeOrdersE2eData(): Promise<void> {
+export async function removeOrdersE2eData(scope: E2eScope = ORDERS_SCOPE): Promise<void> {
   const database = getDatabase();
-  const accounts = await database.select({ id: users.id }).from(users).where(like(users.normalizedEmail, `%@${EMAIL_DOMAIN}`));
+  const accounts = await database.select({ id: users.id }).from(users).where(like(users.normalizedEmail, `%@${scope.emailDomain}`));
   const userIds = accounts.map((row) => row.id);
 
   if (userIds.length === 0) {
@@ -446,7 +462,7 @@ export async function removeOrdersE2eData(): Promise<void> {
     await database.select({ id: orders.id }).from(orders).where(inArray(orders.openedByUserId, userIds))
   ).map((row) => row.id);
   const tableIds = (
-    await database.select({ id: restaurantTables.id }).from(restaurantTables).where(like(restaurantTables.tableNumber, `${TABLE_PREFIX}%`))
+    await database.select({ id: restaurantTables.id }).from(restaurantTables).where(like(restaurantTables.tableNumber, `${scope.tablePrefix}%`))
   ).map((row) => row.id);
 
   await database.transaction(async (transaction) => {
@@ -522,7 +538,7 @@ export async function removeOrdersE2eData(): Promise<void> {
   await database.delete(userRoles).where(inArray(userRoles.userId, userIds));
   await database
     .delete(roles)
-    .where(or(like(roles.code, `${ROLE_PREFIX}%`)))
+    .where(or(like(roles.code, `${scope.rolePrefix}%`)))
     .catch(() => undefined);
   await database.update(users).set({ active: false, disabledAt: new Date() }).where(inArray(users.id, userIds));
   await closeDatabase();
