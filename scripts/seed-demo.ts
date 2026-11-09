@@ -3,10 +3,12 @@ import { and, eq, like } from "drizzle-orm";
 import { loadLocalEnv, readExplicitNodeEnv } from "../src/config/tooling-env";
 import { closeDatabase, getDatabase } from "../src/db";
 import {
+  DEMO_AVAILABILITY,
   DEMO_EMPLOYEES,
   DEMO_POSITIONS,
 } from "../src/db/demo/demo-employees";
 import {
+  employeeAvailability,
   employees,
   locations,
   positions,
@@ -23,6 +25,7 @@ import { changeCompensation } from "../src/modules/employees/services/compensati
 import { createEmployee } from "../src/modules/employees/services/employee-service";
 import { updatePersonalContact } from "../src/modules/employees/services/personal-service";
 import { createPosition } from "../src/modules/employees/services/reference-service";
+import { addRecurringAvailability } from "../src/modules/scheduling/services/availability-service";
 
 import { seedDemoKitchen } from "./demo-kitchen";
 
@@ -81,6 +84,58 @@ async function versionOf(employeeId: string): Promise<number> {
     .where(eq(employees.id, employeeId));
 
   return row!.version;
+}
+
+/**
+ * Gives each demo employee the demo availability, through the Scheduling service a manager
+ * would use. An employee who already has any recurring availability (from an earlier run or
+ * edited by hand) is left alone, so reruns add nothing and manual edits survive.
+ */
+async function seedDemoAvailability(actor: Actor): Promise<{ employees: number; windows: number }> {
+  const database = getDatabase();
+  const demoEmployees = await database
+    .select({ id: employees.id, hireDate: employees.hireDate })
+    .from(employees)
+    .where(like(employees.employeeNumber, "DEMO-%"));
+  const configured = new Set(
+    (
+      await database
+        .select({ employeeId: employeeAvailability.employeeId })
+        .from(employeeAvailability)
+        .innerJoin(employees, eq(employees.id, employeeAvailability.employeeId))
+        .where(like(employees.employeeNumber, "DEMO-%"))
+    ).map((row) => row.employeeId),
+  );
+  let added = 0;
+  let windows = 0;
+
+  for (const employee of demoEmployees) {
+    if (configured.has(employee.id)) {
+      continue;
+    }
+
+    for (const dayOfWeek of DEMO_AVAILABILITY.daysOfWeek) {
+      await addRecurringAvailability(
+        database,
+        actor,
+        { kind: "employee", employeeId: employee.id },
+        {
+          dayOfWeek,
+          startTime: DEMO_AVAILABILITY.startTime,
+          endTime: DEMO_AVAILABILITY.endTime,
+          availabilityType: "AVAILABLE",
+          effectiveFrom: employee.hireDate,
+          effectiveTo: null,
+          thisLocationOnly: false,
+        },
+      );
+      windows += 1;
+    }
+
+    added += 1;
+  }
+
+  return { employees: added, windows };
 }
 
 async function main(): Promise<void> {
@@ -183,6 +238,12 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo data: ${created} employees added, ${DEMO_EMPLOYEES.length - created} already present, ${addedPositions} positions added.`,
+    );
+
+    const availability = await seedDemoAvailability(actor);
+
+    console.log(
+      `Demo availability: ${availability.employees} employees given ${DEMO_AVAILABILITY.startTime}-${DEMO_AVAILABILITY.endTime} every day (${availability.windows} windows); employees with availability already were left alone.`,
     );
 
     const kitchen = await seedDemoKitchen(database, actor);

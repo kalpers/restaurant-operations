@@ -28,6 +28,19 @@ export const DEMO_POSITIONS = [
   { code: "EXPEDITOR", name: "Expeditor", description: "Checks and passes plates from the kitchen." },
 ] as const;
 
+/**
+ * Recurring availability every demo employee gets, so Scheduling has someone to assign:
+ * every day (0 = Sunday), 06:00 to 03:00 the next morning, at every location, from the hire
+ * date with no end. A window whose end is before its start runs overnight, so this covers
+ * opening, mid and closing shifts, including closes after midnight. Edit it per employee
+ * on the Availability page to make the roster more realistic.
+ */
+export const DEMO_AVAILABILITY = {
+  daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+  startTime: "06:00",
+  endTime: "03:00",
+} as const;
+
 const hourly = (hourlyRate: string): DemoWage => ({ type: "HOURLY", hourlyRate });
 const salary = (annualSalary: string): DemoWage => ({ type: "SALARY", annualSalary });
 

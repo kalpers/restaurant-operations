@@ -6,7 +6,7 @@ This report merges the plan §88 template with the sections required by CLAUDE.m
 
 Phase 10 is implemented. Every SEND now creates station work in the same transaction: one ticket per send batch and prep station, and one item per routed Order Item, all from the immutable routing snapshot. Kitchen and Bar are station types in one model. Cooks and bartenders work their queues at `/kitchen` and `/bar` (Start, Ready, Bump), and `/expo` is a read-only overview. Voids now check fulfillment state. A Remake is an explicit, idempotent new attempt that consumes stock again from the original consumption snapshot. The transactional outbox is built, with a processor and a Server-Sent Events adapter, so screens update live. Servers get an in-app notification when food or drinks are ready. Orders stay OPEN and no settlement exists.
 
-**Validation is not complete:** the full Playwright suite could not finish cleanly on this machine because it ran out of memory (see Validation). Everything else passed.
+**Validation is complete.** The local full Playwright run was cut short by low memory, but the full suite then passed in GitHub Actions on the pushed commit `dc26ef8` (see Validation).
 
 **Please review these decisions.** The first four were your answers in planning; the rest are defaults from the approved plan.
 
@@ -230,11 +230,12 @@ Also new: `outbox_events` (README §23) and `notifications` (README §22).
 | Unit tests | PASS: 576 of 576 (baseline 546) |
 | Integration tests | PASS: 961 of 961 (baseline 913), on a clean run |
 | E2E: kitchen spec alone | PASS: 4 of 4 |
-| E2E: full suite | **NOT VERIFIED.** The run finished in 4.3 min with 72 passed, 5 failed and 28 not run, then Claude Code stopped it because the system was critically low on memory. The failures (reservations 2, restaurant 2, scheduling 1) came after the dev server's worker processes crashed (`Jest worker encountered 2 child process exceptions`, `Target crashed`, worker exit `0xC0000142`). Four failed in 0–77 ms. The fifth, a reservations test, ran 8.3 s and failed a URL check, so it needs a clean rerun to rule out a real failure. In that run, auth (including the updated 112-permission check), orders 3/3 and kitchen 4/4 passed |
+| E2E: full suite | PASS in GitHub Actions on `dc26ef8`, which runs `npm run test:e2e` after lint, typecheck, unit, integration and build; reported by the project owner, and I did not see the run. Locally: **not verified.** The run finished in 4.3 min with 72 passed, 5 failed and 28 not run, then Claude Code stopped it because the system was critically low on memory. The failures (reservations 2, restaurant 2, scheduling 1) came after the dev server's worker processes crashed (`Jest worker encountered 2 child process exceptions`, `Target crashed`, worker exit `0xC0000142`). Four failed in 0–77 ms. The fifth, a reservations test, ran 8.3 s and failed a URL check, so it needs a clean rerun to rule out a real failure. In that run, auth (including the updated 112-permission check), orders 3/3 and kitchen 4/4 passed |
 | Production build | PASS |
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 12 moderate, unchanged (DEV-002) |
 | Seed idempotency | PASS (development database and throwaway container) |
+| GitHub Actions | PASS on `dc26ef8` (reported by the project owner) |
 
 ### Problems found during validation
 
@@ -300,9 +301,9 @@ Also new: `outbox_events` (README §23) and `notifications` (README §22).
 
 ## Remaining issues
 
-1. **Full E2E suite needs a clean run** on a machine with enough free memory. Stop `npm run dev` and close other heavy processes first. Run it with `npm run test:e2e`, or only the specs that failed: `npx playwright test tests/e2e/reservations.spec.ts tests/e2e/restaurant.spec.ts tests/e2e/scheduling.spec.ts`.
+1. **Full E2E suite: resolved.** It passed in GitHub Actions on `dc26ef8`. The local failures were from memory exhaustion. Local full runs on this machine need `npm run dev` stopped and other heavy processes closed.
 2. **Audit domain: still your decision** (carried since Phase 3). Fulfillment transitions and Remakes now add to the actions with no audit events.
-3. **Uncommitted Phase 9 report edits** (the GitHub Actions row and Remaining issue 1) are still in the working tree, along with all Phase 10 changes. Nothing has been committed.
+3. **Committed:** Phase 10 and the Phase 9 report edits were pushed in `dc26ef8`.
 4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json` (Next.js warns about it on every start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
@@ -315,4 +316,4 @@ NONE. No settlement, tender, tax or payment table exists, and a test asserts the
 
 ## Next-phase readiness
 
-**Phase 11 readiness: READY after a clean full E2E run**, subject to review of this report. Phase 11 settlement closes the Order; nothing in Phase 10 closes it or bypasses the Table Session guard. A settlement can publish its own events through `writeOutboxEvents`.
+**Phase 11 readiness: READY**, subject to review of this report. Phase 11 settlement closes the Order; nothing in Phase 10 closes it or bypasses the Table Session guard. A settlement can publish its own events through `writeOutboxEvents`.
