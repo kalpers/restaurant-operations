@@ -177,6 +177,11 @@ export const tableSessions = pgTable(
     index("table_sessions_assigned_server_employee_id_idx").on(
       table.assignedServerEmployeeId,
     ),
+    // Reporting windows seating history by seated instant (Phase 12).
+    index("table_sessions_location_id_seated_at_idx").on(
+      table.locationId,
+      table.seatedAt,
+    ),
   ],
 );
 

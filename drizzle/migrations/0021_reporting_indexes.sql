@@ -1,0 +1,2 @@
+CREATE INDEX "kitchen_ticket_items_location_submitted_idx" ON "kitchen_ticket_items" USING btree ("location_id","submitted_at");--> statement-breakpoint
+CREATE INDEX "table_sessions_location_id_seated_at_idx" ON "table_sessions" USING btree ("location_id","seated_at");

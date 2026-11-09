@@ -37,6 +37,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/purchasing/suppliers", label: "Suppliers", permission: "suppliers.manage" },
   { href: "/restaurant/tables", label: "Tables", permission: "restaurant.tables.manage" },
   { href: "/restaurant/sections", label: "Sections", permission: "restaurant.sections.manage" },
+  { href: "/reports", label: "Reports", permission: "reports.view" },
   { href: "/admin/organization", label: "Organization", permission: "organization.view" },
   { href: "/admin/locations", label: "Locations", permission: "locations.view" },
   { href: "/admin/areas", label: "Areas", permission: "locations.view" },

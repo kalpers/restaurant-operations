@@ -191,6 +191,8 @@ export const kitchenTicketItems = pgTable(
     ),
     index("kitchen_ticket_items_ticket_idx").on(table.ticketId),
     index("kitchen_ticket_items_order_item_idx").on(table.orderItemId),
+    // Reporting windows fulfillment history by submission instant (Phase 12).
+    index("kitchen_ticket_items_location_submitted_idx").on(table.locationId, table.submittedAt),
   ],
 );
 

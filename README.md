@@ -1614,6 +1614,31 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Permissions.** New: `settlements.view`, `.create` (open and cancel), `.tender.cash`, `.tender.external-card`, `.tender.gift-card`, `.tender.house-account`, `.tender.other`, `.void-tender`, `.view-card-metadata` (121 in all, with the Phase 2 `settlements.complete`). Owner, General Manager and Manager hold all ten. Server and Bartender hold view, create, cash, external card, gift card and complete. Host, Cook, Wait Staff and Inventory Manager hold none. The `security.settlement-permissions` seed applies this to existing databases; no settlements or tenders are seeded.
 
+### Phase 12 Reporting
+
+**Read-only by construction.** `src/modules/reporting/` runs every report inside `withReadOnlySnapshot` (a `REPEATABLE READ, READ ONLY` transaction), so PostgreSQL refuses any write and every figure in a report comes from one snapshot. It imports no other module's services, has no tables of its own, and uses indexed aggregation queries, with no views, summary tables or caches. Each report is for one Location and an inclusive business-date range of at most 92 days. Sources with a `business_date` column filter on it. Sources stored only as instants (kitchen items, Table Sessions, reservations, waitlist, settlement cancellations, supplier costs) use `businessDateRangeBounds` from BusinessDateService, which always agrees with `businessDateOf`, including across DST gaps. There is no calendar-date filter.
+
+**Approved policies.** *Sales* are CLOSED orders by `orders.business_date`, from the stored totals that Phase 9 derives from price and discount snapshots. Open checks and voids are separate figures, and net sales reconcile exactly to RECORDED tenders on completed settlements. *Labor* is scheduled, not clocked: ACTIVE assignments on non-cancelled shifts in PUBLISHED (or ARCHIVED) periods, by `shift_date`. Each is costed at the HOURLY `employee_position_compensation` rate in effect on that date for the Employee and the Position worked. SALARY work and work with no rate show hours only. *Audit* viewing is not built; `audit_events` remains an open decision.
+
+**Areas.**
+- *Sales*: by order type and date; covers count once per Table Session.
+- *Menu performance*: item and modifier snapshots on closed orders. Theoretical food cost is the posted cost of each item's SEND consumption ledger rows.
+- *Settlements*: tenders by type with tips, cash received and change; voided and failed tenders; cancellations. Card metadata is never read.
+- *Orders*: lifecycle, open-to-close time, voids by disposition and reason, discounts by snapshot, results by server.
+- *Inventory*: ledger usage, waste, count variance, adjustments and transfers. The closing quantity is the ledger's `quantity_after` at period end. Also receipts by supplier and supplier cost changes.
+- *Fulfillment*: per station, send-to-ready average, median and 90th percentile, ready-to-completed, late (over 20 minutes), cancellations and remakes.
+- *Labor*: by position and date, plus coverage of required vs assigned.
+- *Seating*: sessions, covers, duration and turns per table used; reservation statuses and no-show rate; waitlist outcomes and waits.
+
+**Authorization.** Each report needs `reports.view` plus its area's code (`reports.sales` covers menu performance). The actor is resolved at the requested Location, so another location's figures are refused. CSV export also needs `reports.export`. Cost columns also need `inventory.cost.view`; per-employee labor cost also needs `hr.compensation.view`; labor % of sales also needs `reports.sales`. Grants are unchanged from Phase 2: Owner and General Manager hold every reports code; Manager holds all but `reports.labor` and `reports.export`; Inventory Manager holds `reports.view` and `reports.inventory`. No permission or seed was added.
+
+**Surfaces.**
+- APIs: `GET /api/reports/{area}` (JSON), `GET /api/reports/{area}/export` (RFC 4180 CSV with a header block; spreadsheet formulas neutralized), `GET /api/reports/dashboard`.
+- Pages: `/reports` and `/reports/{area}`, with filters for location, dates, order type, tender type and employee.
+- `/dashboard` is the operational overview. Holders of `reports.view` see one business date's headline figures per permitted area, streamed so the page never waits on them.
+
+**Indexes.** Migration `0021` adds `kitchen_ticket_items (location_id, submitted_at)` and `table_sessions (location_id, seated_at)`, the two report filters that sequential-scanned in a 5,000-order measurement.
+
 ## 34. AWS POC Deployment Target
 
 The POC must be deployable to AWS while keeping application code cloud-provider independent.

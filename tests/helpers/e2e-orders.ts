@@ -69,6 +69,8 @@ import { createTable } from "../../src/modules/restaurant/services/table-service
 import { addDraftItem } from "../../src/modules/orders/services/draft-item-service";
 import { createOrder } from "../../src/modules/orders/services/order-service";
 import { applyOrderDiscount, createDiscountDefinition } from "../../src/modules/orders/services/discount-service";
+import { openSettlement, recordTender } from "../../src/modules/settlements/services/settlement-service";
+import { completeSettlement } from "../../src/workflows/close-order/complete-settlement";
 import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
 import { seatParty } from "../../src/workflows/seat-party/seat-party";
 
@@ -90,6 +92,12 @@ export const SETTLEMENTS_SCOPE: E2eScope = {
   emailDomain: "settlements-e2e.example.test",
   rolePrefix: "SETTLEMENTS_E2E_",
   tablePrefix: "SET-",
+};
+
+export const REPORTS_SCOPE: E2eScope = {
+  emailDomain: "reports-e2e.example.test",
+  rolePrefix: "REPORTS_E2E_",
+  tablePrefix: "REP-",
 };
 
 export const CODE_PREFIX = "E2EO_";
@@ -372,6 +380,34 @@ export async function sentOrderFor(
   });
 
   return { orderId: order.id, version: sent.orderVersion };
+}
+
+/** Settles an order in exact cash and closes it, through the Phase 11 services. */
+export async function settleInCashFor(owner: OrdersAccount, orderId: string) {
+  const database = getDatabase();
+  const actor = await actorOf(owner);
+  const opened = await openSettlement(database, actor, orderId);
+  const recorded = await recordTender(database, actor, opened.settlementId, {
+    idempotencyKey: `e2e-${randomUUID()}`,
+    expectedVersion: opened.settlementVersion,
+    tenderType: "CASH",
+    outcome: "RECORDED",
+    amount: opened.orderAmountSnapshot,
+    tipAmount: null,
+    receivedAmount: opened.orderAmountSnapshot,
+    externalReference: null,
+    providerName: null,
+    cardBrand: null,
+    cardLastFour: null,
+    authorizationReference: null,
+    otherDescription: null,
+    failureReason: null,
+  });
+
+  await completeSettlement(database, actor, opened.settlementId, {
+    expectedVersion: recorded.settlementVersion,
+    idempotencyKey: `e2e-${randomUUID()}`,
+  });
 }
 
 /** Applies a 100% order comp, so the amount due is 0.00. */

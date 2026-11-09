@@ -21,3 +21,17 @@ export function withTransaction<Result>(
 ): Promise<Result> {
   return database.transaction(callback);
 }
+
+/**
+ * Runs read-only work in one REPEATABLE READ, READ ONLY transaction: every query sees the
+ * same snapshot, and PostgreSQL refuses any write. Reporting uses this for every report.
+ */
+export function withReadOnlySnapshot<Result>(
+  database: Database,
+  callback: (transaction: DatabaseTransaction) => Promise<Result>,
+): Promise<Result> {
+  return database.transaction(callback, {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
+}
