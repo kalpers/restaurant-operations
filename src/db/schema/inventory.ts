@@ -284,6 +284,12 @@ export const inventoryTransactions = pgTable(
       .where(
         sql`${table.transactionType} = 'CONSUME' AND ${table.referenceType} = 'ORDER_ITEM'`,
       ),
+    // A Kitchen Remake consumes each Inventory Item at most once (retry safety).
+    uniqueIndex("inventory_transactions_remake_consume_unique")
+      .on(table.referenceId, table.inventoryItemId)
+      .where(
+        sql`${table.transactionType} = 'CONSUME' AND ${table.referenceType} = 'KITCHEN_REMAKE'`,
+      ),
   ],
 );
 

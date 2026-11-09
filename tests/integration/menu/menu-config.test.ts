@@ -509,13 +509,17 @@ describe("menu configuration", () => {
       await expect(edit("B")).rejects.toBeInstanceOf(ConcurrencyError);
     });
 
-    it("creates no kitchen tickets or fulfillment records (Phase 10 owns them)", async () => {
+    it("keeps fulfillment in the Kitchen domain: only the Phase 10 kitchen_* tables hold tickets", async () => {
       const tables = await database().execute<{ tablename: string }>(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public'` as never,
       );
       const names = (tables as unknown as { tablename: string }[]).map((row) => row.tablename);
 
-      expect(names.filter((name) => /ticket|fulfillment/.test(name))).toEqual([]);
+      expect(names.filter((name) => /ticket|fulfillment/.test(name)).sort()).toEqual([
+        "kitchen_ticket_item_status_history",
+        "kitchen_ticket_items",
+        "kitchen_tickets",
+      ]);
     });
   });
 

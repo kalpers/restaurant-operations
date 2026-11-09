@@ -9,6 +9,7 @@ import {
 } from "@/components/orders/order-workspace";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
+import { fulfillmentForOrder } from "@/modules/kitchen/queries/kitchen-queries";
 import { getOperationalMenu } from "@/modules/menu/queries/operational-menu";
 import { getOrderDetail } from "@/modules/orders/queries/order-queries";
 import { actorHolds } from "@/modules/orders/services/access";
@@ -36,7 +37,9 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     submit: actorHolds(actor, "orders.submit"),
     void: actorHolds(actor, "orders.void"),
     discount: actorHolds(actor, "orders.discount.apply"),
+    remake: actor.permissions.has("fulfillment.remake"),
   };
+  const fulfillment = Object.fromEntries(await fulfillmentForOrder(database, order.id));
   const categories: MenuCategory[] = [];
 
   if (abilities.edit && order.status === "OPEN") {
@@ -81,7 +84,13 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
           Back to orders
         </Link>
       </p>
-      <OrderWorkspace order={order} categories={categories} abilities={abilities} discounts={discounts} />
+      <OrderWorkspace
+        order={order}
+        categories={categories}
+        abilities={abilities}
+        discounts={discounts}
+        fulfillment={fulfillment}
+      />
     </>
   );
 }

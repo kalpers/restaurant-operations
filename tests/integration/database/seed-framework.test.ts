@@ -177,6 +177,7 @@ describe("runSeeds", () => {
       "inventory.packaging-units",
       "inventory.demo-catalog",
       "security.orders-permissions",
+      "security.kitchen-permissions",
     ]);
   });
 });

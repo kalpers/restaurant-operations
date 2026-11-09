@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
+import { ConnectionBadge, useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import type { OrderItemFulfillment } from "@/modules/kitchen/queries/kitchen-queries";
 import type { OperationalMenuItem } from "@/modules/menu/queries/operational-menu";
 import type { OrderDetail } from "@/modules/orders/queries/order-queries";
 
@@ -16,6 +18,7 @@ export type WorkspaceAbilities = {
   submit: boolean;
   void: boolean;
   discount: boolean;
+  remake: boolean;
 };
 
 export type MenuCategory = { id: string; name: string; items: OperationalMenuItem[] };
@@ -33,6 +36,8 @@ type Props = {
   categories: MenuCategory[];
   abilities: WorkspaceAbilities;
   discounts: DiscountChoice[];
+  /** Kitchen/Bar fulfillment per sent Order Item, keyed by its ID. */
+  fulfillment: Record<string, OrderItemFulfillment>;
 };
 
 const BUTTON = "min-h-11 rounded border border-neutral-400 px-3 text-sm font-medium disabled:opacity-50";
@@ -375,16 +380,76 @@ function VoidItemForm({ order, item }: { order: OrderDetail; item: OrderDetail["
   );
 }
 
+function RemakeForm({ order, item }: { order: OrderDetail; item: OrderDetail["items"][number] }) {
+  const { run, pending, error } = useAction();
+  const [reason, setReason] = useState("");
+  // One key per remake attempt, kept across retries of that attempt.
+  const key = useRef<string | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    key.current ??= `remake-${crypto.randomUUID()}`;
+
+    const result = await run("POST", `/api/orders/${order.id}/items/${item.id}/remake`, { reason }, {
+      "Idempotency-Key": key.current,
+    });
+
+    if (result.ok || (result.status >= 400 && result.status < 500)) {
+      key.current = null;
+    }
+
+    if (result.ok) {
+      setReason("");
+    }
+  }
+
+  return (
+    <details className="mt-2">
+      <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium">Remake</summary>
+      <form onSubmit={handleSubmit} aria-label={`Remake ${item.name}`} className="grid gap-2">
+        <p className="text-xs text-neutral-600">
+          Sends it to the same stations again and uses the ingredients again. The guest isn&apos;t charged.
+        </p>
+        <label className="grid gap-1 text-sm font-medium">
+          Reason
+          <input value={reason} required maxLength={500} onChange={(event) => setReason(event.target.value)} className={INPUT} />
+        </label>
+        <button type="submit" disabled={pending || !reason.trim()} className={BUTTON}>
+          Remake {item.name}
+        </button>
+        <ErrorText error={error} />
+      </form>
+    </details>
+  );
+}
+
+function FulfillmentLine({ fulfillment }: { fulfillment: OrderItemFulfillment | undefined }) {
+  if (!fulfillment) {
+    return null;
+  }
+
+  return (
+    <p className="text-xs" data-testid="fulfillment-status">
+      Kitchen/Bar: <span className="font-semibold">{fulfillment.status}</span>
+      {fulfillment.attempts > 1 && ` · remade ${fulfillment.attempts - 1}×`}
+      {" · "}
+      {[...new Set(fulfillment.stations.map((station) => station.code))].join(", ")}
+    </p>
+  );
+}
+
 function SentLine({
   order,
   item,
   abilities,
   discounts,
+  fulfillment,
 }: {
   order: OrderDetail;
   item: OrderDetail["items"][number];
   abilities: WorkspaceAbilities;
   discounts: DiscountChoice[];
+  fulfillment: OrderItemFulfillment | undefined;
 }) {
   const voided = item.status === "VOIDED";
   const itemDiscounts = discounts.filter((entry) => entry.scope === "ITEM");
@@ -406,6 +471,7 @@ function SentLine({
           ? `Voided${item.voidDisposition === "UNPREPARED" ? " · not prepared" : " · prepared or discarded"} · ${item.voidReason}`
           : `Sent in round ${item.batchNumber}`}
       </p>
+      <FulfillmentLine fulfillment={fulfillment} />
       {item.discounts
         .filter((entry) => entry.status === "APPLIED")
         .map((entry) => (
@@ -414,6 +480,7 @@ function SentLine({
       {!voided && order.status === "OPEN" && abilities.discount && itemDiscounts.length > 0 && (
         <ApplyDiscountForm order={order} choices={itemDiscounts} url={`/api/orders/${order.id}/items/${item.id}/discounts`} label={`Discount ${item.name}`} />
       )}
+      {!voided && order.status === "OPEN" && abilities.remake && fulfillment && <RemakeForm order={order} item={item} />}
       {!voided && order.status === "OPEN" && abilities.void && <VoidItemForm order={order} item={item} />}
     </li>
   );
@@ -586,7 +653,10 @@ function VoidOrderForm({ order }: { order: OrderDetail }) {
   );
 }
 
-export function OrderWorkspace({ order, categories, abilities, discounts }: Props) {
+const FULFILLMENT_EVENTS = ["kitchen.ticket-created", "kitchen.item-status-changed", "kitchen.item-ready"];
+
+export function OrderWorkspace({ order, categories, abilities, discounts, fulfillment }: Props) {
+  const connection = useRealtimeRefresh(FULFILLMENT_EVENTS, 60_000);
   const open = order.status === "OPEN";
   const drafts = order.items.filter((item) => item.status === "DRAFT");
   const sent = order.items.filter((item) => item.status !== "DRAFT");
@@ -609,7 +679,10 @@ export function OrderWorkspace({ order, categories, abilities, discounts }: Prop
       </div>
       <aside aria-label="Check" className="order-1 grid content-start gap-4 lg:order-2">
         <div>
-          <h1 className="text-2xl font-semibold">Order #{order.orderNumber}</h1>
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-2xl font-semibold">Order #{order.orderNumber}</h1>
+            <ConnectionBadge status={connection} />
+          </div>
           <p className="text-neutral-600">
             {ORDER_TYPE_LABELS[order.orderType]}
             {order.tableNumbers.length > 0 ? ` · Table ${order.tableNumbers.join(" + ")}` : ""}
@@ -633,7 +706,14 @@ export function OrderWorkspace({ order, categories, abilities, discounts }: Prop
           {sent.length === 0 && <p className="text-sm text-neutral-600">Nothing sent yet.</p>}
           <ul className="grid gap-2">
             {sent.map((item) => (
-              <SentLine key={item.id} order={order} item={item} abilities={abilities} discounts={discounts} />
+              <SentLine
+                key={item.id}
+                order={order}
+                item={item}
+                abilities={abilities}
+                discounts={discounts}
+                fulfillment={fulfillment[item.id]}
+              />
             ))}
           </ul>
         </section>

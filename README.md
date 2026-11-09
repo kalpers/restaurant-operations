@@ -822,6 +822,9 @@ Tables:
 ```text
 kitchen_tickets
 kitchen_ticket_items
+kitchen_ticket_item_status_history
+kitchen_remakes
+kitchen_remake_consumption
 ```
 
 Bar uses the same fulfillment model as Kitchen. Do not create a separate bar-ticket architecture.
@@ -855,6 +858,8 @@ Support architecturally:
 - Ticket/item recall
 - Course concept
 - Hold/fire concept
+
+As built in Phase 10, the approved Phase 10 policies replace recall with an explicit Remake (a new linked attempt), and defer courses and hold/fire: submitted work enters `NEW` at once, and nothing in the schema precludes adding them later. See section 33.
 
 Overall order state and kitchen fulfillment state remain separate.
 
@@ -1068,6 +1073,8 @@ CERTIFICATION_EXPIRING
 
 Do not introduce SMS/email/push integration during the POC unless intentionally added later.
 
+As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` only (see section 33). The other kinds arrive with the phases that need them.
+
 ## 23. Infrastructure Reliability Tables
 
 Tables:
@@ -1087,7 +1094,9 @@ Never send a kitchen/real-time event before the database transaction commits.
 
 Critical commands such as SEND must accept a client-generated idempotency key. Retrying the same successfully processed request must return/reuse the earlier outcome, never duplicate kitchen tickets or inventory movement.
 
-As built in Phase 9, `idempotency_records` holds (organization, scope, key), the actor, a SHA-256 fingerprint of the canonical request (including the actor) and the stored response. The key is claimed inside the command's own transaction (`src/infrastructure/idempotency/`), so a rolled-back attempt leaves nothing and a concurrent duplicate waits on the unique key. A matching retry returns the stored response; the same key with a different request or actor is refused with `IDEMPOTENCY_KEY_REUSED` (409). `outbox_events` is not yet built: Phase 9 publishes no realtime events.
+As built in Phase 9, `idempotency_records` holds (organization, scope, key), the actor, a SHA-256 fingerprint of the canonical request (including the actor) and the stored response. The key is claimed inside the command's own transaction (`src/infrastructure/idempotency/`), so a rolled-back attempt leaves nothing and a concurrent duplicate waits on the unique key. A matching retry returns the stored response; the same key with a different request or actor is refused with `IDEMPOTENCY_KEY_REUSED` (409).
+
+As built in Phase 10, `outbox_events` rows are written inside the transaction that makes the change (SEND, item transitions, voids, Remakes, notifications), carry identifiers only, and are append-only except for their publishing state. One processor per Node.js process, started from `src/instrumentation.ts` (`OUTBOX_POLL_INTERVAL_MS`, default 1000, 0 turns it off), claims unpublished rows in sequence with `FOR UPDATE SKIP LOCKED`, hands them to the in-process realtime adapter, and marks them published; a publisher failure records the attempt and retries. The adapter fans events out to authenticated Server-Sent Events connections (`/api/realtime/stream`), filtered by organization, location and, for notifications, recipient. An event only means "refetch": screens read through their normal authorized queries and fall back to a slow refresh, with a Live/Reconnecting indicator. This fits the single-instance POC; several app instances would each need a feed (for example LISTEN/NOTIFY). Outbox retention is an operational task, not built.
 
 ## 24. Transaction Boundaries
 
@@ -1461,7 +1470,7 @@ Scheduling permissions are separate for viewing/editing/generating/publishing (`
 
 **Permissions.** `restaurant.view`, `.tables.manage`, `.sections.manage`, `.seat`, `.move`, `.complete-session`, `.cancel-session`, `.clean-table`, `.condition.manage`, `.server.assign`, `.capacity.override` and `.schedule.override`. Phase 2's `restaurant.manage` was never enforced and is retired by the `security.restaurant-permissions` seed. Owner, General Manager and Manager hold all of them. Host holds `view`, `seat`, `move`, `complete-session`, `clean-table` and `server.assign`. Server and Bartender add `complete-session` and `clean-table`; Wait Staff adds `clean-table`. Only capacity and schedule matching can be overridden. Location, inactive, occupied, dirty, out-of-service and position rules cannot.
 
-The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Phase 9 added orders that reference a session, and a session can't be completed or cancelled while any of its orders is OPEN (see the Phase 9 policies). The floor refreshes every 30 seconds until realtime arrives in Phase 10.
+The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Phase 9 added orders that reference a session, and a session can't be completed or cancelled while any of its orders is OPEN (see the Phase 9 policies). The floor refreshes every 30 seconds; Phase 10's realtime covers kitchen, bar, order and notification events, and floor events are not yet published.
 
 ### Phase 6 Reservations and Waitlist
 
@@ -1561,7 +1570,25 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Permissions.** New: `orders.view`, `orders.edit`, `orders.discount.apply`, `orders.discount.manage` (106 in all). Owner, General Manager and Manager hold every orders code. Server and Bartender hold view, create, edit and submit. Host, Cook, Wait Staff and Inventory Manager hold none. Orders are location-scoped, with no per-server ownership rule. `orders.close` stays unused until Phase 11. The `security.orders-permissions` seed adds the codes; no orders or discounts are seeded.
 
-**Deferred.** Kitchen and bar tickets (Phase 10, read from the snapshots above), settlement and closure (Phase 11), `outbox_events` and `audit_events` (no realtime consumer exists yet; domain histories and actor columns give provenance).
+**Deferred.** Settlement and closure (Phase 11) and `audit_events` (domain histories and actor columns give provenance). Kitchen and bar tickets and `outbox_events` arrived in Phase 10.
+
+### Phase 10 Kitchen, Bar and Realtime
+
+**One fulfillment model.** Kitchen and Bar are station types, not separate systems. SEND creates, in its own transaction and after the CONSUME postings, one `kitchen_tickets` row per send batch and prep station, and one `kitchen_ticket_items` row per routed Order Item, each with an initial `NEW` history row (`kitchen_ticket_item_status_history`, append-only). Routing comes only from the item's `prep_station_ids_snapshot`; an item routed to several stations gets work at each, an empty route gets none, and an `EXPO`-type station gets none, because Expo is a view and not a preparation hop. Station code, name and type, order number and type, round, table numbers (through the Table Session), takeout pickup label and server name are snapshotted on the ticket, and item name, quantity, modifiers and kitchen instructions on the item, so a later Menu, routing or table change never moves or renames submitted work. A trigger freezes those snapshots and allows no delete. Uniqueness on (batch, station) and (Order Item, station, attempt), plus SEND's idempotency, means a retry creates nothing. Phase 9 items sent before this migration get no tickets (no backfill).
+
+**Lifecycle.** Items are exactly `NEW -> PREPARING -> READY -> COMPLETED`, with `CANCELLED` only from a void; there is no `NEW -> READY`, no going back and no recall, and a trigger enforces the edges. Each action (start, ready, complete/bump) locks the item and checks its `version`; repeating an action that already happened returns the current state and writes no history, and a stale version for a real move is `CONCURRENCY_CONFLICT`. Ticket status is never stored: all cancelled is `CANCELLED`; all terminal with one completed is `COMPLETED`; all non-cancelled ready or completed with one ready is `READY`; otherwise any preparing is `PREPARING`; otherwise `NEW`. The same rule gives an Order Item's overall readiness across stations and attempts. Fulfillment never touches Inventory, never closes the Order, and never bypasses the Table Session open-order guard; takeout runs the same pipeline with no session.
+
+**Queues.** `/kitchen` and `/bar` list tickets with active work, FIFO by submission instant then ticket and item ID, filterable by station, status and order type, plus recently completed tickets. Age is computed from the submission instant at read time and shown with display-only warning (10 min) and late (20 min) bands. `/expo` is read-only and groups work by order. The DTOs carry no price, discount, cost, HR or guest-contact field.
+
+**Voids.** The void workflow locks every station item of the Order Item before any reversal. `UNPREPARED` is allowed only while every item of every attempt is `NEW` (`FULFILLMENT_ALREADY_STARTED` otherwise) and cancels them all, and the `SALE_REVERSAL` covers the original and every Remake CONSUME. `PREPARED_OR_DISCARDED` cancels `NEW`, `PREPARING` and `READY`, keeps `COMPLETED` and `CANCELLED` rows, retains all consumption and posts no waste.
+
+**Remake.** `POST /api/orders/{id}/items/{itemId}/remake` with a reason and an idempotency key (`kitchen.remake` scope). In one transaction it records `kitchen_remakes` (attempt number, reason, actor, time, the previous attempt's item), creates a new ticket and `NEW` item at every station of the original routing with the original snapshots, and posts additional CONSUME, referenced `KITCHEN_REMAKE`, through the trusted `postRemakeConsumption` from the item's immutable `order_item_inventory_consumption` rows, never the current Recipe, with Phase 8's conversion, costing and negative-stock policy. `kitchen_remake_consumption` links each posting to its source row. A shortage rolls the whole Remake back. Price, discounts, totals, the Order version and Order Items are unchanged.
+
+**Notifications and realtime.** When a ticket's derived status becomes `READY`, the same transaction writes one notification (`FOOD_READY` for kitchen stations, `BAR_ORDER_READY` for bar) for the order's server's linked active user, else whoever sent the batch; a ticket notifies at most once. Only the recipient can list or mark it read. Every change writes outbox events that reach screens through the processor and Server-Sent Events (section 23). The app header has an Alerts bell; KDS and order screens refresh on events and show the connection state.
+
+**Permissions.** New: `bar.view`, `bar.manage`, `fulfillment.start`, `.ready`, `.complete`, `.remake` (112 in all). Viewing a station needs `kitchen.view` (KITCHEN stations) or `bar.view` (BAR stations); each action needs its `fulfillment.*` code and `kitchen.manage` or `bar.manage` for the station's type, at the actor's location. Owner, General Manager and Manager hold all of them. Cook: `kitchen.view`, `kitchen.manage` and the four actions. Bartender: `bar.manage` and the four actions, and loses the Phase 2 `kitchen.manage` (never enforced). Server, Bartender and Wait Staff hold `kitchen.view` and `bar.view` for Expo context. No kitchen role gains an Inventory permission. The `security.kitchen-permissions` seed applies this to existing databases; no tickets or notifications are seeded.
+
+**Stations.** A trigger refuses deactivating a prep station that still has `NEW`, `PREPARING` or `READY` work (`STATION_HAS_ACTIVE_WORK`). Renaming is allowed and changes no ticket.
 
 ## 34. AWS POC Deployment Target
 
@@ -1675,6 +1702,8 @@ Deliver draft orders, split checks (as several orders per Table Session; split p
 ### Phase 10: Kitchen + Bar + Realtime
 
 Deliver prep-station queues, ticket lifecycle, cancellation/recall, hold/fire architecture, transactional outbox processing, real-time KDS, and server-ready notifications.
+
+As built: recall is replaced by Remake and hold/fire and courses are deferred, per the approved Phase 10 policies (section 33).
 
 ### Phase 11: Settlements
 

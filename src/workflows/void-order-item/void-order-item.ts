@@ -10,6 +10,7 @@ import {
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 import { postSaleReversal } from "@/modules/inventory/services/order-consumption";
+import { cancelFulfillmentForVoid } from "@/modules/kitchen/services/void-sync";
 import {
   appendItemHistory,
   appendOrderHistory,
@@ -22,9 +23,12 @@ import type { VoidDisposition } from "@/modules/orders/types";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
 // Voids of sent items. The row stays, marked VOIDED with who, when, why and the physical
-// disposition. UNPREPARED restores stock with SALE_REVERSAL rows linked to each original
-// CONSUME; PREPARED_OR_DISCARDED keeps the consumption and records no waste (staff use the
-// Inventory waste workflow if they want to). Any refused reversal rolls the whole void back.
+// disposition. Its station work is synchronized first (Phase 10): UNPREPARED is allowed only
+// while every station item of every attempt is still NEW, and cancels them all;
+// PREPARED_OR_DISCARDED cancels NEW/PREPARING/READY and keeps COMPLETED history. UNPREPARED
+// restores stock with SALE_REVERSAL rows linked to each original CONSUME and each Remake
+// CONSUME; PREPARED_OR_DISCARDED keeps all consumption and records no waste (staff use the
+// Inventory waste workflow if they want to). Any refusal rolls the whole void back.
 
 function requireReason(reason: string): string {
   const trimmed = reason.trim();
@@ -55,6 +59,14 @@ async function voidSubmittedItem(
     })
     .returning({ id: orderItemVoids.id });
 
+  const fulfillment = await cancelFulfillmentForVoid(transaction, {
+    orderItemId: item.id,
+    disposition: input.disposition,
+    reason: input.reason,
+    actorUserId: actor.userId,
+    at: input.at,
+  });
+
   if (input.disposition === "UNPREPARED") {
     const consumed = await transaction
       .select({ transactionId: orderItemInventoryConsumption.inventoryTransactionId })
@@ -64,7 +76,10 @@ async function voidSubmittedItem(
     await postSaleReversal(transaction, {
       organizationId: actor.organizationId,
       locationId: actor.locationId,
-      originalTransactionIds: consumed.map((row) => row.transactionId),
+      originalTransactionIds: [
+        ...consumed.map((row) => row.transactionId),
+        ...fulfillment.remakeTransactionIds,
+      ],
       voidId: voidRow!.id,
       occurredAt: input.at,
       createdByUserId: actor.userId,

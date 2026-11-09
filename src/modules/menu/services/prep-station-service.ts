@@ -1,19 +1,21 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "@/db";
-import { isUniqueViolation } from "@/db/helpers/database-errors";
+import { isUniqueViolation, readConstraintName } from "@/db/helpers/database-errors";
 import { nextVersion } from "@/db/helpers/versioning";
 import { menuItemPrepRouting, prepStations } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
-import { ConflictError, NotFoundError } from "@/shared/errors/app-error";
+import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import type { StationType } from "../types";
 import { assertAnyPermission, assertPermission, requireMenuItem } from "./access";
 
-// Preparation routing is configuration only. Kitchen tickets, claiming and firing belong
-// to Phase 10, which reads these rows to decide where an item goes.
+// Preparation routing is configuration only. Phase 10 Kitchen snapshots a send's routing
+// onto its tickets, so changing routing or a station never moves submitted work. A station
+// with unfinished work can't be deactivated until that work is resolved; a database trigger
+// (`prep_stations_active_work`) enforces it on every path, and this service reports it.
 
 type StationInput = {
   name: string;
@@ -73,7 +75,17 @@ export async function updateStation(
         eq(prepStations.version, expectedVersion),
       ),
     )
-    .returning();
+    .returning()
+    .catch((error: unknown) => {
+      if (readConstraintName(error) === "prep_stations_active_work") {
+        throw new BusinessRuleError(
+          "STATION_HAS_ACTIVE_WORK",
+          "This station still has items to prepare. Finish or void them before deactivating it.",
+        );
+      }
+
+      throw error;
+    });
 
   if (rows[0]) {
     return rows[0];

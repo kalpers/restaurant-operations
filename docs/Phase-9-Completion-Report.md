@@ -296,6 +296,7 @@ Real `npm run db:reset` refusals on a throwaway PostgreSQL 17 container, with a 
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 12 moderate, unchanged (DEV-002) |
 | Seed idempotency | PASS |
+| GitHub Actions | PASS: reported by the project owner after the work was pushed; I did not see the run |
 
 ### Problems found during validation
 
@@ -365,9 +366,9 @@ Real `npm run db:reset` refusals on a throwaway PostgreSQL 17 container, with a 
 
 ## Remaining issues
 
-None block Phase 10 except the first, which needs your decision.
+None block Phase 10.
 
-1. **Outbox for Phase 10: your decision.** README/CLAUDE.md rule 8 says realtime events go through `outbox_events` after commit, but the Phase 10 plan says to add no outbox. This conflict should be resolved when Phase 10 is planned.
+1. **Outbox for Phase 10: decided 2026-11-09.** README/CLAUDE.md rule 8 says realtime events go through `outbox_events` after commit, while the Phase 10 plan says to add no outbox. The project owner chose the README contract: Phase 10 builds `outbox_events`, written in the SEND (and fulfillment) transactions, and a processor that publishes committed events. This overrides the Phase 10 plan's "no outbox" instruction (its item 9).
 2. **Audit domain: still your decision** (carried since Phase 3). Order sends, voids and discounts now add to the list of actions without audit events.
 3. **No E2E for discounts or the full-order void,** which have integration coverage.
 4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json` (Next.js warns about it on every start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
@@ -382,4 +383,4 @@ NONE. No ticket, fulfillment, settlement, tender, tax, payment, outbox or audit 
 
 ## Next-phase readiness
 
-**Phase 10 readiness: READY,** subject to review of this report and your decision on Remaining issue 1. Phase 10 creates tickets inside `sendOrderItems`' transaction from each sent item's batch, `prep_station_ids_snapshot`, `kitchen_instructions_snapshot` and modifier snapshots, and a remake can consume from `order_item_inventory_consumption`.
+**Phase 10 readiness: READY,** subject to review of this report. Phase 10 builds the transactional outbox (Remaining issue 1). Phase 10 creates tickets inside `sendOrderItems`' transaction from each sent item's batch, `prep_station_ids_snapshot`, `kitchen_instructions_snapshot` and modifier snapshots, and a remake can consume from `order_item_inventory_consumption`.

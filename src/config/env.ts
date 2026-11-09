@@ -36,6 +36,14 @@ const envSchema = z
       .positive({ error: "must be positive" })
       .max(MAXIMUM_DOCUMENT_BYTES, { error: "must be at most 50 MiB" })
       .default(DEFAULT_DOCUMENT_BYTES),
+    // How often the outbox processor publishes committed events (README section 23).
+    // 0 turns the in-process processor off.
+    OUTBOX_POLL_INTERVAL_MS: z.coerce
+      .number({ error: "must be a whole number" })
+      .int({ error: "must be a whole number" })
+      .min(0, { error: "must not be negative" })
+      .max(60_000, { error: "must be at most 60000" })
+      .default(1000),
     // An empty value, as in a copied .env.example, counts as unset.
     NEXTAUTH_SECRET: z.preprocess(
       (value) => (value === "" ? undefined : value),

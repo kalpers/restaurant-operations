@@ -29,6 +29,7 @@ Approved 2026-10-08. These decisions replace conflicting recommendations later i
 7. Remake is an explicit, reasoned, actor/timestamped, idempotent new attempt linked to the original Order Item and fulfillment attempt. It does not add a charge or alter Order snapshots/totals. Additional `CONSUME` uses the immutable original `order_item_inventory_consumption` snapshot through a narrow trusted capability and Phase 8 rules. Insufficient stock rolls the entire Remake back.
 8. No generic Recall/Reopen exists. `READY -> PREPARING`, or transitions out of `COMPLETED`/`CANCELLED`, are rejected. Re-preparation uses Remake.
 9. Create tickets and work items inside the Phase 9 Order-submission transaction. Do not introduce an outbox, broker, Redis, cloud pub/sub, or in-memory event handoff for this phase.
+   - *Overridden 2026-11-09 by the project owner:* the transactional outbox (README sections 3, 23, 24) is built in Phase 10, with an in-process Server-Sent Events adapter. Tickets are still created in the submission transaction. See `docs/Phase-10-Completion-Report.md`.
 10. Do not backfill historical submitted Order Items. Phase 10 work is created for submissions committed after the migration and explicit test/development fixtures only.
 11. Preserve Phase 9 snapshots, exact arithmetic, BusinessDateService, location-aware RBAC, Inventory ledger authority, Takeout without a Table Session, Order remaining `OPEN`, and the Table Session `OPEN`-Order completion guard. No Settlement/payment or generic Inventory permissions for Kitchen/Bar users.
 
@@ -831,6 +832,8 @@ existing realtime/event mechanism if already implemented
 Do not add WebSockets, Redis, message brokers, or cloud pub/sub solely for Phase 10 unless architecture explicitly requires it.
 
 Use five-second short polling/server refresh; do not add realtime infrastructure for this phase.
+
+*Overridden 2026-11-09 by the project owner:* screens use the outbox processor and Server-Sent Events (no broker, Redis or WebSocket library), with a slow fallback refresh. See policy 9 above.
 
 ---
 

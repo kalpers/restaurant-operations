@@ -33,6 +33,14 @@ const SESSION_CLOSE_OUT: readonly PermissionCode[] = [
   "restaurant.clean-table",
 ];
 
+/** Working a station's queue. Station type scope comes from `kitchen.manage` / `bar.manage`. */
+const FULFILLMENT_ACTIONS: readonly PermissionCode[] = [
+  "fulfillment.start",
+  "fulfillment.ready",
+  "fulfillment.complete",
+  "fulfillment.remake",
+];
+
 const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "restaurant.view",
   ...SESSION_CLOSE_OUT,
@@ -43,6 +51,9 @@ const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "orders.submit",
   ...SCHEDULE_SELF_SERVICE,
   "settlements.complete",
+  // Read-only Expo and station context, to see when food and drinks are ready.
+  "kitchen.view",
+  "bar.view",
 ];
 
 /** The starting role-permission matrix. Later changes use a new versioned seed. */
@@ -142,6 +153,9 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "settlements.complete",
       "kitchen.view",
       "kitchen.manage",
+      "bar.view",
+      "bar.manage",
+      ...FULFILLMENT_ACTIONS,
       "reports.view",
       "reports.sales",
       "reports.orders",
@@ -161,7 +175,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
     code: "BARTENDER",
     name: "Bartender",
     description: "Takes orders and fulfills bar tickets.",
-    permissions: [...SERVER_PERMISSIONS, "kitchen.view", "kitchen.manage"],
+    permissions: [...SERVER_PERMISSIONS, "bar.manage", ...FULFILLMENT_ACTIONS],
   },
   {
     code: "HOST",
@@ -189,6 +203,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
     permissions: [
       "kitchen.view",
       "kitchen.manage",
+      ...FULFILLMENT_ACTIONS,
       "menu.view",
       "inventory.view",
       "inventory.waste",
@@ -204,6 +219,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "restaurant.clean-table",
       "menu.view",
       "kitchen.view",
+      "bar.view",
       ...SCHEDULE_SELF_SERVICE,
     ],
   },

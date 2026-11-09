@@ -9,7 +9,9 @@ import {
 } from "@/db/schema";
 import { withTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
+import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import type { Actor } from "@/modules/auth/types";
+import { createTicketsForSendBatch } from "@/modules/kitchen/services/ticket-generation";
 import { postOrderConsumption } from "@/modules/inventory/services/order-consumption";
 import {
   loadModifierEffectsForItem,
@@ -38,16 +40,18 @@ export type SendResult = {
   itemIds: string[];
   sentAt: string;
   orderVersion: number;
+  ticketIds: string[];
 };
 
 /**
  * SEND: commits every DRAFT item of an order in one send batch, in one transaction
- * (README section 24, without the Phase 10 tickets and the deferred audit/outbox):
+ * (README section 24, without the deferred audit events):
  *
  *   authorize -> claim idempotency key -> lock order and check version -> lock drafts
  *   -> re-resolve price and modifiers (operational menu) -> resolve recipe revision
  *   -> apply modifier effects -> create batch -> freeze snapshots -> consumption
- *   snapshots and CONSUME postings (with balances) -> totals -> histories -> store result
+ *   snapshots and CONSUME postings (with balances) -> kitchen/bar tickets (Phase 10)
+ *   -> totals -> histories -> outbox events -> store result
  *
  * Any failure rolls everything back, including the idempotency claim. A retry with the
  * same key returns the first result and changes nothing.
@@ -239,6 +243,44 @@ export async function sendOrderItems(
           );
         }
 
+        // Station work from the routing snapshot just frozen, in this same transaction.
+        const { ticketIds } = await createTicketsForSendBatch(transaction, {
+          organizationId: actor.organizationId,
+          locationId: actor.locationId,
+          actorUserId: actor.userId,
+          order: {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            orderType: order.orderType,
+            tableSessionId: order.tableSessionId,
+            customerName: order.customerName,
+            assignedServerEmployeeId: order.assignedServerEmployeeId,
+          },
+          batch: {
+            id: batch!.id,
+            batchNumber: batch!.batchNumber,
+            sentAt,
+            businessDate: location.businessDate,
+          },
+          items: resolved.map(({ draft, sellable }) => ({
+            orderItemId: draft.id,
+            quantity: draft.quantity,
+            menuItemCodeSnapshot: sellable.item.code,
+            menuItemNameSnapshot: sellable.item.name,
+            kitchenInstructionsSnapshot: buildKitchenInstructions(
+              sellable.selections.map((selection) => selection.modifier.preparationInstruction),
+              draft.specialInstructions,
+            ),
+            prepStationIds: sellable.item.prepStationIds,
+            modifiers: sellable.selections.map((selection) => ({
+              groupName: selection.modifierGroupName,
+              code: selection.modifier.code,
+              name: selection.modifier.name,
+              preparationInstruction: selection.modifier.preparationInstruction,
+            })),
+          })),
+        });
+
         await appendItemHistory(
           transaction,
           drafts.map((draft) => ({
@@ -252,6 +294,22 @@ export async function sendOrderItems(
 
         const updated = await recomputeAndBumpOrder(transaction, orderId);
 
+        await writeOutboxEvents(transaction, [
+          {
+            organizationId: actor.organizationId,
+            locationId: actor.locationId,
+            eventType: "order.items-submitted",
+            aggregateType: "order",
+            aggregateId: orderId,
+            payload: {
+              sendBatchId: batch!.id,
+              batchNumber: batch!.batchNumber,
+              orderItemIds: drafts.map((draft) => draft.id),
+            },
+            occurredAt: sentAt,
+          },
+        ]);
+
         return {
           orderId,
           batchId: batch!.id,
@@ -259,6 +317,7 @@ export async function sendOrderItems(
           itemIds: drafts.map((draft) => draft.id),
           sentAt: sentAt.toISOString(),
           orderVersion: updated.version,
+          ticketIds,
         };
       },
     ),

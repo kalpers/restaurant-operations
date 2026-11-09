@@ -106,6 +106,34 @@
       "when": 1794233756856,
       "tag": "0014_orders_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794239240828,
+      "tag": "0015_kitchen_fulfillment",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794239259958,
+      "tag": "0016_kitchen_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794241162221,
+      "tag": "0017_kitchen_remake_fk_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794241246729,
+      "tag": "0018_prep_station_active_work",
+      "breakpoints": true
     }
   ]
 }

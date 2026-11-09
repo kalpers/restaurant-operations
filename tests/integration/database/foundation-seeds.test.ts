@@ -26,6 +26,7 @@ import {
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
 import { securityInventoryPermissionsSeed } from "@/db/seeds/inventory-foundation";
+import { securityKitchenPermissionsSeed } from "@/db/seeds/kitchen-foundation";
 import { securityOrdersPermissionsSeed } from "@/db/seeds/orders-foundation";
 import { securityMenuPermissionsSeed } from "@/db/seeds/menu-foundation";
 import { securitySchedulingPermissionsSeed } from "@/db/seeds/scheduling-foundation";
@@ -75,12 +76,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 106,
+    permissions: 112,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 16,
+    seedRuns: 17,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -123,6 +124,7 @@ describe("foundation seeds, on a fresh database", () => {
       "inventory.packaging-units",
       "inventory.demo-catalog",
       "security.orders-permissions",
+      "security.kitchen-permissions",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -131,7 +133,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(16);
+    expect(result.skipped).toHaveLength(17);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -223,13 +225,13 @@ describe("foundation seeds, on a fresh database", () => {
         );
 
       // The Phase 4 codes stay, because this test only rewinds Phase 3.
-      expect(await countPermissions()).toBe(86);
+      expect(await countPermissions()).toBe(92);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(106);
+      expect(await countPermissions()).toBe(112);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -701,6 +703,100 @@ describe("foundation seeds, on a fresh database", () => {
 
       await database.insert(rolePermissions).values({ roleId: manager!.id, permissionId: ordersVoid!.id });
     });
+  });
+
+  describe("upgrading a Phase 9 database", () => {
+    const PHASE_10 = [
+      "bar.view",
+      "bar.manage",
+      "fulfillment.start",
+      "fulfillment.ready",
+      "fulfillment.complete",
+      "fulfillment.remake",
+    ];
+
+    const grantsOf = async (roleCode: string) =>
+      (
+        await database
+          .select({ code: permissions.code })
+          .from(rolePermissions)
+          .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+          .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+          .where(eq(roles.code, roleCode))
+      )
+        .map((row) => row.code)
+        .sort();
+    const roleId = async (code: string) =>
+      (await database.select({ id: roles.id }).from(roles).where(eq(roles.code, code)))[0]!.id;
+    const permissionId = async (code: string) =>
+      (await database.select({ id: permissions.id }).from(permissions).where(eq(permissions.code, code)))[0]!.id;
+
+    it("adds the kitchen and bar permissions, moves Bartender to bar scope, and restores nothing removed", async () => {
+      const newRows = await database.select({ id: permissions.id }).from(permissions).where(inArray(permissions.code, PHASE_10));
+      const newIds = newRows.map((row) => row.id);
+
+      expect(newIds).toHaveLength(PHASE_10.length);
+
+      // Rewind to Phase 9: no new codes, Bartender holds kitchen.manage, Server has no kitchen.view.
+      await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: await roleId("BARTENDER"), permissionId: await permissionId("kitchen.manage") })
+        .onConflictDoNothing();
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, await roleId("SERVER")),
+            eq(rolePermissions.permissionId, await permissionId("kitchen.view")),
+          ),
+        );
+      await database
+        .update(permissions)
+        .set({ name: "View kitchen and bar tickets" })
+        .where(eq(permissions.code, "kitchen.view"));
+
+      // An administrator removed the Phase 2 kitchen.manage grant from the Cook.
+      await database
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, await roleId("COOK")),
+            eq(rolePermissions.permissionId, await permissionId("kitchen.manage")),
+          ),
+        );
+      await database.transaction((transaction) => securityKitchenPermissionsSeed.run(transaction));
+
+      expect(await database.select().from(permissions).where(inArray(permissions.code, PHASE_10))).toHaveLength(
+        PHASE_10.length,
+      );
+      expect(await grantsOf("BARTENDER")).toEqual(
+        [...ROLE_CATALOG.find((role) => role.code === "BARTENDER")!.permissions].sort(),
+      );
+      expect(await grantsOf("SERVER")).toEqual([...ROLE_CATALOG.find((role) => role.code === "SERVER")!.permissions].sort());
+      expect(await grantsOf("COOK")).toEqual(
+        ROLE_CATALOG.find((role) => role.code === "COOK")!.permissions.filter((code) => code !== "kitchen.manage").sort(),
+      );
+      expect(
+        (await database.select().from(permissions).where(eq(permissions.code, "kitchen.view")))[0]!.name,
+      ).toBe("View kitchen station tickets");
+
+      for (const code of ["HOST", "INVENTORY_MANAGER"]) {
+        expect((await grantsOf(code)).filter((grant) => PHASE_10.includes(grant))).toEqual([]);
+      }
+
+      await database
+        .insert(rolePermissions)
+        .values({ roleId: await roleId("COOK"), permissionId: await permissionId("kitchen.manage") });
+    });
+  });
+
+  it("seeds no kitchen tickets, notifications or outbox events", async () => {
+    expect(await database.select().from(schema.kitchenTickets)).toEqual([]);
+    expect(await database.select().from(schema.kitchenTicketItems)).toEqual([]);
+    expect(await database.select().from(schema.notifications)).toEqual([]);
+    expect(await database.select().from(schema.outboxEvents)).toEqual([]);
   });
 
   it("seeds no orders, discounts or idempotency records", async () => {

@@ -55,6 +55,11 @@ const EXPECTED_TABLES = [
   "public.inventory_item_unit_conversions",
   "public.inventory_items",
   "public.inventory_transactions",
+  "public.kitchen_remake_consumption",
+  "public.kitchen_remakes",
+  "public.kitchen_ticket_item_status_history",
+  "public.kitchen_ticket_items",
+  "public.kitchen_tickets",
   "public.location_settings",
   "public.locations",
   "public.menu_availability",
@@ -70,6 +75,7 @@ const EXPECTED_TABLES = [
   "public.modifier_groups",
   "public.modifier_inventory_effects",
   "public.modifiers",
+  "public.notifications",
   "public.order_discounts",
   "public.order_item_discounts",
   "public.order_item_inventory_consumption",
@@ -82,6 +88,7 @@ const EXPECTED_TABLES = [
   "public.order_status_history",
   "public.orders",
   "public.organizations",
+  "public.outbox_events",
   "public.party_status_history",
   "public.permissions",
   "public.positions",
@@ -323,6 +330,14 @@ describe("reconstruction from checked-in migrations", () => {
         "SELECT column_name FROM information_schema.columns WHERE table_name = 'inventory_transactions' AND column_name = 'reverses_transaction_id'",
       ),
     ).toEqual([{ column_name: "reverses_transaction_id" }]);
+  });
+
+  it("upgrades a Phase 9 database in place, keeping its data and backfilling no tickets", async () => {
+    await upgradeFromMigrationIndex(14);
+    expect(await query("SELECT * FROM kitchen_tickets")).toEqual([]);
+    expect(await query("SELECT * FROM kitchen_ticket_items")).toEqual([]);
+    expect(await query("SELECT * FROM outbox_events")).toEqual([]);
+    expect(await query("SELECT * FROM notifications")).toEqual([]);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {

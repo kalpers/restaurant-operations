@@ -7,15 +7,17 @@ import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
 import { lockBalance, postInventoryTransaction, readPostingSettings, type PostingResult } from "./posting-service";
 
-// The two narrow, trusted capabilities the Order workflows use inside their own
+// The narrow, trusted capabilities the Order and Kitchen workflows use inside their own
 // transaction. They are not exposed through any Inventory endpoint and accept no
-// transaction type: one only CONSUMEs for submitted Order Items, the other only reverses
-// such a CONSUME. The caller authorizes (`orders.submit`, `orders.void`); no Inventory
+// transaction type: one only CONSUMEs for submitted Order Items, one only CONSUMEs again
+// for a Kitchen Remake of such an item, and one only reverses either kind of CONSUME. The
+// caller authorizes (`orders.submit`, `fulfillment.remake`, `orders.void`); no Inventory
 // permission is needed or granted. Conversion, negative-stock policy, costing, balance and
 // ledger all stay in `postInventoryTransaction`.
 
 export const ORDER_ITEM_REFERENCE = "ORDER_ITEM";
 export const ORDER_ITEM_VOID_REFERENCE = "ORDER_ITEM_VOID";
+export const KITCHEN_REMAKE_REFERENCE = "KITCHEN_REMAKE";
 
 export type OrderConsumptionLine = {
   orderItemId: string;
@@ -34,12 +36,11 @@ export type StockShortage = {
 };
 
 export class InsufficientStockError extends BusinessRuleError {
-  constructor(readonly shortages: StockShortage[]) {
-    super(
-      "INSUFFICIENT_STOCK",
-      "There isn't enough stock on hand to send these items.",
-      { shortages },
-    );
+  constructor(
+    readonly shortages: StockShortage[],
+    message = "There isn't enough stock on hand to send these items.",
+  ) {
+    super("INSUFFICIENT_STOCK", message, { shortages });
   }
 }
 
@@ -57,6 +58,49 @@ export async function postOrderConsumption(
     createdByUserId: string;
     lines: readonly OrderConsumptionLine[];
   },
+): Promise<(OrderConsumptionLine & { posting: PostingResult; baseUnitId: string })[]> {
+  return postConsumptionLines(transaction, input, (line) => ({
+    type: ORDER_ITEM_REFERENCE,
+    id: line.orderItemId,
+  }));
+}
+
+/**
+ * Posts a Remake's additional CONSUME, all or nothing, with the same shortage collection
+ * and negative-stock policy as SEND. Quantities come from the caller's copy of the
+ * original immutable consumption snapshot; this never reads a Recipe. Each row references
+ * the Remake, and the ledger allows one CONSUME per Remake and Inventory Item.
+ */
+export async function postRemakeConsumption(
+  transaction: DatabaseTransaction,
+  input: {
+    organizationId: string;
+    locationId: string;
+    remakeId: string;
+    occurredAt: Date;
+    createdByUserId: string;
+    lines: readonly OrderConsumptionLine[];
+  },
+): Promise<(OrderConsumptionLine & { posting: PostingResult; baseUnitId: string })[]> {
+  return postConsumptionLines(
+    transaction,
+    input,
+    () => ({ type: KITCHEN_REMAKE_REFERENCE, id: input.remakeId }),
+    "There isn't enough stock on hand to remake this item.",
+  );
+}
+
+async function postConsumptionLines(
+  transaction: DatabaseTransaction,
+  input: {
+    organizationId: string;
+    locationId: string;
+    occurredAt: Date;
+    createdByUserId: string;
+    lines: readonly OrderConsumptionLine[];
+  },
+  reference: (line: OrderConsumptionLine) => { type: string; id: string },
+  shortageMessage?: string,
 ): Promise<(OrderConsumptionLine & { posting: PostingResult; baseUnitId: string })[]> {
   if (input.lines.length === 0) {
     return [];
@@ -103,7 +147,7 @@ export async function postOrderConsumption(
   }
 
   if (shortages.length > 0) {
-    throw new InsufficientStockError(shortages);
+    throw new InsufficientStockError(shortages, shortageMessage);
   }
 
   const ordered = [...input.lines].sort(
@@ -122,7 +166,7 @@ export async function postOrderConsumption(
       quantity: line.baseQuantity,
       unitOfMeasureId: item.baseUnitId,
       occurredAt: input.occurredAt,
-      reference: { type: ORDER_ITEM_REFERENCE, id: line.orderItemId },
+      reference: reference(line),
       createdByUserId: input.createdByUserId,
     });
 
@@ -134,7 +178,7 @@ export async function postOrderConsumption(
 
 /**
  * Restores stock consumed by an Order Item that was never prepared: a SALE_REVERSAL linked
- * to the original CONSUME, entering at that row's cost through weighted-average costing
+ * to the original CONSUME (from SEND or a Kitchen Remake), entering at that row's cost through weighted-average costing
  * (with no cost if the original had none). The original row is never changed, and the
  * ledger allows only one reversal per CONSUME.
  */
@@ -168,7 +212,8 @@ export async function postSaleReversal(
   for (const original of originals) {
     if (
       original.transactionType !== "CONSUME" ||
-      original.referenceType !== ORDER_ITEM_REFERENCE ||
+      (original.referenceType !== ORDER_ITEM_REFERENCE &&
+        original.referenceType !== KITCHEN_REMAKE_REFERENCE) ||
       original.organizationId !== input.organizationId ||
       original.locationId !== input.locationId
     ) {

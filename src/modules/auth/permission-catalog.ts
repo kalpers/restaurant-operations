@@ -110,8 +110,14 @@ export const PERMISSION_CATALOG = [
 
   { code: "settlements.complete", name: "Complete settlements", category: "Settlements" },
 
-  { code: "kitchen.view", name: "View kitchen and bar tickets", category: "Kitchen" },
-  { code: "kitchen.manage", name: "Manage kitchen and bar tickets", category: "Kitchen" },
+  { code: "kitchen.view", name: "View kitchen station tickets", category: "Kitchen" },
+  { code: "kitchen.manage", name: "Work kitchen station tickets", category: "Kitchen" },
+  { code: "bar.view", name: "View bar station tickets", category: "Kitchen" },
+  { code: "bar.manage", name: "Work bar station tickets", category: "Kitchen" },
+  { code: "fulfillment.start", name: "Start preparing ticket items", category: "Kitchen" },
+  { code: "fulfillment.ready", name: "Mark ticket items ready", category: "Kitchen" },
+  { code: "fulfillment.complete", name: "Complete (bump) ready ticket items", category: "Kitchen" },
+  { code: "fulfillment.remake", name: "Request a remake of a sent item", category: "Kitchen" },
 
   { code: "reports.view", name: "View reports", category: "Reports" },
   { code: "reports.sales", name: "View sales reports", category: "Reports" },
