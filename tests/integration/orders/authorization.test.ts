@@ -290,11 +290,27 @@ describe("order module boundaries", () => {
     }
   });
 
-  it("does not reference payment, settlement, ticket or tax concepts", () => {
+  // Since Phase 11 the Orders domain owns OPEN -> CLOSED for a completed Settlement, so it
+  // may name settlement; it still never reads settlement or tender data, tickets or tax.
+  it("does not reach into settlement, tender, ticket or tax data", () => {
     for (const file of files) {
       const text = readFileSync(file, "utf8").toLowerCase();
 
-      for (const forbidden of ["tender", "settlement", "kitchen_ticket", "kitchentickets", "taxamount", "tax_rate"]) {
+      for (const forbidden of [
+        "tender",
+        "@/modules/settlements",
+        "order_settlements",
+        "kitchen_ticket",
+        "kitchentickets",
+        "taxamount",
+        "tax_rate",
+      ]) {
+        // The SEND and void workflows orchestrate across domains and may ask Settlements
+        // whether the amount is locked; the Orders module itself may not.
+        if (forbidden === "@/modules/settlements" && !file.includes(path.join("src", "modules", "orders"))) {
+          continue;
+        }
+
         expect(`${file}: ${text.includes(forbidden)}`).toBe(`${file}: false`);
       }
     }

@@ -178,6 +178,7 @@ describe("runSeeds", () => {
       "inventory.demo-catalog",
       "security.orders-permissions",
       "security.kitchen-permissions",
+      "security.settlement-permissions",
     ]);
   });
 });

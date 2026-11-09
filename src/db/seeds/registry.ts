@@ -11,6 +11,7 @@ import {
 } from "./menu-foundation";
 import { securityKitchenPermissionsSeed } from "./kitchen-foundation";
 import { securityOrdersPermissionsSeed } from "./orders-foundation";
+import { securitySettlementPermissionsSeed } from "./settlement-foundation";
 import { organizationFoundationSeed } from "./organization-foundation";
 import {
   restaurantInitialFloorSeed,
@@ -44,4 +45,5 @@ export const seeds: readonly Seed[] = [
   inventoryDemoCatalogSeed,
   securityOrdersPermissionsSeed,
   securityKitchenPermissionsSeed,
+  securitySettlementPermissionsSeed,
 ];

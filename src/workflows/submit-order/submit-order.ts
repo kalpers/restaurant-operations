@@ -11,6 +11,7 @@ import { withTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import type { Actor } from "@/modules/auth/types";
+import { assertNoOpenSettlement } from "@/modules/settlements/repositories/settlement-repository";
 import { createTicketsForSendBatch } from "@/modules/kitchen/services/ticket-generation";
 import { postOrderConsumption } from "@/modules/inventory/services/order-consumption";
 import {
@@ -78,6 +79,7 @@ export async function sendOrderItems(
         const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
 
         assertOrderOpen(order.status);
+        await assertNoOpenSettlement(transaction, order.id);
 
         const drafts = await transaction
           .select()

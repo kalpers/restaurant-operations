@@ -439,13 +439,17 @@ describe("recipes", () => {
       }
     });
 
-    it("has no settlement or tender tables (Phase 11); tickets are only Phase 10 Kitchen's", async () => {
+    it("has only the Phase 11 Settlement tables and Phase 10 Kitchen's tickets", async () => {
       const result = await database().execute(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public'` as never,
       );
       const names = (result as unknown as { tablename: string }[]).map((row) => row.tablename);
 
-      expect(names.filter((name) => /settlement|tender/.test(name))).toEqual([]);
+      expect(names.filter((name) => /settlement|tender/.test(name)).sort()).toEqual([
+        "order_settlements",
+        "settlement_status_history",
+        "settlement_tenders",
+      ]);
       expect(names.filter((name) => /ticket|fulfillment/.test(name)).every((name) => name.startsWith("kitchen_"))).toBe(
         true,
       );

@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
+import { assertNoOpenSettlement } from "@/modules/settlements/repositories/settlement-repository";
 import { postSaleReversal } from "@/modules/inventory/services/order-consumption";
 import { cancelFulfillmentForVoid } from "@/modules/kitchen/services/void-sync";
 import {
@@ -142,6 +143,7 @@ export async function voidOrderItem(
     const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
 
     assertOrderOpen(order.status);
+    await assertNoOpenSettlement(transaction, order.id);
 
     const [item] = await transaction
       .select({ id: orderItems.id, status: orderItems.status })
@@ -188,6 +190,7 @@ export async function voidOrder(
     const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
 
     assertOrderOpen(order.status);
+    await assertNoOpenSettlement(transaction, order.id);
 
     const items = await transaction
       .select({ id: orderItems.id, status: orderItems.status })

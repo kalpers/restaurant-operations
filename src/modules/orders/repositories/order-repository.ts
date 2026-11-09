@@ -12,7 +12,8 @@ import {
 } from "@/db/schema";
 import type { DatabaseExecutor, DatabaseTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
-import { NotFoundError } from "@/shared/errors/app-error";
+import { readConstraintName } from "@/db/helpers/database-errors";
+import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 import { businessDateOf } from "@/shared/time/business-date-service";
 
@@ -55,6 +56,34 @@ export async function findOrder(executor: DatabaseExecutor, actor: Actor, orderI
     );
 
   return row ?? null;
+}
+
+/**
+ * Locks the order row without a version check, for work that doesn't change the order but
+ * must serialize with every change to it (Phase 11 settlement commands).
+ */
+export async function lockOrderRow(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  orderId: string,
+): Promise<OrderRow> {
+  const [row] = await transaction
+    .select()
+    .from(orders)
+    .where(
+      and(
+        eq(orders.id, orderId),
+        eq(orders.organizationId, actor.organizationId),
+        eq(orders.locationId, actor.locationId),
+      ),
+    )
+    .for("update");
+
+  if (!row) {
+    throw new NotFoundError("order");
+  }
+
+  return row;
 }
 
 /**
@@ -167,9 +196,70 @@ export async function recomputeAndBumpOrder(
       updatedAt: new Date(),
     })
     .where(eq(orders.id, orderId))
-    .returning();
+    .returning()
+    .catch((error: unknown) => {
+      throw mapSettlementGuard(error);
+    });
 
   return updated!;
+}
+
+/**
+ * While a Settlement is OPEN, the order's amount and status are locked (database trigger,
+ * Phase 11), so its amount snapshot can't go stale. Draft edits don't move the amount.
+ */
+export function mapSettlementGuard(error: unknown): unknown {
+  switch (readConstraintName(error)) {
+    case "orders_settlement_in_progress":
+      return new BusinessRuleError(
+        "SETTLEMENT_IN_PROGRESS",
+        "This order is being settled. Cancel the settlement to change the check.",
+      );
+    case "orders_closed_frozen":
+      return new BusinessRuleError("ORDER_NOT_OPEN", "This order is closed.");
+    default:
+      return error;
+  }
+}
+
+/**
+ * OPEN -> CLOSED. Called only by the close-order workflow, inside the transaction that
+ * completes the order's Settlement; a database trigger refuses closure without a COMPLETED
+ * settlement for this amount. There is no other close operation.
+ */
+export async function closeOrderForSettlement(
+  transaction: DatabaseTransaction,
+  entry: { orderId: string; settlementId: string; userId: string; at: Date },
+): Promise<OrderRow> {
+  const [updated] = await transaction
+    .update(orders)
+    .set({ status: "CLOSED", closedAt: entry.at, version: sql`${orders.version} + 1`, updatedAt: entry.at })
+    .where(and(eq(orders.id, entry.orderId), eq(orders.status, "OPEN")))
+    .returning();
+
+  if (!updated) {
+    throw new BusinessRuleError("ORDER_NOT_OPEN", "This order is no longer open.");
+  }
+
+  await appendOrderHistory(transaction, {
+    orderId: entry.orderId,
+    status: "CLOSED",
+    reason: `Settlement ${entry.settlementId} completed`,
+    userId: entry.userId,
+    at: entry.at,
+  });
+
+  return updated;
+}
+
+/** DRAFT items still on an order. Settlement completion needs none. */
+export async function countDraftItems(executor: DatabaseExecutor, orderId: string): Promise<number> {
+  const [row] = await executor
+    .select({ count: sql<number>`count(*)::int` })
+    .from(orderItems)
+    .where(and(eq(orderItems.orderId, orderId), eq(orderItems.status, "DRAFT")));
+
+  return row?.count ?? 0;
 }
 
 export async function appendOrderHistory(

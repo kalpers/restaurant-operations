@@ -24,6 +24,9 @@ import {
   restaurantTables,
   rolePermissions,
   roles,
+  settlements,
+  settlementStatusHistory,
+  settlementTenders,
   tableConditionHistory,
   tableSessions,
   tableSessionTables,
@@ -65,6 +68,8 @@ import {
 import { createTable } from "../../src/modules/restaurant/services/table-service";
 import { addDraftItem } from "../../src/modules/orders/services/draft-item-service";
 import { createOrder } from "../../src/modules/orders/services/order-service";
+import { applyOrderDiscount, createDiscountDefinition } from "../../src/modules/orders/services/discount-service";
+import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
 import { seatParty } from "../../src/workflows/seat-party/seat-party";
 
 loadLocalEnv();
@@ -320,6 +325,75 @@ export async function takeoutWithDraft(owner: OrdersAccount, menuItemId: string)
   return { orderId: order.id, version: added.orderVersion };
 }
 
+/** An order (takeout, or dine-in on a session) with the given items sent, through the services. */
+export async function sentOrderFor(
+  owner: OrdersAccount,
+  menuItemIds: readonly string[],
+  options: { tableSessionId?: string } = {},
+) {
+  const database = getDatabase();
+  const actor = await actorOf(owner);
+  const order = options.tableSessionId
+    ? await createOrder(database, actor, { orderType: "DINE_IN", tableSessionId: options.tableSessionId })
+    : await createOrder(database, actor, { orderType: "TAKEOUT" });
+  let version = order.version;
+
+  for (const menuItemId of menuItemIds) {
+    version = (
+      await addDraftItem(database, actor, order.id, {
+        expectedVersion: version,
+        menuItemId,
+        quantity: 1,
+        selections: [],
+        specialInstructions: null,
+      })
+    ).orderVersion;
+  }
+
+  const sent = await sendOrderItems(database, actor, order.id, {
+    expectedVersion: version,
+    idempotencyKey: `e2e-${randomUUID()}`,
+  });
+
+  return { orderId: order.id, version: sent.orderVersion };
+}
+
+/** Applies a 100% order comp, so the amount due is 0.00. */
+export async function compOrder(owner: OrdersAccount, orderId: string, version: number) {
+  const database = getDatabase();
+  const actor = await actorOf(owner);
+  const definition = await createDiscountDefinition(database, actor, {
+    code: uniqueCode(),
+    name: "E2E full comp",
+    scope: "ORDER",
+    discountType: "PERCENTAGE",
+    value: "100",
+  });
+
+  await applyOrderDiscount(database, actor, orderId, {
+    discountDefinitionId: definition.id,
+    reason: "Comped for the test",
+    expectedVersion: version,
+  });
+}
+
+/** Every stored tender text column for the given orders, for the no-card-data check. */
+export async function tenderTextFor(orderIds: readonly string[]): Promise<string> {
+  const rows = await getDatabase()
+    .select({ tender: settlementTenders })
+    .from(settlementTenders)
+    .innerJoin(settlements, eq(settlements.id, settlementTenders.settlementId))
+    .where(inArray(settlements.orderId, [...orderIds]));
+
+  return JSON.stringify(rows);
+}
+
+export async function orderStatus(orderId: string): Promise<string> {
+  const [row] = await getDatabase().select({ status: orders.status }).from(orders).where(eq(orders.id, orderId));
+
+  return row!.status;
+}
+
 export async function onHand(inventoryItemId: string): Promise<string> {
   const [row] = await getDatabase()
     .select({ quantity: inventoryBalances.quantityOnHand })
@@ -349,6 +423,7 @@ const APPEND_ONLY = [
   "order_send_batches",
   "order_item_inventory_consumption",
   "order_item_voids",
+  "settlement_status_history",
 ];
 
 /**
@@ -381,8 +456,20 @@ export async function removeOrdersE2eData(): Promise<void> {
 
     await transaction.execute("ALTER TABLE order_items DISABLE TRIGGER order_items_freeze_trigger" as never);
     await transaction.execute("ALTER TABLE order_item_modifiers DISABLE TRIGGER order_item_modifiers_freeze_trigger" as never);
+    await transaction.execute("ALTER TABLE order_settlements DISABLE TRIGGER order_settlements_guard_trigger" as never);
+    await transaction.execute("ALTER TABLE settlement_tenders DISABLE TRIGGER settlement_tenders_guard_trigger" as never);
 
     if (orderIds.length) {
+      const settlementIds = (
+        await transaction.select({ id: settlements.id }).from(settlements).where(inArray(settlements.orderId, orderIds))
+      ).map((row) => row.id);
+
+      if (settlementIds.length) {
+        await transaction.delete(settlementTenders).where(inArray(settlementTenders.settlementId, settlementIds));
+        await transaction.delete(settlementStatusHistory).where(inArray(settlementStatusHistory.settlementId, settlementIds));
+        await transaction.delete(settlements).where(inArray(settlements.id, settlementIds));
+      }
+
       const itemIds = (
         await transaction.select({ id: orderItems.id }).from(orderItems).where(inArray(orderItems.orderId, orderIds))
       ).map((row) => row.id);
@@ -410,6 +497,8 @@ export async function removeOrdersE2eData(): Promise<void> {
 
     await transaction.execute("ALTER TABLE order_items ENABLE TRIGGER order_items_freeze_trigger" as never);
     await transaction.execute("ALTER TABLE order_item_modifiers ENABLE TRIGGER order_item_modifiers_freeze_trigger" as never);
+    await transaction.execute("ALTER TABLE order_settlements ENABLE TRIGGER order_settlements_guard_trigger" as never);
+    await transaction.execute("ALTER TABLE settlement_tenders ENABLE TRIGGER settlement_tenders_guard_trigger" as never);
   });
 
   const sessionIds = (

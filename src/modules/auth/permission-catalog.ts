@@ -108,7 +108,16 @@ export const PERMISSION_CATALOG = [
   { code: "orders.discount.apply", name: "Apply and remove order discounts", category: "Orders" },
   { code: "orders.discount.manage", name: "Manage discount definitions", category: "Orders" },
 
+  { code: "settlements.view", name: "View settlements", category: "Settlements" },
+  { code: "settlements.create", name: "Open and cancel settlements", category: "Settlements" },
+  { code: "settlements.tender.cash", name: "Record cash tenders", category: "Settlements" },
+  { code: "settlements.tender.external-card", name: "Record externally processed card tenders", category: "Settlements" },
+  { code: "settlements.tender.gift-card", name: "Record gift card tenders", category: "Settlements" },
+  { code: "settlements.tender.house-account", name: "Record house account tenders", category: "Settlements" },
+  { code: "settlements.tender.other", name: "Record other tenders", category: "Settlements" },
   { code: "settlements.complete", name: "Complete settlements", category: "Settlements" },
+  { code: "settlements.void-tender", name: "Void tenders before completion", category: "Settlements" },
+  { code: "settlements.view-card-metadata", name: "View card brand, last four and references", category: "Settlements" },
 
   { code: "kitchen.view", name: "View kitchen station tickets", category: "Kitchen" },
   { code: "kitchen.manage", name: "Work kitchen station tickets", category: "Kitchen" },

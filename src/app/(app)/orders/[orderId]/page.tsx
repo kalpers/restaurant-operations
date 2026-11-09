@@ -38,6 +38,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     void: actorHolds(actor, "orders.void"),
     discount: actorHolds(actor, "orders.discount.apply"),
     remake: actor.permissions.has("fulfillment.remake"),
+    settle: actorHolds(actor, "settlements.view"),
   };
   const fulfillment = Object.fromEntries(await fulfillmentForOrder(database, order.id));
   const categories: MenuCategory[] = [];

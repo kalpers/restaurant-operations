@@ -21,6 +21,9 @@ import {
   orders,
   orderSendBatches,
   orderStatusHistory,
+  settlements,
+  settlementStatusHistory,
+  settlementTenders,
 } from "@/db/schema";
 
 const APPEND_ONLY = [
@@ -33,6 +36,7 @@ const APPEND_ONLY = [
   "kitchen_ticket_item_status_history",
   "kitchen_remakes",
   "kitchen_remake_consumption",
+  "settlement_status_history",
 ];
 
 /** Guard triggers that also refuse deletes, lifted with the append-only ones. */
@@ -42,10 +46,12 @@ const GUARDED: readonly [table: string, trigger: string][] = [
   ["kitchen_ticket_items", "kitchen_ticket_items_guard_trigger"],
   ["notifications", "notifications_guard_trigger"],
   ["outbox_events", "outbox_events_guard_trigger"],
+  ["order_settlements", "order_settlements_guard_trigger"],
+  ["settlement_tenders", "settlement_tenders_guard_trigger"],
 ];
 
 /**
- * Test cleanup. Order and kitchen history is append-only and sent items are frozen, so this
+ * Test cleanup. Order, kitchen and settlement history is append-only and sent items are frozen, so this
  * lifts those triggers for its own transaction only, removes every order with its kitchen
  * work, notifications and outbox events, and restores them. Called before restaurant data
  * is cleared, because orders reference table sessions.
@@ -82,6 +88,10 @@ export async function clearOrderData(database: Database): Promise<void> {
         .map((table) => getTableName(table))
         .join(", ")}` as never,
     );
+
+    await transaction.delete(settlementTenders);
+    await transaction.delete(settlementStatusHistory);
+    await transaction.delete(settlements);
 
     const itemIds = transaction.select({ id: orderItems.id }).from(orderItems);
 

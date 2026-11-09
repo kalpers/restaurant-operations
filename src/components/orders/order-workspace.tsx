@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
@@ -19,6 +20,8 @@ export type WorkspaceAbilities = {
   void: boolean;
   discount: boolean;
   remake: boolean;
+  /** `settlements.view`: the link to the settlement screen. */
+  settle: boolean;
 };
 
 export type MenuCategory = { id: string; name: string; items: OperationalMenuItem[] };
@@ -653,7 +656,14 @@ function VoidOrderForm({ order }: { order: OrderDetail }) {
   );
 }
 
-const FULFILLMENT_EVENTS = ["kitchen.ticket-created", "kitchen.item-status-changed", "kitchen.item-ready"];
+const FULFILLMENT_EVENTS = [
+  "kitchen.ticket-created",
+  "kitchen.item-status-changed",
+  "kitchen.item-ready",
+  "settlement.opened",
+  "settlement.cancelled",
+  "order.closed",
+];
 
 export function OrderWorkspace({ order, categories, abilities, discounts, fulfillment }: Props) {
   const connection = useRealtimeRefresh(FULFILLMENT_EVENTS, 60_000);
@@ -740,6 +750,12 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
             <ApplyDiscountForm order={order} choices={orderDiscounts} url={`/api/orders/${order.id}/discounts`} label="Discount the order" />
           )}
         </section>
+
+        {abilities.settle && order.status !== "VOIDED" && (
+          <Link href={`/orders/${order.id}/settlement`} className={`${PRIMARY} flex items-center justify-center`}>
+            {open ? "Settle check" : "View settlement"}
+          </Link>
+        )}
 
         {open && abilities.void && <VoidOrderForm order={order} />}
       </aside>

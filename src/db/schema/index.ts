@@ -15,3 +15,4 @@ export * from "./reservations";
 export * from "./restaurant";
 export * from "./scheduling";
 export * from "./seed-runs";
+export * from "./settlements";

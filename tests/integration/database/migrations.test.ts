@@ -85,6 +85,7 @@ const EXPECTED_TABLES = [
   "public.order_items",
   "public.order_number_counters",
   "public.order_send_batches",
+  "public.order_settlements",
   "public.order_status_history",
   "public.orders",
   "public.organizations",
@@ -114,6 +115,8 @@ const EXPECTED_TABLES = [
   "public.server_section_assignments",
   "public.server_section_tables",
   "public.server_sections",
+  "public.settlement_status_history",
+  "public.settlement_tenders",
   "public.shift_assignments",
   "public.shift_swap_requests",
   "public.shifts",
@@ -338,6 +341,22 @@ describe("reconstruction from checked-in migrations", () => {
     expect(await query("SELECT * FROM kitchen_ticket_items")).toEqual([]);
     expect(await query("SELECT * FROM outbox_events")).toEqual([]);
     expect(await query("SELECT * FROM notifications")).toEqual([]);
+  });
+
+  it("upgrades a Phase 10 database in place, with no settlement history and the order guards", async () => {
+    await upgradeFromMigrationIndex(18);
+    expect(await query("SELECT * FROM order_settlements")).toEqual([]);
+    expect(await query("SELECT * FROM settlement_tenders")).toEqual([]);
+    expect(await query("SELECT * FROM settlement_status_history")).toEqual([]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname IN ('orders_settlement_guard_trigger', 'order_settlements_guard_trigger', 'settlement_tenders_guard_trigger') ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "order_settlements_guard_trigger" },
+      { tgname: "orders_settlement_guard_trigger" },
+      { tgname: "settlement_tenders_guard_trigger" },
+    ]);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {

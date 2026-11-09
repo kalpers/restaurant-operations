@@ -865,10 +865,12 @@ Overall order state and kitchen fulfillment state remain separate.
 
 ## 19. Domain 12: Order Settlement
 
-Table:
+Tables:
 
 ```text
 order_settlements
+settlement_tenders
+settlement_status_history
 ```
 
 Recorded settlement types initially:
@@ -1554,7 +1556,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Orders reference a session, never a table.** `DINE_IN` needs an ACTIVE Table Session whose tables are in a `DINING` area and `BAR` one in a `BAR` area; `TAKEOUT` has no session, no table and no Guest Party, only an optional pickup label. The type is checked against the area, not guessed from it. A session may have many orders; moving it keeps them. DINE_IN and BAR orders copy the session's Guest Party and server. Each order has a UUID and a per-Location, per-business-date number (`order_number_counters`, incremented under a row lock), and its `business_date` comes from `BusinessDateService`.
 
-**Lifecycles.** Orders are `OPEN -> VOIDED`, with `CLOSED` reserved for Phase 11 settlement: Phase 9 has no close operation. Items are `DRAFT -> SUBMITTED -> VOIDED`. `order_status_history` and `order_item_status_history` are append-only (item history starts at SUBMITTED; drafts aren't history). Every mutation locks the order row and checks its `version`, so a stale screen gets `CONCURRENCY_CONFLICT`.
+**Lifecycles.** Orders are `OPEN -> VOIDED`, with `CLOSED` reserved for Phase 11 settlement: Phase 9 has no close operation (Phase 11 closes an order only by completing its Settlement). Items are `DRAFT -> SUBMITTED -> VOIDED`. `order_status_history` and `order_item_status_history` are append-only (item history starts at SUBMITTED; drafts aren't history). Every mutation locks the order row and checks its `version`, so a stale screen gets `CONCURRENCY_CONFLICT`.
 
 **Drafts are previews.** Adding or editing a draft resolves the item through the operational menu and the shared modifier validator and stores preview prices, but consumes nothing and doesn't count toward the order total. Drafts can be edited or removed (removal deletes the row). Sent items are only voided.
 
@@ -1589,6 +1591,28 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 **Permissions.** New: `bar.view`, `bar.manage`, `fulfillment.start`, `.ready`, `.complete`, `.remake` (112 in all). Viewing a station needs `kitchen.view` (KITCHEN stations) or `bar.view` (BAR stations); each action needs its `fulfillment.*` code and `kitchen.manage` or `bar.manage` for the station's type, at the actor's location. Owner, General Manager and Manager hold all of them. Cook: `kitchen.view`, `kitchen.manage` and the four actions. Bartender: `bar.manage` and the four actions, and loses the Phase 2 `kitchen.manage` (never enforced). Server, Bartender and Wait Staff hold `kitchen.view` and `bar.view` for Expo context. No kitchen role gains an Inventory permission. The `security.kitchen-permissions` seed applies this to existing databases; no tickets or notifications are seeded.
 
 **Stations.** A trigger refuses deactivating a prep station that still has `NEW`, `PREPARING` or `READY` work (`STATION_HAS_ACTIVE_WORK`). Renaming is allowed and changes no ticket.
+
+### Phase 11 Settlements
+
+**Order vs Settlement vs Tender.** An Order says what was sold; a Settlement (`order_settlements`) says how that obligation was satisfied; Tenders (`settlement_tenders`) are the individual cash, card or other records inside it. No tender or payment field is on `orders`. Settlement is **record only**: nothing authorizes, charges, refunds or contacts a provider, and no payment SDK is installed.
+
+**Lifecycle.** Settlements are `OPEN -> COMPLETED` or `OPEN -> CANCELLED`, with append-only `settlement_status_history`; both end states are terminal and a trigger freezes them. A partial unique index allows one OPEN and one COMPLETED settlement per order; cancelled ones stay as history. Opening needs an OPEN order, locks the order row, snapshots `orders.subtotal` (the Phase 9 post-discount, pre-tax amount, never re-priced) as `order_amount_snapshot`, and asking again returns the open one. A settlement can be cancelled (with a reason) only once no RECORDED tender remains. Business dates (`opened_business_date`, `completed_business_date`, tender `business_date`) come from BusinessDateService.
+
+**Amount lock.** While a settlement is OPEN the order's amount and status can't change: SEND, item and order voids, and discount changes are refused with `SETTLEMENT_IN_PROGRESS` (the SEND and void workflows check first; an `orders` trigger is the final guard). Draft edits are allowed, but completion needs no DRAFT item. To change the check, void the tenders and cancel the settlement.
+
+**Tenders.** `CASH`, `EXTERNAL_CARD`, `GIFT_CARD`, `HOUSE_ACCOUNT` and `OTHER`, each with its own permission. Status is `RECORDED`, `VOIDED` or `FAILED`; only RECORDED counts. The amount applied is positive and never more than what remains, so nothing over-settles. Tips are separate, nonnegative, exact cents, and only on CASH and EXTERNAL_CARD; they never change prices, discounts or the snapshot, and aren't allocated to employees. Cash records `received_amount`, and `change_amount = received - applied - tip` must be zero or more (no rounding); change is never tender value. `OTHER` needs a description. `FAILED` is only an externally reported EXTERNAL_CARD failure with a reason, kept at zero. A RECORDED tender can be voided (reason, actor, time) only while the settlement is OPEN; for an external tender that corrects this record only. Tenders are never deleted or edited otherwise.
+
+**Card safety.** Safe metadata only: provider, external reference, card brand, last four (exactly four digits) and authorization reference. There is no column for a card number, CVV/CVC, track data, PIN or bank details, and every text field refuses 13 or more consecutive digits (Zod, service and a check constraint). References and card metadata are returned only with `settlements.view-card-metadata`. Request logs carry no submitted values.
+
+**Completion** (`src/workflows/close-order/`) is one transaction: idempotency claim, lock order then settlement, version check, both OPEN, no DRAFT items, snapshot equal to the order amount, remaining exactly `0.00` (BigInt decimal arithmetic), settlement COMPLETED with history, order CLOSED with `closed_at` and history, outbox events, stored result. A fully comped order completes the same way with no tender. A trigger refuses `orders -> CLOSED` without a COMPLETED settlement for that amount and refuses any change to a CLOSED order, so there is no close bypass and no reopen. `orders.close` stays unused. Refunds, post-completion corrections and reopening are deferred.
+
+**Idempotency and concurrency.** Tender recording (`settlements.tender`) and completion (`settlements.complete`) take client idempotency keys; a retry returns the first result. Every command locks the order row, then the settlement, and checks the settlement `version`, so two terminals can't both take the last of the balance or close an order twice.
+
+**Boundaries.** Settlement writes no inventory transaction, changes no fulfillment, order item or snapshot, and doesn't end a Table Session. Closing the last order on a session only lifts the open-order guard; the explicit physical completion still ends the session and marks tables DIRTY. Takeout settles and closes with no session. Fulfillment never settles or closes an order. Outbox events (identifiers only): `settlement.opened`, `.tender-recorded`, `.tender-voided`, `.completed`, `.cancelled`, `order.closed`.
+
+**Tax** is deliberately not calculated; the UI says the amount due is before tax.
+
+**Permissions.** New: `settlements.view`, `.create` (open and cancel), `.tender.cash`, `.tender.external-card`, `.tender.gift-card`, `.tender.house-account`, `.tender.other`, `.void-tender`, `.view-card-metadata` (121 in all, with the Phase 2 `settlements.complete`). Owner, General Manager and Manager hold all ten. Server and Bartender hold view, create, cash, external card, gift card and complete. Host, Cook, Wait Staff and Inventory Manager hold none. The `security.settlement-permissions` seed applies this to existing databases; no settlements or tenders are seeded.
 
 ## 34. AWS POC Deployment Target
 

@@ -42,18 +42,33 @@ export type OrderSummary = {
   version: number;
 };
 
+export type OrderFilter = {
+  id?: string;
+  status?: OrderStatus;
+  tableSessionId?: string;
+  orderType?: OrderType;
+  businessDate?: string;
+};
+
 export async function listOrders(
   executor: DatabaseExecutor,
   actor: Actor,
-  filter: {
-    id?: string;
-    status?: OrderStatus;
-    tableSessionId?: string;
-    orderType?: OrderType;
-    businessDate?: string;
-  } = {},
+  filter: OrderFilter = {},
 ): Promise<OrderSummary[]> {
   assertPermission(actor, "orders.view");
+
+  return readOrderSummaries(executor, actor, filter);
+}
+
+/**
+ * Unchecked read for another domain that has already authorized the caller with its own
+ * permission (Settlement views use `settlements.view`). Location-scoped like every query.
+ */
+export async function readOrderSummaries(
+  executor: DatabaseExecutor,
+  actor: Actor,
+  filter: OrderFilter,
+): Promise<OrderSummary[]> {
 
   const rows = await executor
     .select({
@@ -173,13 +188,22 @@ export async function getOrderDetail(
 ): Promise<OrderDetail> {
   assertPermission(actor, "orders.view");
 
+  return readOrderDetail(executor, actor, orderId);
+}
+
+/** Unchecked read for a domain that authorized the caller itself; see `readOrderSummaries`. */
+export async function readOrderDetail(
+  executor: DatabaseExecutor,
+  actor: Actor,
+  orderId: string,
+): Promise<OrderDetail> {
   const order = await findOrder(executor, actor, orderId);
 
   if (!order) {
     throw new NotFoundError("order");
   }
 
-  const [summary] = await listOrders(executor, actor, { id: orderId });
+  const [summary] = await readOrderSummaries(executor, actor, { id: orderId });
   const items = await executor
     .select({ item: orderItems, batchNumber: orderSendBatches.batchNumber, disposition: orderItemVoids.disposition })
     .from(orderItems)
