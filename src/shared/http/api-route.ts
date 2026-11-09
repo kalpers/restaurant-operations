@@ -23,8 +23,10 @@ export function errorResponse(error: unknown, requestId: string): Response {
   const code = known ? error.code : "INTERNAL_ERROR";
   const message = known ? error.message : "Something went wrong.";
 
+  const details = known && error.details !== undefined ? { details: error.details } : {};
+
   return Response.json(
-    { error: { code, message, requestId } },
+    { error: { code, message, requestId, ...details } },
     { status: known ? error.httpStatus : 500 },
   );
 }

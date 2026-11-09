@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -27,6 +28,8 @@ export type FloorAbilities = {
   capacityOverride: boolean;
   scheduleOverride: boolean;
   holdOverride: boolean;
+  /** `orders.view`: links a seated party to its orders. */
+  orders: boolean;
 };
 
 type FloorBoardProps = {
@@ -622,6 +625,14 @@ function TableCard({
             <p>
               Combined: {session.tables.map((row) => row.tableNumber).join(" + ")}
             </p>
+          )}
+          {abilities.orders && (
+            <Link
+              href={`/orders?session=${session.id}&type=${table.area.type === "BAR" ? "BAR" : "DINE_IN"}`}
+              className="mt-2 inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+            >
+              Orders
+            </Link>
           )}
         </div>
       )}

@@ -34,6 +34,8 @@ export type PostingInput = {
   incomingTotalCost?: string;
   occurredAt?: Date;
   reference?: { type: string; id: string };
+  /** SALE_REVERSAL only, set by the trusted order-void reversal. */
+  reversesTransactionId?: string;
   reasonCode?: string | null;
   notes?: string | null;
   createdByUserId: string | null;
@@ -100,7 +102,7 @@ export async function latestSequence(
   return row?.value === null || row?.value === undefined ? 0 : Number(row.value);
 }
 
-async function readPostingSettings(transaction: DatabaseTransaction, organizationId: string, locationId: string) {
+export async function readPostingSettings(transaction: DatabaseTransaction, organizationId: string, locationId: string) {
   const [row] = await transaction
     .select({
       timeZone: locations.timezone,
@@ -227,6 +229,7 @@ export async function postInventoryTransaction(
       occurredAt,
       referenceType: input.reference?.type ?? null,
       referenceId: input.reference?.id ?? null,
+      reversesTransactionId: input.reversesTransactionId ?? null,
       reasonCode: input.reasonCode ?? null,
       notes: input.notes ?? null,
       createdByUserId: input.createdByUserId,

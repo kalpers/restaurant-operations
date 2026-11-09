@@ -26,6 +26,7 @@ import {
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
 import { securityInventoryPermissionsSeed } from "@/db/seeds/inventory-foundation";
+import { securityOrdersPermissionsSeed } from "@/db/seeds/orders-foundation";
 import { securityMenuPermissionsSeed } from "@/db/seeds/menu-foundation";
 import { securitySchedulingPermissionsSeed } from "@/db/seeds/scheduling-foundation";
 import { securityReservationsPermissionsSeed } from "@/db/seeds/reservations-foundation";
@@ -74,12 +75,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 102,
+    permissions: 106,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 15,
+    seedRuns: 16,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -121,6 +122,7 @@ describe("foundation seeds, on a fresh database", () => {
       "security.inventory-permissions",
       "inventory.packaging-units",
       "inventory.demo-catalog",
+      "security.orders-permissions",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -129,7 +131,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(15);
+    expect(result.skipped).toHaveLength(16);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -221,13 +223,13 @@ describe("foundation seeds, on a fresh database", () => {
         );
 
       // The Phase 4 codes stay, because this test only rewinds Phase 3.
-      expect(await countPermissions()).toBe(82);
+      expect(await countPermissions()).toBe(86);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(102);
+      expect(await countPermissions()).toBe(106);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -649,6 +651,62 @@ describe("foundation seeds, on a fresh database", () => {
         .insert(rolePermissions)
         .values({ roleId: manager!.id, permissionId: inventoryAdjust!.id });
     });
+  });
+
+  describe("upgrading a Phase 8 database", () => {
+    const PHASE_9 = ["orders.view", "orders.edit", "orders.discount.apply", "orders.discount.manage"];
+
+    const grantsOf = async (roleCode: string) =>
+      (
+        await database
+          .select({ code: permissions.code })
+          .from(rolePermissions)
+          .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+          .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+          .where(eq(roles.code, roleCode))
+      )
+        .map((row) => row.code)
+        .sort();
+
+    it("adds the order permissions to managers and floor roles, and restores nothing removed", async () => {
+      const newRows = await database.select({ id: permissions.id }).from(permissions).where(inArray(permissions.code, PHASE_9));
+      const newIds = newRows.map((row) => row.id);
+
+      expect(newIds).toHaveLength(PHASE_9.length);
+
+      await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, newIds));
+      await database.delete(permissions).where(inArray(permissions.id, newIds));
+
+      // An administrator removed a Phase 2 order grant from the Manager.
+      const [manager] = await database.select({ id: roles.id }).from(roles).where(eq(roles.code, "MANAGER"));
+      const [ordersVoid] = await database.select({ id: permissions.id }).from(permissions).where(eq(permissions.code, "orders.void"));
+
+      await database
+        .delete(rolePermissions)
+        .where(and(eq(rolePermissions.roleId, manager!.id), eq(rolePermissions.permissionId, ordersVoid!.id)));
+      await database.transaction((transaction) => securityOrdersPermissionsSeed.run(transaction));
+
+      expect(await database.select().from(permissions).where(inArray(permissions.code, PHASE_9))).toHaveLength(PHASE_9.length);
+      expect(await grantsOf("MANAGER")).toEqual(
+        ROLE_CATALOG.find((role) => role.code === "MANAGER")!.permissions.filter((code) => code !== "orders.void").sort(),
+      );
+
+      for (const code of ["SERVER", "BARTENDER"]) {
+        expect((await grantsOf(code)).filter((grant) => PHASE_9.includes(grant))).toEqual(["orders.edit", "orders.view"]);
+      }
+
+      for (const code of ["HOST", "COOK", "WAIT_STAFF", "INVENTORY_MANAGER"]) {
+        expect((await grantsOf(code)).filter((grant) => grant.startsWith("orders."))).toEqual([]);
+      }
+
+      await database.insert(rolePermissions).values({ roleId: manager!.id, permissionId: ordersVoid!.id });
+    });
+  });
+
+  it("seeds no orders, discounts or idempotency records", async () => {
+    expect(await database.select().from(schema.orders)).toEqual([]);
+    expect(await database.select().from(schema.discountDefinitions)).toEqual([]);
+    expect(await database.select().from(schema.idempotencyRecords)).toEqual([]);
   });
 
   it("seeds a demo inventory catalog with no stock and no ledger rows", async () => {

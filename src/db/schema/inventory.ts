@@ -28,7 +28,7 @@ import { unitsOfMeasure } from "./recipes";
 // stock unit unless a column says otherwise. Sign: positive adds stock, negative removes it.
 
 const TRANSACTION_TYPES =
-  "'RECEIVE', 'CONSUME', 'WASTE', 'ADJUST_INCREASE', 'ADJUST_DECREASE', 'COUNT_INCREASE', 'COUNT_DECREASE', 'TRANSFER_OUT', 'TRANSFER_IN'";
+  "'RECEIVE', 'CONSUME', 'WASTE', 'ADJUST_INCREASE', 'ADJUST_DECREASE', 'COUNT_INCREASE', 'COUNT_DECREASE', 'TRANSFER_OUT', 'TRANSFER_IN', 'SALE_REVERSAL'";
 
 function organizationColumn() {
   return uuid("organization_id")
@@ -212,6 +212,8 @@ export const inventoryTransactions = pgTable(
     occurredAt: timestamptz("occurred_at").notNull(),
     referenceType: text("reference_type"),
     referenceId: uuid("reference_id"),
+    /** SALE_REVERSAL only: the order CONSUME row this compensates. At most one reversal each. */
+    reversesTransactionId: uuid("reverses_transaction_id"),
     reasonCode: text("reason_code"),
     notes: text("notes"),
     createdByUserId: uuid("created_by_user_id"),
@@ -245,7 +247,7 @@ export const inventoryTransactions = pgTable(
     ),
     check(
       "inventory_transactions_direction_matches_type",
-      sql`(${table.transactionType} IN ('RECEIVE', 'ADJUST_INCREASE', 'COUNT_INCREASE', 'TRANSFER_IN') AND ${table.baseQuantityDelta} > 0 AND ${table.quantity} > 0)
+      sql`(${table.transactionType} IN ('RECEIVE', 'ADJUST_INCREASE', 'COUNT_INCREASE', 'TRANSFER_IN', 'SALE_REVERSAL') AND ${table.baseQuantityDelta} > 0 AND ${table.quantity} > 0)
         OR (${table.transactionType} IN ('CONSUME', 'WASTE', 'ADJUST_DECREASE', 'COUNT_DECREASE', 'TRANSFER_OUT') AND ${table.baseQuantityDelta} < 0 AND ${table.quantity} < 0)`,
     ),
     check(
@@ -266,6 +268,22 @@ export const inventoryTransactions = pgTable(
       table.businessDate,
     ),
     index("inventory_transactions_reference_idx").on(table.referenceType, table.referenceId),
+    foreignKey({
+      name: "inventory_transactions_reverses_fk",
+      columns: [table.reversesTransactionId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+    check(
+      "inventory_transactions_reversal_link",
+      sql`(${table.transactionType} = 'SALE_REVERSAL') = (${table.reversesTransactionId} IS NOT NULL)`,
+    ),
+    uniqueIndex("inventory_transactions_reverses_unique").on(table.reversesTransactionId),
+    // One submitted Order Item consumes each Inventory Item at most once (retry safety).
+    uniqueIndex("inventory_transactions_order_item_consume_unique")
+      .on(table.referenceId, table.inventoryItemId)
+      .where(
+        sql`${table.transactionType} = 'CONSUME' AND ${table.referenceType} = 'ORDER_ITEM'`,
+      ),
   ],
 );
 

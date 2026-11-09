@@ -48,6 +48,8 @@ describe("visibleNavigation", () => {
       "Floor",
       "Reservations",
       "Waitlist",
+      "Orders",
+      "Discounts",
       "Menu",
       "Manage menu",
       "Modifiers",

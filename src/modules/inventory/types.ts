@@ -8,6 +8,7 @@ export const INVENTORY_TRANSACTION_TYPES = [
   "COUNT_DECREASE",
   "TRANSFER_OUT",
   "TRANSFER_IN",
+  "SALE_REVERSAL",
 ] as const;
 export type InventoryTransactionType = (typeof INVENTORY_TRANSACTION_TYPES)[number];
 
@@ -22,6 +23,7 @@ export const TRANSACTION_DIRECTION: Record<InventoryTransactionType, 1 | -1> = {
   COUNT_DECREASE: -1,
   TRANSFER_OUT: -1,
   TRANSFER_IN: 1,
+  SALE_REVERSAL: 1,
 };
 
 export const WASTE_REASONS = ["SPOILAGE", "BREAKAGE", "PREP_WASTE", "EXPIRED", "OTHER"] as const;

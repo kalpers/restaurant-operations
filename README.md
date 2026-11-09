@@ -724,9 +724,10 @@ COUNT_INCREASE
 COUNT_DECREASE
 TRANSFER_OUT
 TRANSFER_IN
+SALE_REVERSAL
 ```
 
-Further types (for example an order-consumption reversal) are added deliberately in the phase that needs them.
+`SALE_REVERSAL` (Phase 9) restores stock consumed by an Order Item that was voided as never prepared. It must name the `CONSUME` row it compensates (`reverses_transaction_id`, at most one reversal each). Further types are added deliberately in the phase that needs them.
 
 Transfers between Locations of one organization use a matching transfer-out and transfer-in with one shared reference and do not change total inventory.
 
@@ -756,6 +757,7 @@ discount_definitions
 order_discounts
 order_item_discounts
 order_item_inventory_consumption
+order_number_counters
 ```
 
 Order types:
@@ -1084,6 +1086,8 @@ Never send a kitchen/real-time event before the database transaction commits.
 ### Idempotency
 
 Critical commands such as SEND must accept a client-generated idempotency key. Retrying the same successfully processed request must return/reuse the earlier outcome, never duplicate kitchen tickets or inventory movement.
+
+As built in Phase 9, `idempotency_records` holds (organization, scope, key), the actor, a SHA-256 fingerprint of the canonical request (including the actor) and the stored response. The key is claimed inside the command's own transaction (`src/infrastructure/idempotency/`), so a rolled-back attempt leaves nothing and a concurrent duplicate waits on the unique key. A matching retry returns the stored response; the same key with a different request or actor is refused with `IDEMPOTENCY_KEY_REUSED` (409). `outbox_events` is not yet built: Phase 9 publishes no realtime events.
 
 ## 24. Transaction Boundaries
 
@@ -1457,7 +1461,7 @@ Scheduling permissions are separate for viewing/editing/generating/publishing (`
 
 **Permissions.** `restaurant.view`, `.tables.manage`, `.sections.manage`, `.seat`, `.move`, `.complete-session`, `.cancel-session`, `.clean-table`, `.condition.manage`, `.server.assign`, `.capacity.override` and `.schedule.override`. Phase 2's `restaurant.manage` was never enforced and is retired by the `security.restaurant-permissions` seed. Owner, General Manager and Manager hold all of them. Host holds `view`, `seat`, `move`, `complete-session`, `clean-table` and `server.assign`. Server and Bartender add `complete-session` and `clean-table`; Wait Staff adds `clean-table`. Only capacity and schedule matching can be overridden. Location, inactive, occupied, dirty, out-of-service and position rules cannot.
 
-The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Sessions have no order link yet: Phase 9 adds orders that reference a session and an open-order precondition in `completeSession`. The floor refreshes every 30 seconds until realtime arrives in Phase 10.
+The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Phase 9 added orders that reference a session, and a session can't be completed or cancelled while any of its orders is OPEN (see the Phase 9 policies). The floor refreshes every 30 seconds until realtime arrives in Phase 10.
 
 ### Phase 6 Reservations and Waitlist
 
@@ -1536,6 +1540,28 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 **Permissions.** Nine new codes (102 in all): `inventory.count.approve`, `inventory.waste`, `inventory.transfer`, `inventory.configure`, `inventory.cost.view`, `purchasing.view`, `purchasing.manage`, `purchasing.submit`, `suppliers.manage`, alongside the older `inventory.view`, `.receive`, `.adjust` and `.count`. Owner, General Manager, Manager and Inventory Manager hold all of them. A Cook holds `inventory.view` and `inventory.waste`. Floor roles hold none. Counting and approving are separate. The `security.inventory-permissions`, `inventory.packaging-units` and `inventory.demo-catalog` seeds add the codes, packaging units, and six demo items stocked at MAIN with one demo supplier; no stock, ledger rows or orders are seeded.
 
 **Phase 9 extension points.** Order SEND resolves the Menu Item's effective revision (`resolveEffectiveRevisionForMenuItem`), its requirements (`resolveRevisionRequirements`), applies the selected modifiers' effects (`applyModifierEffects`), and posts each result with `postConsumption` in the SEND transaction, with its own reference for idempotency.
+
+### Phase 9 Orders
+
+**Orders reference a session, never a table.** `DINE_IN` needs an ACTIVE Table Session whose tables are in a `DINING` area and `BAR` one in a `BAR` area; `TAKEOUT` has no session, no table and no Guest Party, only an optional pickup label. The type is checked against the area, not guessed from it. A session may have many orders; moving it keeps them. DINE_IN and BAR orders copy the session's Guest Party and server. Each order has a UUID and a per-Location, per-business-date number (`order_number_counters`, incremented under a row lock), and its `business_date` comes from `BusinessDateService`.
+
+**Lifecycles.** Orders are `OPEN -> VOIDED`, with `CLOSED` reserved for Phase 11 settlement: Phase 9 has no close operation. Items are `DRAFT -> SUBMITTED -> VOIDED`. `order_status_history` and `order_item_status_history` are append-only (item history starts at SUBMITTED; drafts aren't history). Every mutation locks the order row and checks its `version`, so a stale screen gets `CONCURRENCY_CONFLICT`.
+
+**Drafts are previews.** Adding or editing a draft resolves the item through the operational menu and the shared modifier validator and stores preview prices, but consumes nothing and doesn't count toward the order total. Drafts can be edited or removed (removal deletes the row). Sent items are only voided.
+
+**SEND** (`src/workflows/submit-order/`) commits every DRAFT item of an order in one transaction, as one numbered send batch (`order_send_batches`, 1, 2, 3 per order). In order: it authorizes `orders.submit`, claims the idempotency key, locks the order and checks its version. Then, for each item, it re-resolves the item, price and modifiers through `getOperationalMenu`, `resolveSellableItem` and the shared validator, resolves the recipe revision in effect now, and applies the selected modifiers' effects with `applyModifierEffects`, which drops a requirement adjusted to zero or below. It then creates the batch, freezes the snapshots, posts CONSUME rows and writes `order_item_inventory_consumption` (per item and Inventory Item: base quantity, recipe revision, per-unit recipe requirement and the effects applied, and the ledger row), recomputes totals, writes histories and stores the idempotent result. Snapshots include the item code and name, base price, modifier names and prices, unit and line totals, recipe and revision, kitchen instructions (modifier preparation instructions, then free text) and the routed prep station IDs, which is the Phase 10 contract. A trigger freezes a sent item's snapshot and modifier rows. The price is resolved at SEND, so a menu price change while an item is a draft changes what it sells for, and nothing changes afterwards. Free text never affects inventory. An item with no recipe sends with no consumption.
+
+**Stock.** Consumption goes through the narrow trusted capability `postOrderConsumption` (`src/modules/inventory/services/order-consumption.ts`). It is consume-only, references each Order Item, and calls the one posting service, so conversion, costing, balances and the negative-stock policy are Phase 8's. It locks balances in Inventory Item order and, when negative stock isn't allowed, collects every shortage in the batch before posting anything. The whole round fails with `INSUFFICIENT_STOCK` and `details.shortages` (item, required, available, shortage, in base units, never cost). A partial unique index allows one CONSUME per Order Item and Inventory Item. Servers and bartenders hold no Inventory permission; `orders.submit` grants no Inventory endpoint.
+
+**Voids** need `orders.void`, a reason and a disposition. `UNPREPARED` posts `SALE_REVERSAL` rows through `postSaleReversal`, each linked to its original CONSUME, entering at that row's cost through weighted-average costing. `PREPARED_OR_DISCARDED` keeps the consumption and records no waste; staff use the Inventory waste workflow if they want to. The row stays, marked VOIDED, with an append-only `order_item_voids` record. A refused reversal rolls the whole void back. A full order void needs a disposition for every sent item, voids drafts with no movement, and marks the order VOIDED, in one transaction.
+
+**Totals and discounts.** The order stores `item_subtotal` (SUBMITTED line totals), `discount_total` and `subtotal` (post-discount, pre-tax, what Phase 11 settles); a check constraint keeps them consistent. Discounts come only from `discount_definitions` (`ITEM` or `ORDER`, `FIXED_AMOUNT` or `PERCENTAGE`), apply only to sent items, and need a reason. Applying one snapshots its code, name, type and value with the actor; later definition edits change nothing applied. Item discounts apply first, then order discounts, each in application order against what remains, percentages ROUND_HALF_UP to cents, each capped. A 100% discount is marked a comp. The applied amount is a projection recomputed exactly whenever sent items or discounts change; a voided item's discounts become VOIDED, and removal is recorded, never deleted. Discounts never restore inventory. No tax, tip or payment is calculated.
+
+**Table sessions.** A session can't be completed or cancelled while any order on it is OPEN. Order creation locks the session FOR SHARE, the end-session workflow maps the result to `ORDERS_OPEN`, and a database trigger on `table_sessions` is the final guard for any path. Phase 9 never closes an order to unblock this; Phase 11 settlement does.
+
+**Permissions.** New: `orders.view`, `orders.edit`, `orders.discount.apply`, `orders.discount.manage` (106 in all). Owner, General Manager and Manager hold every orders code. Server and Bartender hold view, create, edit and submit. Host, Cook, Wait Staff and Inventory Manager hold none. Orders are location-scoped, with no per-server ownership rule. `orders.close` stays unused until Phase 11. The `security.orders-permissions` seed adds the codes; no orders or discounts are seeded.
+
+**Deferred.** Kitchen and bar tickets (Phase 10, read from the snapshots above), settlement and closure (Phase 11), `outbox_events` and `audit_events` (no realtime consumer exists yet; domain histories and actor columns give provenance).
 
 ## 34. AWS POC Deployment Target
 
@@ -1644,7 +1670,7 @@ Deliver inventory items and location stocking, product packaging conversions, th
 
 ### Phase 9: Orders
 
-Deliver draft orders, split checks, item modifiers, send batches, immutable snapshots, recipe resolution, inventory consumption, discounts, void workflow, idempotency, and concurrency.
+Deliver draft orders, split checks (as several orders per Table Session; split payment is Phase 11), item modifiers, send batches, immutable snapshots, recipe resolution, inventory consumption, discounts, void workflow, idempotency, and concurrency.
 
 ### Phase 10: Kitchen + Bar + Realtime
 

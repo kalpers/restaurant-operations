@@ -58,6 +58,7 @@ import {
   createRoleFixture,
   createUserFixture,
 } from "./auth-fixtures";
+import { clearOrderData } from "./order-cleanup";
 
 export const HIRE_DATE = "2024-01-15";
 export const ABSENT_ID = "00000000-0000-4000-8000-000000000000";
@@ -166,6 +167,8 @@ export function createEmployeeFixture(
  * only goes if a fixture location owns it: tests run on their own fixture locations.
  */
 export async function clearRestaurantData(database: Database): Promise<void> {
+  // Orders reference table sessions, guest parties and employees.
+  await clearOrderData(database);
   await database.delete(reservationHoldOverrides);
   await database.delete(waitlistTableAssignments);
   await database.delete(waitlistEntries);

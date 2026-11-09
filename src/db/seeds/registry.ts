@@ -9,6 +9,7 @@ import {
   securityMenuPermissionsSeed,
   unitsOfMeasureSeed,
 } from "./menu-foundation";
+import { securityOrdersPermissionsSeed } from "./orders-foundation";
 import { organizationFoundationSeed } from "./organization-foundation";
 import {
   restaurantInitialFloorSeed,
@@ -40,4 +41,5 @@ export const seeds: readonly Seed[] = [
   securityInventoryPermissionsSeed,
   packagingUnitsSeed,
   inventoryDemoCatalogSeed,
+  securityOrdersPermissionsSeed,
 ];

@@ -1,0 +1,268 @@
+import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
+
+import type { Database } from "@/db";
+import {
+  orderItemInventoryConsumption,
+  orderItemModifiers,
+  orderItems,
+  orderSendBatches,
+} from "@/db/schema";
+import { withTransaction } from "@/db/transactions/transaction-context";
+import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
+import type { Actor } from "@/modules/auth/types";
+import { postOrderConsumption } from "@/modules/inventory/services/order-consumption";
+import {
+  loadModifierEffectsForItem,
+  resolveSellableItem,
+} from "@/modules/menu/queries/order-menu-facts";
+import { getOperationalMenu } from "@/modules/menu/queries/operational-menu";
+import { resolveRevisionRequirements } from "@/modules/recipes/services/ingredient-service";
+import { resolveEffectiveRevisionForMenuItem } from "@/modules/recipes/services/recipe-service";
+import {
+  appendItemHistory,
+  lockOrder,
+  readOrderLocation,
+  recomputeAndBumpOrder,
+} from "@/modules/orders/repositories/order-repository";
+import { planLineConsumption } from "@/modules/orders/rules/consumption-plan";
+import { assertOrderOpen, buildKitchenInstructions } from "@/modules/orders/rules/order-lifecycle";
+import { assertPermission } from "@/modules/orders/services/access";
+import { draftColumns } from "@/modules/orders/services/draft-item-service";
+import { SEND_SCOPE } from "@/modules/orders/types";
+import { BusinessRuleError } from "@/shared/errors/app-error";
+
+export type SendResult = {
+  orderId: string;
+  batchId: string;
+  batchNumber: number;
+  itemIds: string[];
+  sentAt: string;
+  orderVersion: number;
+};
+
+/**
+ * SEND: commits every DRAFT item of an order in one send batch, in one transaction
+ * (README section 24, without the Phase 10 tickets and the deferred audit/outbox):
+ *
+ *   authorize -> claim idempotency key -> lock order and check version -> lock drafts
+ *   -> re-resolve price and modifiers (operational menu) -> resolve recipe revision
+ *   -> apply modifier effects -> create batch -> freeze snapshots -> consumption
+ *   snapshots and CONSUME postings (with balances) -> totals -> histories -> store result
+ *
+ * Any failure rolls everything back, including the idempotency claim. A retry with the
+ * same key returns the first result and changes nothing.
+ */
+export async function sendOrderItems(
+  database: Database,
+  actor: Actor,
+  orderId: string,
+  input: { expectedVersion: number; idempotencyKey: string },
+): Promise<SendResult & { replayed: boolean }> {
+  assertPermission(actor, "orders.submit");
+
+  const outcome = await withTransaction(database, (transaction) =>
+    runIdempotent<SendResult>(
+      transaction,
+      {
+        organizationId: actor.organizationId,
+        scope: SEND_SCOPE,
+        key: input.idempotencyKey,
+        actorUserId: actor.userId,
+        request: { orderId, expectedVersion: input.expectedVersion },
+      },
+      async (idempotencyRecordId) => {
+        const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
+
+        assertOrderOpen(order.status);
+
+        const drafts = await transaction
+          .select()
+          .from(orderItems)
+          .where(and(eq(orderItems.orderId, orderId), eq(orderItems.status, "DRAFT")))
+          .orderBy(asc(orderItems.createdAt), asc(orderItems.id))
+          .for("update");
+
+        if (drafts.length === 0) {
+          throw new BusinessRuleError("NOTHING_TO_SEND", "There are no unsent items on this order.");
+        }
+
+        const sentAt = new Date();
+        const location = await readOrderLocation(transaction, actor.locationId, sentAt);
+        const menu = await getOperationalMenu(transaction, actor, sentAt);
+        const selectionRows = await transaction
+          .select()
+          .from(orderItemModifiers)
+          .where(inArray(orderItemModifiers.orderItemId, drafts.map((item) => item.id)))
+          .orderBy(asc(orderItemModifiers.sortOrder));
+
+        // Resolve everything first, so a refusal happens before anything is written.
+        const resolved: {
+          draft: (typeof drafts)[number];
+          sellable: Awaited<ReturnType<typeof resolveSellableItem>>;
+          revision: Awaited<ReturnType<typeof resolveEffectiveRevisionForMenuItem>>;
+          consumption: ReturnType<typeof planLineConsumption>;
+        }[] = [];
+
+        for (const draft of drafts) {
+          const selections = selectionRows
+            .filter((row) => row.orderItemId === draft.id)
+            .map((row) => ({ modifierGroupId: row.modifierGroupId, modifierId: row.modifierId }));
+          const sellable = await resolveSellableItem(transaction, actor, {
+            menuItemId: draft.menuItemId,
+            selections,
+            at: sentAt,
+            menu,
+          });
+          const revision = await resolveEffectiveRevisionForMenuItem(
+            transaction,
+            actor.organizationId,
+            draft.menuItemId,
+            sentAt,
+          );
+          const requirements = revision
+            ? await resolveRevisionRequirements(transaction, actor.organizationId, revision.id)
+            : [];
+          const effects = await loadModifierEffectsForItem(
+            transaction,
+            actor.organizationId,
+            draft.menuItemId,
+            selections.map((selection) => selection.modifierId),
+          );
+          const consumption = planLineConsumption({
+            requirements,
+            effects,
+            quantity: draft.quantity,
+          });
+
+          resolved.push({ draft, sellable, revision, consumption });
+        }
+
+        const [last] = await transaction
+          .select({ value: max(orderSendBatches.batchNumber) })
+          .from(orderSendBatches)
+          .where(eq(orderSendBatches.orderId, orderId));
+        const [batch] = await transaction
+          .insert(orderSendBatches)
+          .values({
+            orderId,
+            batchNumber: (last?.value ?? 0) + 1,
+            idempotencyRecordId,
+            sentByUserId: actor.userId,
+            sentAt,
+            businessDate: location.businessDate,
+            itemCount: drafts.length,
+          })
+          .returning();
+
+        for (const { draft, sellable, revision } of resolved) {
+          // Refresh the modifier snapshots while the item is still a draft.
+          await transaction.delete(orderItemModifiers).where(eq(orderItemModifiers.orderItemId, draft.id));
+
+          if (sellable.selections.length > 0) {
+            await transaction.insert(orderItemModifiers).values(
+              sellable.selections.map((selection, index) => ({
+                orderItemId: draft.id,
+                modifierGroupId: selection.modifierGroupId,
+                modifierId: selection.modifier.id,
+                modifierGroupNameSnapshot: selection.modifierGroupName,
+                modifierCodeSnapshot: selection.modifier.code,
+                modifierNameSnapshot: selection.modifier.name,
+                priceAdjustmentSnapshot: selection.modifier.priceAdjustment,
+                preparationEffectTypeSnapshot: selection.modifier.preparationEffectType,
+                preparationInstructionSnapshot: selection.modifier.preparationInstruction,
+                sortOrder: index,
+              })),
+            );
+          }
+
+          await transaction
+            .update(orderItems)
+            .set({
+              ...draftColumns(sellable, draft.quantity),
+              status: "SUBMITTED",
+              kitchenInstructionsSnapshot: buildKitchenInstructions(
+                sellable.selections.map((selection) => selection.modifier.preparationInstruction),
+                draft.specialInstructions,
+              ),
+              prepStationIdsSnapshot: sellable.item.prepStationIds,
+              recipeId: revision?.recipeId ?? null,
+              recipeVersionId: revision?.id ?? null,
+              sendBatchId: batch!.id,
+              submittedAt: sentAt,
+              version: sql`${orderItems.version} + 1`,
+              updatedAt: sentAt,
+            })
+            .where(eq(orderItems.id, draft.id));
+        }
+
+        const lines = resolved.flatMap(({ draft, consumption }) =>
+          consumption.map((entry) => ({
+            orderItemId: draft.id,
+            inventoryItemId: entry.inventoryItemId,
+            baseQuantity: entry.baseQuantity,
+          })),
+        );
+        const postings = await postOrderConsumption(transaction, {
+          organizationId: actor.organizationId,
+          locationId: actor.locationId,
+          occurredAt: sentAt,
+          createdByUserId: actor.userId,
+          lines,
+        });
+
+        if (postings.length > 0) {
+          await transaction.insert(orderItemInventoryConsumption).values(
+            postings.map((posting) => {
+              const { consumption, revision } = resolved.find(
+                (entry) => entry.draft.id === posting.orderItemId,
+              )!;
+              const planned = consumption.find(
+                (entry) => entry.inventoryItemId === posting.inventoryItemId,
+              )!;
+
+              return {
+                organizationId: actor.organizationId,
+                orderItemId: posting.orderItemId,
+                sendBatchId: batch!.id,
+                inventoryItemId: posting.inventoryItemId,
+                baseQuantity: posting.baseQuantity,
+                baseUnitId: posting.baseUnitId,
+                recipeVersionId: revision?.id ?? null,
+                sourceSnapshot: {
+                  perUnitBaseQuantity: planned.perUnitBaseQuantity,
+                  recipeBaseQuantity: planned.recipeBaseQuantity,
+                  effects: planned.effects,
+                },
+                inventoryTransactionId: posting.posting.transactionId,
+              };
+            }),
+          );
+        }
+
+        await appendItemHistory(
+          transaction,
+          drafts.map((draft) => ({
+            orderItemId: draft.id,
+            status: "SUBMITTED",
+            reason: `Send batch ${batch!.batchNumber}`,
+            userId: actor.userId,
+            at: sentAt,
+          })),
+        );
+
+        const updated = await recomputeAndBumpOrder(transaction, orderId);
+
+        return {
+          orderId,
+          batchId: batch!.id,
+          batchNumber: batch!.batchNumber,
+          itemIds: drafts.map((draft) => draft.id),
+          sentAt: sentAt.toISOString(),
+          orderVersion: updated.version,
+        };
+      },
+    ),
+  );
+
+  return { ...outcome.response, replayed: outcome.replayed };
+}

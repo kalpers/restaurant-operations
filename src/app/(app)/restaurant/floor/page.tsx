@@ -27,6 +27,7 @@ export default async function FloorPage() {
     capacityOverride: actorHolds(actor, "restaurant.capacity.override"),
     scheduleOverride: actorHolds(actor, "restaurant.schedule.override"),
     holdOverride: actorHolds(actor, "reservations.override-hold"),
+    orders: actorHolds(actor, "orders.view"),
   };
   const candidates: Record<string, ServerCandidate[]> = {};
 

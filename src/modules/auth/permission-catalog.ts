@@ -99,10 +99,14 @@ export const PERMISSION_CATALOG = [
   { code: "purchasing.submit", name: "Submit and cancel purchase orders", category: "Purchasing" },
   { code: "suppliers.manage", name: "Manage suppliers and supplier items", category: "Purchasing" },
 
+  { code: "orders.view", name: "View orders", category: "Orders" },
   { code: "orders.create", name: "Create orders", category: "Orders" },
+  { code: "orders.edit", name: "Edit draft order items", category: "Orders" },
   { code: "orders.submit", name: "Submit orders", category: "Orders" },
   { code: "orders.void", name: "Void order items", category: "Orders" },
   { code: "orders.close", name: "Close orders", category: "Orders" },
+  { code: "orders.discount.apply", name: "Apply and remove order discounts", category: "Orders" },
+  { code: "orders.discount.manage", name: "Manage discount definitions", category: "Orders" },
 
   { code: "settlements.complete", name: "Complete settlements", category: "Settlements" },
 

@@ -439,14 +439,14 @@ describe("recipes", () => {
       }
     });
 
-    it("has no order, ticket or settlement tables", async () => {
+    it("has no ticket, fulfillment or settlement tables (Phases 10 and 11)", async () => {
       const result = await database().execute(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public'` as never,
       );
       const names = (result as unknown as { tablename: string }[]).map((row) => row.tablename);
 
       expect(
-        names.filter((name) => /^orders$|^order_|ticket|settlement|fulfillment/.test(name)),
+        names.filter((name) => /ticket|settlement|fulfillment|tender/.test(name)),
       ).toEqual([]);
     });
   });

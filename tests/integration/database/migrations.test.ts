@@ -30,6 +30,7 @@ const RECONSTRUCTION_DATABASE = "restaurant_ops_test_reconstruction";
 const EXPECTED_TABLES = [
   "drizzle.__drizzle_migrations",
   "public.certification_types",
+  "public.discount_definitions",
   "public.employee_addresses",
   "public.employee_availability",
   "public.employee_availability_exceptions",
@@ -46,6 +47,7 @@ const EXPECTED_TABLES = [
   "public.employee_status_history",
   "public.employees",
   "public.guest_parties",
+  "public.idempotency_records",
   "public.inventory_balances",
   "public.inventory_count_lines",
   "public.inventory_counts",
@@ -68,6 +70,17 @@ const EXPECTED_TABLES = [
   "public.modifier_groups",
   "public.modifier_inventory_effects",
   "public.modifiers",
+  "public.order_discounts",
+  "public.order_item_discounts",
+  "public.order_item_inventory_consumption",
+  "public.order_item_modifiers",
+  "public.order_item_status_history",
+  "public.order_item_voids",
+  "public.order_items",
+  "public.order_number_counters",
+  "public.order_send_batches",
+  "public.order_status_history",
+  "public.orders",
   "public.organizations",
   "public.party_status_history",
   "public.permissions",
@@ -299,6 +312,17 @@ describe("reconstruction from checked-in migrations", () => {
       await query("SELECT allow_negative_inventory FROM location_settings"),
     ).toEqual([{ allow_negative_inventory: false }]);
     expect(await query("SELECT * FROM inventory_transactions")).toEqual([]);
+  });
+
+  it("upgrades a Phase 8 database in place, keeping its data", async () => {
+    await upgradeFromMigrationIndex(12);
+    expect(await query("SELECT * FROM orders")).toEqual([]);
+    expect(await query("SELECT * FROM idempotency_records")).toEqual([]);
+    expect(
+      await query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'inventory_transactions' AND column_name = 'reverses_transaction_id'",
+      ),
+    ).toEqual([{ column_name: "reverses_transaction_id" }]);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {

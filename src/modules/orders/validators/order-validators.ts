@@ -1,0 +1,103 @@
+import { z } from "zod";
+
+import { IDEMPOTENCY_KEY_PATTERN } from "@/infrastructure/idempotency/idempotency-service";
+
+import { DISCOUNT_SCOPES, DISCOUNT_TYPES, ORDER_STATUSES, ORDER_TYPES, VOID_DISPOSITIONS } from "../types";
+
+// Shape only. Business rules are in the services and workflows; PostgreSQL has the final word.
+
+const expectedVersion = z.int().positive();
+const reason = z.string().trim().min(1).max(300);
+const decimal = z.string().trim().regex(/^\d+(\.\d+)?$/);
+
+export const orderIdParamsSchema = z.object({ orderId: z.uuid() });
+export const orderItemParamsSchema = z.object({ orderId: z.uuid(), itemId: z.uuid() });
+export const orderDiscountParamsSchema = z.object({ orderId: z.uuid(), discountId: z.uuid() });
+export const discountDefinitionParamsSchema = z.object({ definitionId: z.uuid() });
+
+export const listOrdersQuerySchema = z.object({
+  status: z.enum(ORDER_STATUSES).optional(),
+  orderType: z.enum(ORDER_TYPES).optional(),
+  tableSessionId: z.uuid().optional(),
+});
+
+export const createOrderSchema = z.discriminatedUnion("orderType", [
+  z.object({ orderType: z.literal("DINE_IN"), tableSessionId: z.uuid() }),
+  z.object({ orderType: z.literal("BAR"), tableSessionId: z.uuid() }),
+  z.object({
+    orderType: z.literal("TAKEOUT"),
+    customerName: z.string().trim().max(60).nullable().optional(),
+  }),
+]);
+
+const selections = z
+  .array(z.object({ modifierGroupId: z.uuid(), modifierId: z.uuid() }))
+  .max(50)
+  .default([]);
+const specialInstructions = z
+  .string()
+  .trim()
+  .max(500)
+  .nullable()
+  .default(null)
+  .transform((value) => (value === "" ? null : value));
+
+export const addDraftItemSchema = z.object({
+  expectedVersion,
+  menuItemId: z.uuid(),
+  quantity: z.int().min(1).max(99),
+  selections,
+  specialInstructions,
+});
+
+export const updateDraftItemSchema = z.object({
+  expectedVersion,
+  quantity: z.int().min(1).max(99),
+  selections,
+  specialInstructions,
+});
+
+export const expectedVersionSchema = z.object({ expectedVersion });
+
+export const sendOrderSchema = z.object({
+  expectedVersion,
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+});
+
+export const voidItemSchema = z.object({
+  expectedVersion,
+  reason,
+  disposition: z.enum(VOID_DISPOSITIONS),
+});
+
+export const voidOrderSchema = z.object({
+  expectedVersion,
+  reason,
+  dispositions: z.record(z.uuid(), z.enum(VOID_DISPOSITIONS)).default({}),
+});
+
+export const applyDiscountSchema = z.object({
+  expectedVersion,
+  discountDefinitionId: z.uuid(),
+  reason,
+});
+
+export const removeDiscountSchema = z.object({ expectedVersion, reason });
+
+export const createDiscountDefinitionSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9_]{0,39}$/, "Use letters, digits and underscores."),
+  name: z.string().trim().min(1).max(80),
+  scope: z.enum(DISCOUNT_SCOPES),
+  discountType: z.enum(DISCOUNT_TYPES),
+  value: decimal,
+});
+
+export const updateDiscountDefinitionSchema = z.object({
+  expectedVersion,
+  name: z.string().trim().min(1).max(80),
+  value: decimal,
+  active: z.boolean(),
+});

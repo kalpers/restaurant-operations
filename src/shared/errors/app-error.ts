@@ -3,6 +3,9 @@
  * SQL, credentials, stack traces or internal identifiers.
  */
 export class AppError extends Error {
+  /** Optional structured, client-safe detail (for example shortage quantities). */
+  details?: unknown;
+
   constructor(
     readonly code: string,
     message: string,
@@ -44,7 +47,11 @@ export class ConflictError extends AppError {
 }
 
 export class BusinessRuleError extends AppError {
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, details?: unknown) {
     super(code, message, 422);
+
+    if (details !== undefined) {
+      this.details = details;
+    }
   }
 }
