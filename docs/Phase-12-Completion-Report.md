@@ -254,7 +254,7 @@ Modified:
 
 1. **Audit domain:** still your decision (carried since Phase 3). Phase 13's plan expects "audit verified", so it needs deciding before Phase 13.
 2. **Commit and CI: resolved.** Committed in `5dfe02f`; GitHub Actions passed.
-3. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json` (Next.js warns about it on every dev start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+3. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json` (Next.js warns about it on every dev start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted Risks
 

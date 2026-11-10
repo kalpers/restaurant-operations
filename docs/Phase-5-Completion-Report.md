@@ -342,7 +342,7 @@ None of these block Phase 6.
 2. **Confirm the Server and Bartender grants,** and whether the pre-shift override consequence is acceptable. Both are under Policies. Changing the grants would take a new versioned seed.
 3. **E2E on a production build, optional.** It passed at 4 workers in less than half the time. Moving to it would remove the on-demand compile delay, at the cost of needing a build first. I kept `next dev` to avoid changing the test setup beyond what this phase needed.
 4. **Commit and confirm CI.** The workflow gets the new migrations and the 2-worker E2E limit. CI also retries twice, which could hide a flaky test.
-5. **Carried over, all optional:** edit forms from the Phase 3 and 4 reports, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+5. **Carried over, all optional:** edit forms from the Phase 3 and 4 reports, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Next-phase readiness
 

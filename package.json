@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "Restaurant Operations Management System",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "Kneale Alpers",
   "engines": {
     "node": ">=22.12.0"
   },

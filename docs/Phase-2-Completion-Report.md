@@ -304,7 +304,7 @@ None of these block Phase 3.
 1. **Confirm the no-escalation extension** described under Architecture deviations.
 2. **Try the interactive prompt once.** No terminal is available in this environment, so the hidden-password prompt hasn't been run. Running `npm run bootstrap:owner` in your terminal both tests it and creates your Owner account.
 3. **Confirm CI after committing.** The workflow gained an E2E step, and the drift check needs the migration committed. The workflow itself hasn't run.
-4. **Carried over, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`. Next.js still warns about the second.
+4. **Carried over, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `%USERPROFILE%\package-lock.json`. Next.js still warns about the second.
 
 ## Next-phase readiness
 

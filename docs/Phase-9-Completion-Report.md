@@ -371,7 +371,7 @@ None block Phase 10.
 1. **Outbox for Phase 10: decided 2026-11-09.** README/CLAUDE.md rule 8 says realtime events go through `outbox_events` after commit, while the Phase 10 plan says to add no outbox. The project owner chose the README contract: Phase 10 builds `outbox_events`, written in the SEND (and fulfillment) transactions, and a processor that publishes committed events. This overrides the Phase 10 plan's "no outbox" instruction (its item 9).
 2. **Audit domain: still your decision** (carried since Phase 3). Order sends, voids and discounts now add to the list of actions without audit events.
 3. **No E2E for discounts or the full-order void,** which have integration coverage.
-4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json` (Next.js warns about it on every start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json` (Next.js warns about it on every start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
 

@@ -278,7 +278,7 @@ Both were made on 2026-11-09 at the owner's request, after the first version of 
 2. **Carried over:**
    - the Phase 6 held-table move gap;
    - the old `restaurant-ops-postgres-1` container and volume;
-   - the stray `C:\Users\kneal\package-lock.json`;
+   - the stray `%USERPROFILE%\package-lock.json`;
    - the unanchored `out/` and `uploads/` rules in `.gitignore`.
 3. **New image:** the reset check pulled `postgres:17` locally (about 150 MB); remove it with `docker image rm postgres:17` if not wanted.
 

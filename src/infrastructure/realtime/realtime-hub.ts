@@ -3,7 +3,7 @@ import type { PublishedEvent } from "../outbox/outbox";
 // The realtime adapter (README section 3): an in-process fan-out from the outbox processor
 // to the Server-Sent Events connections held by this Node process. It holds no state that
 // matters: an event is a "something changed, refetch" signal, and a client that missed one
-// refetches when it reconnects. One process serves the POC (single EC2 instance); several
+// refetches when it reconnects. One process serves the POC (a single app instance); several
 // instances would each need their own processor feed (for example LISTEN/NOTIFY).
 
 export type RealtimeMessage = {

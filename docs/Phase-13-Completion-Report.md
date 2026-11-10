@@ -296,7 +296,7 @@ Choices that differ from the Phase 13 docs:
 5. **Carried over:**
    - the Phase 6 held-table move gap;
    - the old `restaurant-ops-postgres-1` container and volume;
-   - the stray `C:\Users\kneal\package-lock.json`;
+   - the stray `%USERPROFILE%\package-lock.json`;
    - the unanchored `out/` and `uploads/` rules in `.gitignore`;
    - the optional `postgres:17` image.
 6. **Dev database.** It now holds the validation fixture (`phase13.validation-fixtures`). `npm run db:reset` removes it if you don't want it.

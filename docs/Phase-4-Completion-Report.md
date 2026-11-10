@@ -316,7 +316,7 @@ None of these block Phase 5.
 1. **Where does the audit domain get built? Still your decision,** carried from Phase 3. The Phase 2 and 3 plans place full audit in Phase 12, but README §36's Phase 12 deliverables don't list it, and each phase adds more actions that need auditing.
 2. **Some working APIs have no form yet.** Plan §46 lists what the UI must support, and these go beyond it: editing an existing shift or period, editing a recurring availability row (remove and add works), and a manager requesting time off for an employee. All have tested services and routes. Say if you want them before Phase 5.
 3. **Prevent a repeat of the ignored-file failure, optional.** Local checks use the working folder, so they can't see a file git ignores. Running `git status --ignored` before a push, or validating from a clean clone, would catch it. `out/` and `uploads/` in `.gitignore` are also unanchored and could catch a future route folder with that name.
-4. **Carried over, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`. Next.js still warns about the second.
+4. **Carried over, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `%USERPROFILE%\package-lock.json`. Next.js still warns about the second.
 
 ## Next-phase readiness
 

@@ -166,7 +166,7 @@ No Phase 0 functionality is outstanding. These need an owner's attention:
 1. **Confirm CI.** Check that the GitHub Actions run for `9a24795` passed.
 2. **Approve or reject a risk entry for the new dev-only audit findings.** `CLAUDE.md` requires approval before they are recorded in `docs/accepted-risks.md`. That file also has a typo on line 3 (`s### Description`) and no `DEV-001` heading. It was left unchanged.
 3. **Old Docker leftovers.** An exited `restaurant-ops-postgres-1` container and a `restaurant-ops_postgres_data` volume remain from an earlier project folder. They were left untouched. If that data isn't needed, this deletes it permanently: `docker rm restaurant-ops-postgres-1; docker volume rm restaurant-ops_postgres_data`.
-4. **Stray lockfile.** Next.js warns that it is ignoring `C:\Users\kneal\package-lock.json`, which is outside this repository. The warning is harmless and specific to this machine.
+4. **Stray lockfile.** Next.js warns that it is ignoring `%USERPROFILE%\package-lock.json`, which is outside this repository. The warning is harmless and specific to this machine.
 
 ## Next-phase readiness
 

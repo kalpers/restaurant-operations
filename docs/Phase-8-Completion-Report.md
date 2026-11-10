@@ -330,7 +330,7 @@ None block Phase 9.
 
 1. **Where does the audit domain get built? Still your decision,** carried from Phase 3. Inventory adjustments and count approvals add to the list.
 2. **No UI to cancel a scheduled supplier price or to edit a received receipt.** Corrections are compensating adjustments, by design.
-3. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+3. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
 

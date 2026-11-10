@@ -302,7 +302,7 @@ None of these block Phase 8.
 
 1. **Where does the audit domain get built? Still your decision,** carried from Phases 3 to 6.
 2. **Edit forms are not offered for every field** (for example, a menu item's code is fixed after creation, deliberately).
-3. **Carried over, all optional:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+3. **Carried over, all optional:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
 

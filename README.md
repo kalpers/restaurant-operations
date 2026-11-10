@@ -1705,7 +1705,7 @@ It also checks that changing the price, the recipe, a modifier effect and a wage
 
 **Playwright.** `tests/e2e/restaurant-day.spec.ts` runs the same day on screen, with one browser per role: publish, reservation, seating, three sends, bar and kitchen, notifications, a split settlement, dirty and clean, reports with CSV export, and audit. Its setup uses services, and its cleanup only disables its accounts, which takes no table lock.
 
-**Opt-in validation data.** `npm run db:seed:validation` (`scripts/seed-validation.ts`) loads the fixture in `docs/Phase-13-Validation-Seed-Data.md` into a local development database only (loopback `DATABASE_URL`, non-production `NODE_ENV`), acting as the bootstrapped Owner through the services. It is not in the default seed list, so it never reaches a shared or AWS database. It records `phase13.validation-fixtures` in `seed_runs` when done; a rerun changes nothing.
+**Opt-in validation data.** `npm run db:seed:validation` (`scripts/seed-validation.ts`) loads the fixture in `docs/Phase-13-Validation-Seed-Data.md` into a local development database only (loopback `DATABASE_URL`, non-production `NODE_ENV`), acting as the bootstrapped Owner through the services. It is not in the default seed list, so it never reaches a shared or cloud database. It records `phase13.validation-fixtures` in `seed_runs` when done; a rerun changes nothing.
 
 **Fix.** The settlements report's all-tenders row showed a blank amount on a day with no tenders; it now shows `0.00`, so it reconciles exactly with net sales.
 
@@ -1774,42 +1774,22 @@ Phase 15 changed presentation only. It added no table, column, permission, migra
 - *Axe:* `tests/e2e/accessibility.spec.ts` runs axe (WCAG 2.1 A/AA) on Login, Dashboard, Floor, Order, Kitchen, Settlement, Timeline, Audit, Reservations and Employees. It fails on serious or critical issues.
 - *Shell:* `tests/e2e/ui-shell.spec.ts` covers grouped navigation, the phone drawer, confirmations, toasts, not-found and the menu search. Specs use `tests/helpers/e2e-ui.ts` (`openNavLink`, `confirmDialog`, `expectToast`).
 
-## 34. AWS POC Deployment Target
+## 34. Cloud Deployment (On Hold)
 
-The POC must be deployable to AWS while keeping application code cloud-provider independent.
+Cloud deployment is on hold by owner decision (2026-11-10). No deployment phase is scheduled. `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure.
 
-Initial target:
+While it is on hold, the application must stay cloud-provider independent:
+- No provider-specific database branches. Local Docker PostgreSQL and a managed PostgreSQL service use the same Drizzle/PostgreSQL code path.
+- No provider SDKs in domain code. Provider integrations (for example object storage) go behind infrastructure abstractions such as `FileStorageService`.
+- Configuration comes only from environment variables validated in `src/config/`, so a deployment supplies them from its own secret store.
 
-```text
-Internet
-   |
-   v
-EC2
-Next.js / Node.js
-   |
-   v
-RDS PostgreSQL
-```
-
-POC priorities:
-- Keep infrastructure simple
-- Use a small Free Tier/credit-eligible EC2 instance appropriate to the AWS account
-- Use a small Free Tier/credit-eligible RDS PostgreSQL instance appropriate to the AWS account
-- Single-AZ is acceptable for POC
-- Do not introduce an Application Load Balancer solely for the POC unless required
-- No ECS/EKS/Kubernetes for the initial POC
-- Configure AWS Budget/cost alerts
-- RDS must not be broadly exposed to the Internet
-- Allow DB access only from approved sources/application security groups as practical
-- Prefer encrypted database connectivity
-- Use environment/secrets configuration rather than hardcoded credentials
-- Run Drizzle migrations during controlled deployment
-- Seed only POC data
-- Configure basic backups/logging
-
-AWS Free Tier terms change over time. Verify current Free Tier and credit eligibility at deployment time rather than assuming resources will remain permanently free.
-
-The application must not contain AWS-specific database branches. Local Docker PostgreSQL and RDS PostgreSQL both use the same Drizzle/PostgreSQL code path.
+Principles for a future deployment, whichever provider is chosen:
+- Keep infrastructure simple: one VM or app host running Next.js/Node.js plus a managed PostgreSQL server. No Kubernetes for the POC.
+- Do not expose the database to the Internet. Allow access only from the app host or approved sources.
+- Encrypt database connections, and serve the app over HTTPS.
+- Keep credentials in a secret store or environment configuration, never in code.
+- Run Drizzle migrations as a controlled deployment step. Seed only POC data.
+- Configure cost alerts, backups and basic logging.
 
 ## 35. File Storage Strategy
 
@@ -1817,7 +1797,7 @@ Employee documents and menu images are stored through a `FileStorageService` abs
 
 Local development may use a local adapter.
 
-AWS deployment may use an S3-backed adapter later without changing the domain API.
+A cloud deployment may add an object-storage adapter (for example Amazon S3 or Azure Blob Storage) later without changing the domain API.
 
 Do not store large document/image binaries directly in PostgreSQL.
 
@@ -1945,13 +1925,9 @@ Deliver a consistent, accessible presentation layer without changing behavior: d
 
 Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved from Phases 15 and 16 to 16 and 17. Documents written before then that mention "Phase 15" for AWS work mean Phase 16.
 
-### Phase 16: AWS POC Deployment
+### Cloud Deployment: On Hold
 
-Deliver EC2-hosted Next.js, RDS PostgreSQL, secure configuration, migrations, POC seed data, cost alerts, basic logging/backups, and connectivity validation.
-
-### Phase 17: AWS POC Acceptance Test
-
-Repeat the major E2E workflow, including the schedule timeline and the Phase 15 UI, against AWS from desktop, tablet, and phone-sized clients.
+The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
 
 ## 37. Copilot Phase Protocol
 
@@ -2086,4 +2062,14 @@ The POC is successful when:
 - CSV export is supported for reporting workflows.
 - Historical analytics reconcile with immutable operational history.
 - The full application runs locally with Docker PostgreSQL.
-- The same application deploys as a POC to AWS on EC2 + RDS PostgreSQL without AWS-specific business code.
+- The application stays cloud-provider independent, so it can later deploy to AWS or Azure with managed PostgreSQL without provider-specific business code (deployment is on hold; see `docs/Cloud-Deployment-Guide.md`).
+
+## License
+
+Copyright (c) 2026 Kneale Alpers. Released under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+- **Noncommercial use is free.** Personal projects, study, research, testing, and use by charities, schools, public research bodies and government institutions are allowed. You may copy, modify and share the code for those purposes.
+- **Credit is required.** Anyone who shares the code, changed or not, must include the license terms and the `Required Notice:` lines at the top of [LICENSE](LICENSE), which credit the original developer.
+- **Commercial use needs a separate license.** Running this application in a business, selling it, offering it as a service, or building it into a commercial product requires a commercial license from the developer. To ask for one, email **restaurantops.licensing@gmail.com**. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for what to include.
+
+The software comes as is, without warranty.

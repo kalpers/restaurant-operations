@@ -294,7 +294,7 @@ None of these block Phase 4.
 2. **Edit forms for some records.** Notes, reviews, disciplinary records and certifications have working, tested update APIs, but the UI only lists and adds them, plus verifying certifications. Plan §33 asks for a minimal UI. Say if you want the forms before Phase 4.
 3. **Your existing Owner's password.** The 14-character minimum applies only when a password is set, so an account created while the minimum was 5 keeps working with its short password. There's no change-password feature yet, so changing it would mean recreating the account.
 4. **Commit and confirm CI,** including your `password.ts` change.
-5. **Carried over from Phase 2, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`.
+5. **Carried over from Phase 2, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `%USERPROFILE%\package-lock.json`.
 
 ## Next-phase readiness
 

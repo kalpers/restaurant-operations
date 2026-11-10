@@ -222,7 +222,7 @@ All three are development-only. Phase 0 had the same warnings, but its report di
 
 No Phase 1 functionality is outstanding.
 
-**Carried over from Phase 0, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `C:\Users\kneal\package-lock.json`.
+**Carried over from Phase 0, both optional:** the old `restaurant-ops-postgres-1` container and volume, and the stray `%USERPROFILE%\package-lock.json`.
 
 ## Next-phase readiness
 

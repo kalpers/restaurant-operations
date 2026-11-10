@@ -293,7 +293,7 @@ The plan's Approved Phase 11 Policies 1–13 are binding and implemented as writ
 1. **CI failure in `settlements.spec.ts`: resolved.** Fixed in `d6d3440`; CI passed. See Problems found. The earlier local `restaurant.spec.ts` failure passed in CI on `00fa1f8`; that was local load flakiness. CI's flaky scheduling swap test passed on retry and is outside Phase 11.
 2. **Audit domain:** still your decision (carried since Phase 3). Settlement actions now add to the unaudited actions.
 3. **Committed:** Phase 11 was pushed in `00fa1f8` and the E2E isolation fix in `d6d3440`. Only this CI-pass note is a later, uncommitted edit.
-4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted Risks
 

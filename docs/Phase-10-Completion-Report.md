@@ -304,7 +304,7 @@ Also new: `outbox_events` (README §23) and `notifications` (README §22).
 1. **Full E2E suite: resolved.** It passed in GitHub Actions on `dc26ef8`. The local failures were from memory exhaustion. Local full runs on this machine need `npm run dev` stopped and other heavy processes closed.
 2. **Audit domain: still your decision** (carried since Phase 3). Fulfillment transitions and Remakes now add to the actions with no audit events.
 3. **Committed:** Phase 10 and the Phase 9 report edits were pushed in `dc26ef8`.
-4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json` (Next.js warns about it on every start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+4. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json` (Next.js warns about it on every start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
 

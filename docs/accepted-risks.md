@@ -79,7 +79,7 @@ Reevaluate this risk when:
 - `drizzle-kit`, `eslint-config-next`, or Next.js is upgraded.
 - The findings' severity rises above moderate.
 - The project's threat model changes.
-- Before the Phase 16 AWS deployment.
+- Before any cloud deployment (see `docs/Cloud-Deployment-Guide.md`).
 
 ## DEV-003: Deprecated development packages (`eslint`, `@esbuild-kit`)
 
@@ -113,4 +113,4 @@ Reevaluate this risk when:
 - A `drizzle-kit` release drops `@esbuild-kit`.
 - `eslint`, `eslint-config-next`, `drizzle-kit`, or Next.js is upgraded.
 - An audit advisory is published against any of these packages.
-- Before the Phase 16 AWS deployment.
+- Before any cloud deployment (see `docs/Cloud-Deployment-Guide.md`).

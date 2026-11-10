@@ -1,7 +1,7 @@
 /**
  * Phase 13 validation fixture data (docs/Phase-13-Validation-Seed-Data.md). Opt-in only,
  * through `npm run db:seed:validation`; it is never part of the default seed list, so no
- * shared or AWS database receives these people or this history.
+ * shared or cloud database receives these people or this history.
  */
 
 /** Marks a completed run in `seed_runs`. Change the fixture by adding a new key. */

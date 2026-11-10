@@ -1,0 +1,43 @@
+name: Commercial license inquiry
+description: Ask about a license to use this application commercially.
+title: "Commercial license inquiry: <company name>"
+labels: ["commercial-license"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This issue is public.** Leave out pricing, contracts or anything confidential.
+        For a private conversation, email **restaurantops.licensing@gmail.com** instead.
+        See [COMMERCIAL-LICENSE.md](../blob/main/COMMERCIAL-LICENSE.md) for when a license is needed.
+  - type: input
+    id: organization
+    attributes:
+      label: Company or organization
+    validations:
+      required: true
+  - type: dropdown
+    id: use
+    attributes:
+      label: Intended use
+      options:
+        - Run it in my own restaurant(s) or bar(s)
+        - Resell or rebrand it
+        - Host it as a service for customers
+        - Build it into another commercial product
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: scale
+    attributes:
+      label: Number of locations or customers
+  - type: textarea
+    id: details
+    attributes:
+      label: Anything else we should know
+      description: For example, planned changes to the code or a start date.
+  - type: input
+    id: contact
+    attributes:
+      label: How should we reach you?
+      description: A GitHub reply here is fine. Don't post a personal email you want kept private.

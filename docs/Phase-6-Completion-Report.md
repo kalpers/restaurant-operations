@@ -322,7 +322,7 @@ None of these block Phase 7, but item 1 is a gap in a rule the plan asks for.
 2. **Where does the audit domain get built? Still your decision,** carried from Phases 3 to 5. Hold overrides and cancellations are now more actions that want it.
 3. **Confirm that a single table outside the requested area ranks above a combination inside it.** I followed the plan's ordering of principles. Changing it is a small edit in `table-recommendation.ts`.
 4. **CI retries twice,** which could hide a flaky test. The run passed, but check it didn't need a retry.
-5. **Carried over, all optional:** edit forms from the Phase 3 and 4 reports, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
+5. **Carried over, all optional:** edit forms from the Phase 3 and 4 reports, the old `restaurant-ops-postgres-1` container and volume, the stray `%USERPROFILE%\package-lock.json`, and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted risks
 

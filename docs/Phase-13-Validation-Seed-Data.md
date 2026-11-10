@@ -1,6 +1,6 @@
 # Phase 13 Validation Seed Data
 
-An opt-in fixture for validating the full restaurant chain in a local development database. It is **not** part of `npm run db:seed`. By the owner's decision (2026-11-09), fake staff and order history must never reach a shared database or the Phase 16 AWS database.
+An opt-in fixture for validating the full restaurant chain in a local development database. It is **not** part of `npm run db:seed`. By the owner's decision (2026-11-09), fake staff and order history must never reach a shared database or a cloud database.
 
 ## Running it
 
