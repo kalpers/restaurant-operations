@@ -5,10 +5,14 @@ import { auditEvents } from "@/db/schema";
 
 /**
  * The audit trail is append-only and references users, employees and locations with
- * RESTRICT, so test teardown that deletes those rows first removes their audit events,
- * with the append-only trigger disabled for that one transaction. With no scope it
- * clears the whole trail (integration files run one at a time on their own database).
- * Test code only: the application never deletes audit events.
+ * RESTRICT, so test teardown that deletes those rows first removes their audit events.
+ * With no scope it clears the whole trail (integration files run one at a time).
+ *
+ * Triggers are skipped with `SET LOCAL session_replication_role = replica`, which lasts
+ * only for this transaction and takes no table lock. `ALTER TABLE ... DISABLE TRIGGER`
+ * would take an ACCESS EXCLUSIVE lock on a table nearly every action writes to (sign-in
+ * included), stalling the other E2E worker. Needs a superuser, as the local and CI test
+ * databases are. Test code only: the application never deletes audit events.
  */
 export async function clearAuditEvents(
   database: Database,
@@ -34,14 +38,12 @@ export async function clearAuditEvents(
   }
 
   await database.transaction(async (transaction) => {
-    await transaction.execute("ALTER TABLE audit_events DISABLE TRIGGER audit_events_append_only_trigger" as never);
+    await transaction.execute("SET LOCAL session_replication_role = replica" as never);
 
     if (scope) {
       await transaction.delete(auditEvents).where(or(...conditions));
     } else {
       await transaction.delete(auditEvents);
     }
-
-    await transaction.execute("ALTER TABLE audit_events ENABLE TRIGGER audit_events_append_only_trigger" as never);
   });
 }
