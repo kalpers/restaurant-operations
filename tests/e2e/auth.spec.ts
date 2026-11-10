@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { ALL_PERMISSION_CODES } from "../../src/modules/auth/permission-catalog";
 import { confirmDialog } from "../helpers/e2e-ui";
 
 import {
@@ -441,7 +442,8 @@ test.describe("administration", () => {
       has: page.getByRole("heading", { name: "Owner (OWNER)" }),
     });
 
-    await owner.getByText("121 permissions").click();
+    // The Owner holds every catalog permission, so the count follows the catalog.
+    await owner.getByText(`${ALL_PERMISSION_CODES.length} permissions`).click();
 
     await expect(owner.getByRole("checkbox")).toHaveCount(0);
     await expect(

@@ -98,7 +98,15 @@ test("an administrator resets a server's password; the server must change it, th
   try {
     await admin.page.goto("/admin/users");
     await userCard(admin.page, server.email).getByRole("button", { name: "Reset password" }).click();
-    await confirmDialog(admin.page, "Reset password");
+
+    // Not confirmDialog(): confirming replaces the dialog with the one-time password dialog,
+    // so a dialog stays open.
+    const confirm = admin.page.getByRole("dialog", { name: "Reset this user's password?" });
+
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "Reset password", exact: true }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(admin.page.getByRole("dialog", { name: "Temporary password" })).toBeVisible();
 
     const shown = admin.page.getByTestId("temporary-password");
 
