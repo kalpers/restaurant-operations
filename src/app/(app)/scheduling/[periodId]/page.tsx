@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { humanize } from "@/components/employees/format";
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
+import { AssignmentExplanation } from "@/components/scheduling/assignment-explanation";
 import { shiftTimes } from "@/components/scheduling/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
@@ -28,34 +30,6 @@ import { CoverageSection, type CoverageData } from "./coverage-section";
 
 type Detail = Awaited<ReturnType<typeof getPeriodDetail>>;
 type ShiftView = Detail["shifts"][number];
-
-function Explanation({ rationale }: { rationale: AssignmentRationale }) {
-  return (
-    <details className="mt-1 text-sm">
-      <summary className="cursor-pointer underline">Why this assignment</summary>
-      <ul className="mt-1 grid gap-1 pl-2">
-        {rationale.checks.map((check) => (
-          <li key={check.code}>
-            {check.passed ? "✓" : "✗"} {check.label}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 font-medium">Score {rationale.score}</p>
-      {rationale.reasons.length === 0 ? (
-        <p className="text-neutral-600">No scoring adjustments applied.</p>
-      ) : (
-        <ul className="grid gap-1 pl-2">
-          {rationale.reasons.map((reason) => (
-            <li key={`${reason.code}-${reason.detail}`}>
-              {reason.points > 0 ? `+${reason.points}` : reason.points}{" "}
-              {reason.detail}
-            </li>
-          ))}
-        </ul>
-      )}
-    </details>
-  );
-}
 
 async function AssignControls({
   actor,
@@ -288,7 +262,14 @@ export default async function PeriodPage({
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium">
-                    {shift.shiftDate} · {shiftTimes(shift, timeZone)} ·{" "}
+                    <Link
+                      href={`/scheduling/timeline?date=${shift.shiftDate}`}
+                      className="underline"
+                      aria-label={`View ${shift.shiftDate} on the timeline`}
+                    >
+                      {shift.shiftDate}
+                    </Link>{" "}
+                    · {shiftTimes(shift, timeZone)} ·{" "}
                     {shift.positionName}
                     {shift.restaurantAreaName
                       ? ` · ${shift.restaurantAreaName}`
@@ -330,7 +311,7 @@ export default async function PeriodPage({
                           )}
                         </span>
                         {assignment.rationale ? (
-                          <Explanation
+                          <AssignmentExplanation
                             rationale={assignment.rationale as AssignmentRationale}
                           />
                         ) : null}

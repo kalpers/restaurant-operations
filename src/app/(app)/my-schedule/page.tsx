@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { humanize, optionsFrom } from "@/components/employees/format";
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
@@ -78,6 +80,16 @@ export default async function MySchedulePage() {
                 <p className="text-sm text-neutral-600">
                   {shift.positionName} · {shift.periodName}
                 </p>
+                {shift.locationId === actor.locationId && (
+                  <p className="text-sm">
+                    <Link
+                      href={`/scheduling/timeline?date=${shift.shiftDate}`}
+                      className="underline"
+                    >
+                      View day
+                    </Link>
+                  </p>
+                )}
 
                 {canRequestSwap &&
                   shift.locationId === actor.locationId &&

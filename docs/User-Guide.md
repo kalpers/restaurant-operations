@@ -69,6 +69,14 @@ Closing the order does not free the table. After the guests leave, return to **R
 
 Open **Scheduling** to review schedule periods. Users with schedule-edit access can create a period and manage its shifts and assignments. Where enabled, automatic generation creates a **draft** schedule: review coverage, warnings, and assignments, make corrections, then publish it explicitly. Generation never publishes automatically.
 
+#### Viewing the day's schedule
+
+Open **Timeline** to see one day's shifts as a chart, with time across the top. Each bar is one person's shift, labeled with the position and the start and end times. Use **Previous day**, **Today**, **Next day** or the date box to change the day, and **By employee** or **By position** to change how rows are grouped. A dashed, striped bar marked **Open** is a place nobody is assigned to yet. The rows of numbers above the chart show how many people of each position are on in each hour.
+
+Select a bar (click, tap, or press Enter on it) to see its details: position, area, times, how long it is, which schedule it's in, and how many of the people needed are assigned. Press Escape or **Close** to close the details. On a phone the chart scrolls sideways inside its frame, and the details open from the bottom of the screen.
+
+Everyone with access to schedules sees published schedules here. Managers who edit, generate or publish schedules also see drafts (dashed outline, marked **Draft**, with an **Include drafts** switch), grey **Time off** bands, and extra details: how the assignment was made, the "Why this assignment" explanation, shift notes, open swap requests, problems that need fixing, and the person's scheduled hours. They also get a link to the schedule, where changes are made. The timeline itself never changes anything. The day is the date a shift starts, so a shift that runs past midnight shows in full on the day it began.
+
 **My schedule** is the employee self-service area for availability and scheduling requests. **Scheduling requests** is for authorized reviewers to process requests. **Staffing & rules** is for users who manage staffing templates and scheduling rules.
 
 ### Employees

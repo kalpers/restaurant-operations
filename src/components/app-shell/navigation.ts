@@ -14,6 +14,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/employees/certification-types", label: "Certification types", permission: "hr.certifications.manage" },
   { href: "/my-schedule", label: "My schedule", permission: "schedule.view" },
   { href: "/scheduling", label: "Scheduling", permission: "schedule.view" },
+  { href: "/scheduling/timeline", label: "Timeline", permission: "schedule.view" },
   { href: "/scheduling/requests", label: "Scheduling requests", permission: "schedule.time-off.approve" },
   { href: "/scheduling/availability", label: "Availability", permission: "schedule.availability.manage" },
   { href: "/scheduling/staffing", label: "Staffing & rules", permission: "schedule.templates.manage" },

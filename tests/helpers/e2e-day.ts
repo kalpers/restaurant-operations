@@ -39,7 +39,12 @@ import { addIngredient } from "../../src/modules/recipes/services/ingredient-ser
 import { createDraftRevision, createRecipe, publishRevision } from "../../src/modules/recipes/services/recipe-service";
 import { createTable } from "../../src/modules/restaurant/services/table-service";
 import { addRecurringAvailability } from "../../src/modules/scheduling/services/availability-service";
-import { assignEmployee, createPeriod, createShift } from "../../src/modules/scheduling/services/schedule-service";
+import {
+  archivePeriod,
+  assignEmployee,
+  createPeriod,
+  createShift,
+} from "../../src/modules/scheduling/services/schedule-service";
 import { withTransaction } from "../../src/db/transactions/transaction-context";
 
 import { createRoleAccount, type E2eScope, type OrdersAccount } from "./e2e-orders";
@@ -308,6 +313,24 @@ export async function createDraftSchedule(owner: OrdersAccount) {
         thisLocationOnly: false,
       },
     );
+  }
+
+  // A retry runs against the same database, where an earlier attempt may already have
+  // published this week. Two published periods can't share a date, so archive that one
+  // first (archiving keeps it as history) or the on-screen Publish would be refused.
+  const earlier = await database
+    .select({ id: schedulePeriods.id, version: schedulePeriods.version })
+    .from(schedulePeriods)
+    .where(
+      and(
+        like(schedulePeriods.name, `${DAY_SCOPE.rolePrefix}%`),
+        eq(schedulePeriods.status, "PUBLISHED"),
+        eq(schedulePeriods.startDate, DAY_WEEK.monday),
+      ),
+    );
+
+  for (const row of earlier) {
+    await archivePeriod(database, actor, row.id, { expectedVersion: row.version });
   }
 
   const period = await createPeriod(database, actor, {

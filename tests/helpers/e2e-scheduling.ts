@@ -43,6 +43,10 @@ import {
   createShift,
   publishPeriod,
 } from "../../src/modules/scheduling/services/schedule-service";
+import {
+  approveTimeOff,
+  requestTimeOffForEmployee,
+} from "../../src/modules/scheduling/services/time-off-service";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
@@ -290,6 +294,26 @@ export async function publish(
   await publishPeriod(getDatabase(), await actorFor(owner), periodId, {
     expectedVersion: await currentVersion(periodId),
   });
+}
+
+/** Approved time off for part of one day, entered by a manager. */
+export async function approvedTimeOff(
+  owner: SchedulingAccount,
+  employeeId: string,
+  options: { date: string; start: string; end: string },
+): Promise<void> {
+  const actor = await actorFor(owner);
+  const { id } = await requestTimeOffForEmployee(getDatabase(), actor, employeeId, {
+    startDate: options.date,
+    startTime: options.start,
+    endDate: options.date,
+    endTime: options.end,
+    requestType: "PERSONAL",
+    reason: "E2E private reason",
+    employeeNote: null,
+  });
+
+  await approveTimeOff(getDatabase(), actor, id, { managerNote: null, expectedVersion: 1 });
 }
 
 /** Removes only what this spec created, children first. */

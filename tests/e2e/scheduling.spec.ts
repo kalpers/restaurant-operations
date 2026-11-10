@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   addShift,
+  approvedTimeOff,
   assignStaff,
   createDraft,
   createPermissionAccount,
@@ -454,5 +455,196 @@ test.describe("responsive layout", () => {
     );
 
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe("schedule timeline", () => {
+  const nextDate = (date: string, days: number) =>
+    new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+  /** A published day: one staffed Server shift and a Bartender shift needing 2 with nobody. */
+  async function publishedDay() {
+    const owner = await createRoleAccount("OWNER");
+    const staff = await createStaff(owner);
+    const week = nextWeek();
+    const period = await createDraft(owner, week);
+    const shiftId = await addShift(owner, period.id, { date: week.monday });
+
+    await addShift(owner, period.id, {
+      date: week.monday,
+      positionCode: "BARTENDER",
+      required: 2,
+      start: "18:00",
+      end: "23:00",
+    });
+    await assignStaff(owner, period.id, shiftId, staff.id);
+    await publish(owner, period.id);
+
+    return { owner, staff, week, period };
+  }
+
+  const barFor = (page: Page, displayName: string) =>
+    page.getByRole("button", { name: new RegExp(`^${displayName}, Server`) });
+
+  test("a manager groups the day, selects bars and reads the details", async ({ page }) => {
+    const { owner, staff, week } = await publishedDay();
+    const manager = await createRoleAccount("MANAGER");
+
+    await approvedTimeOff(owner, staff.id, { date: week.monday, start: "09:00", end: "12:00" });
+    await signIn(page, manager);
+    await mainNavigation(page).getByRole("link", { name: "Timeline", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Schedule timeline" })).toBeVisible();
+    await page.getByLabel("Date").fill(week.monday);
+    await expect(page).toHaveURL(new RegExp(`date=${week.monday}`));
+
+    const staffBar = barFor(page, staff.displayName);
+
+    await expect(staffBar).toBeVisible();
+    await expect(page.getByTestId("timeline-time-off")).toHaveText("Time off");
+    await expect(page.getByTestId("timeline-headcount")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Open shifts" })).toBeVisible();
+
+    await staffBar.click();
+
+    const panel = page.getByTestId("timeline-panel");
+
+    await expect(panel).toContainText(staff.displayName);
+    await expect(panel).toContainText("17:00 to 22:00");
+    await expect(panel).toContainText("Manual");
+    await expect(panel.getByTestId("panel-period-status")).toHaveText("Published");
+    await expect(page).toHaveURL(/selected=/);
+    await expect(page.getByText("E2E private reason")).toHaveCount(0);
+
+    await page.reload();
+    await expect(panel).toContainText(staff.displayName);
+
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(staffBar).toBeFocused();
+
+    await staffBar.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toBeVisible();
+    await panel.getByRole("button", { name: "Close" }).click();
+    await expect(panel).toHaveCount(0);
+
+    await page.getByRole("link", { name: "By position" }).click();
+    await expect(page).toHaveURL(/view=position/);
+    await expect(page.getByRole("region", { name: "Bartender" })).toBeVisible();
+
+    const openBars = page.locator('[data-testid="timeline-bar"][data-kind="OPEN"]');
+
+    await expect(openBars).toHaveCount(2);
+    await openBars.first().click();
+    await expect(panel).toContainText("Open slot");
+    await expect(panel).toContainText("0 of 2 filled");
+  });
+
+  test("previous, next and today move the day", async ({ page }) => {
+    const { week } = await publishedDay();
+    const manager = await createRoleAccount("MANAGER");
+
+    await signIn(page, manager);
+    await page.goto(`/scheduling/timeline?date=${week.monday}`);
+    await page.getByRole("link", { name: "Next day" }).click();
+    await expect(page).toHaveURL(new RegExp(`date=${nextDate(week.monday, 1)}`));
+    await page.getByRole("link", { name: "Previous day" }).click();
+    await expect(page).toHaveURL(new RegExp(`date=${week.monday}`));
+    await page.getByRole("link", { name: "Today" }).click();
+    await expect(page).not.toHaveURL(new RegExp(`date=${week.monday}`));
+    await expect(page.getByRole("heading", { name: "Schedule timeline" })).toBeVisible();
+  });
+
+  test("staff see published shifts only, with no reviewer details", async ({ page }) => {
+    const { owner, staff, week } = await publishedDay();
+    const draft = await createDraft(owner, week);
+    const draftOnly = await createStaff(owner);
+    const draftShift = await addShift(owner, draft.id, {
+      date: week.monday,
+      start: "08:00",
+      end: "12:00",
+    });
+
+    await assignStaff(owner, draft.id, draftShift, draftOnly.id);
+    await approvedTimeOff(owner, staff.id, { date: week.monday, start: "09:00", end: "12:00" });
+
+    const server = await createRoleAccount("SERVER");
+
+    await signIn(page, server);
+    await page.goto(`/scheduling/timeline?date=${week.monday}`);
+
+    const staffBar = barFor(page, staff.displayName);
+
+    await expect(staffBar).toBeVisible();
+    await expect(barFor(page, draftOnly.displayName)).toHaveCount(0);
+    await expect(page.getByLabel("Include drafts")).toHaveCount(0);
+    await expect(page.getByTestId("timeline-time-off")).toHaveCount(0);
+
+    await staffBar.click();
+    await expect(page.getByTestId("timeline-panel")).toContainText("17:00 to 22:00");
+    await expect(page.getByTestId("panel-reviewer")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open this schedule" })).toHaveCount(0);
+  });
+
+  test("fits a phone: the chart scrolls in its frame and details open as a sheet", async ({
+    page,
+  }) => {
+    const { staff, week } = await publishedDay();
+    const server = await createRoleAccount("SERVER");
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await signIn(page, server);
+    await page.goto(`/scheduling/timeline?date=${week.monday}`);
+    await expect(page.getByTestId("timeline-frame")).toBeVisible();
+
+    const pageOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    const frameScrolls = await page
+      .getByTestId("timeline-frame")
+      .evaluate((element) => element.scrollWidth > element.clientWidth);
+
+    expect(pageOverflow).toBeLessThanOrEqual(0);
+    expect(frameScrolls).toBe(true);
+
+    await barFor(page, staff.displayName).click();
+
+    const box = await page.getByTestId("timeline-panel").boundingBox();
+
+    expect(box).not.toBeNull();
+    expect(Math.round(box?.x ?? -1)).toBe(0);
+    expect(Math.round(box?.width ?? 0)).toBe(375);
+    expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(800);
+  });
+
+  test("the API refuses without a session or schedule.view, and checks the date", async ({
+    page,
+  }) => {
+    const signedOut = await page.request.get("/api/scheduling/timeline?date=2030-01-07");
+
+    expect(signedOut.status()).toBe(401);
+
+    await signIn(page, await createPermissionAccount(["menu.view"]));
+
+    const forbidden = await page.request.get("/api/scheduling/timeline?date=2030-01-07");
+
+    expect(forbidden.status()).toBe(403);
+
+    await page.goto("/scheduling/timeline");
+    await expect(page).toHaveURL(/\/access-denied$/);
+
+    await page.context().clearCookies();
+    await signIn(page, await createPermissionAccount(["schedule.view"]));
+
+    const invalid = await page.request.get("/api/scheduling/timeline?date=2030-02-30");
+    const body = (await invalid.json()) as { error: { code: string; requestId: string } };
+
+    expect(invalid.status()).toBe(400);
+    expect(body.error.requestId).toBeTruthy();
+
+    const ok = await page.request.get("/api/scheduling/timeline?date=2030-01-07");
+
+    expect(ok.status()).toBe(200);
+    expect(ok.headers()["cache-control"]).toContain("no-store");
   });
 });

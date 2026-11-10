@@ -42,6 +42,7 @@ describe("visibleNavigation", () => {
       "Certification types",
       "My schedule",
       "Scheduling",
+      "Timeline",
       "Scheduling requests",
       "Availability",
       "Staffing & rules",

@@ -19,6 +19,7 @@ import {
 import { listAuditEvents } from "@/modules/auditing/queries/audit-queries";
 import { listNotifications } from "@/modules/notifications/notification-service";
 import { runReport } from "@/modules/reporting/services/report-service";
+import { getDayTimeline } from "@/modules/scheduling/services/timeline-service";
 import type { ReportArea, ReportResult } from "@/modules/reporting/types";
 import { sendOrderItems } from "@/workflows/submit-order/submit-order";
 
@@ -370,6 +371,22 @@ describe("Phase 13: a full simulated restaurant day", () => {
       expect(text).not.toContain("4242");
       expect(text).not.toContain("Square");
       expect(text).not.toContain("jane@work.example.test");
+    });
+  });
+
+  describe("schedule timeline (Phase 14)", () => {
+    it("shows the day's published shifts, with the server's overnight shift ending next day", async () => {
+      const data = await getDayTimeline(database(), day.actors.manager, { date: DAY, includeDrafts: true });
+      const bars = data.bars.filter((bar) => bar.kind === "ASSIGNMENT");
+      const server = bars.find((bar) => bar.employeeId === day.employees.server)!;
+
+      expect(bars.map((bar) => bar.employeeId).sort()).toEqual(
+        [day.employees.server, day.employees.host, day.employees.cook].sort(),
+      );
+      expect(bars.every((bar) => bar.periodId === day.period.id && bar.periodStatus === "PUBLISHED")).toBe(true);
+      expect(server).toMatchObject({ endsNextDay: true, durationMinutes: 600 });
+      expect(data.bars.some((bar) => bar.kind === "OPEN")).toBe(false);
+      expect(JSON.stringify(data)).not.toMatch(/12\.00|14\.00|18\.00/);
     });
   });
 });

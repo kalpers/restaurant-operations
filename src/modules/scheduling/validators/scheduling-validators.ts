@@ -215,3 +215,12 @@ export const rulesSchema = z.object({
   weekStartDay: z.coerce.number().pipe(day),
   expectedVersion: expectedVersion.nullable(),
 });
+
+/** The day timeline's query string. Drafts are included unless turned off. */
+export const timelineQuerySchema = z.object({
+  date,
+  includeDrafts: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+});

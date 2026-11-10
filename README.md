@@ -481,6 +481,8 @@ Outputs:
 
 Manager may override generated assignments and use a fill-open-shifts mode.
 
+A read-only day timeline (Gantt) shows the schedule by employee or by position; see "Phase 14 Schedule Timeline" in section 33.
+
 ## 12. Domain 05: Restaurant and Seating
 
 Tables:
@@ -1699,6 +1701,38 @@ It also checks that changing the price, the recipe, a modifier effect and a wage
 
 **Fix.** The settlements report's all-tenders row showed a blank amount on a day with no tenders; it now shows `0.00`, so it reconciles exactly with net sales.
 
+### Phase 14 Schedule Timeline
+
+Phase 14 added a read-only Gantt view of one day's schedule at the current Location. It added no table, column, permission, migration or dependency. Plan: `docs/Phase-14-Schedule-Timeline.md`. Report: `docs/Phase-14-Completion-Report.md`.
+
+**Where.** The `/scheduling/timeline` page and `GET /api/scheduling/timeline?date=YYYY-MM-DD&includeDrafts=true|false` both call `getDayTimeline` in `src/modules/scheduling/services/timeline-service.ts`. Layout rules are pure functions in `rules/timeline-layout.ts`, and the reads are in `repositories/timeline-repository.ts`. Both page and API need `schedule.view`. The API answers `Cache-Control: private, no-store`.
+
+**The day.** A day is every uncancelled shift whose `shift_date` is that date. That's the local date the shift starts, the same worked day Phase 4 uses, not a business date. A shift past midnight shows in full on its start day, marked "ends next day", and isn't repeated the next day. The axis runs in the location's time zone from the hour at or before the earliest start to the hour at or after the latest end, never narrower than 06:00 to midnight. It's built from real instants, so a daylight-saving day has 23 or 25 hours.
+
+**What appears.**
+- *Assignments and open slots:* only `ACTIVE` assignments appear, so after a swap the bar shows the new holder. Each unfilled place is a hatched **Open** bar.
+- *Groupings:* By employee, with an Open shifts section, or By position, with an Open row per position.
+- *Ordering:* employees sort by name, then number, then UUID. Positions sort by name, then code, then UUID, and their colors follow that order.
+- *Overlaps:* overlapping bars in one row stack in lanes.
+- *Totals:* a headcount strip counts assigned people per position per hour, and each row shows its scheduled time as `h:mm`. No money appears.
+
+**Visibility.** It follows the period page.
+- *Staff:* everyone with `schedule.view` sees PUBLISHED and ARCHIVED periods. A draft-only day looks empty, not forbidden.
+- *Reviewers:* holders of `schedule.edit`, `.generate` or `.publish` also see DRAFT periods (Include drafts, on by default) and receive extra `reviewer` and `timeOff` fields. Those fields cover:
+  - the assignment source and when it was assigned;
+  - the generation rationale;
+  - station and shift notes;
+  - current hard violations, computed with the period's own violation check;
+  - whether a swap is open;
+  - scheduled minutes for the period;
+  - the latest run's unfilled summary;
+  - approved and pending time-off spans, with no type or reason.
+- *Redaction:* for everyone else, the `reviewer` and `timeOff` keys are absent, not null. No response contains a wage, employment status, contact detail or reason, and a test scans every key to check this. Who made an assignment isn't shown, because users have only an email.
+
+**Selection.** Selecting a bar (click, tap, Enter or Space) opens a details panel: a side panel on desktop, a bottom sheet on a phone. The selection is kept in the URL as `?selected=`. Escape closes the panel and returns focus to the bar. The date, grouping and draft toggle are in the URL too.
+
+**Read-only and cost.** The timeline writes nothing and isn't audited, because ordinary reads aren't. It doesn't subscribe to realtime updates. A day costs a fixed number of queries whatever the staff count; the reviewer violation check adds a fixed set per period covering the day. It uses the existing indexes on `schedule_periods (location_id, start_date)`, `shifts (schedule_period_id, shift_date)` and `shift_assignments (shift_id, status)`. The app has no dark mode, so the timeline is light-only.
+
 ## 34. AWS POC Deployment Target
 
 The POC must be deployable to AWS while keeping application code cloud-provider independent.
@@ -1858,13 +1892,19 @@ Deliver:
 
 Run a complete simulated restaurant day without manually altering the DB.
 
-### Phase 14: AWS POC Deployment
+### Phase 14: Schedule Timeline
+
+Deliver a read-only, day-by-day Gantt view of the schedule at the current Location, grouped by Employee or by Position, with open slots, a per-hour headcount strip, and a details panel for the selected shift and assignment. It follows the existing schedule visibility rules and adds no table or permission. Plan: `docs/Phase-14-Schedule-Timeline.md`.
+
+Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved from Phases 14 and 15 to 15 and 16. Completion reports written before then that mention "Phase 14" for AWS work mean Phase 15.
+
+### Phase 15: AWS POC Deployment
 
 Deliver EC2-hosted Next.js, RDS PostgreSQL, secure configuration, migrations, POC seed data, cost alerts, basic logging/backups, and connectivity validation.
 
-### Phase 15: AWS POC Acceptance Test
+### Phase 16: AWS POC Acceptance Test
 
-Repeat the major E2E workflow against AWS from desktop, tablet, and phone-sized clients.
+Repeat the major E2E workflow, including the schedule timeline, against AWS from desktop, tablet, and phone-sized clients.
 
 ## 37. Copilot Phase Protocol
 
