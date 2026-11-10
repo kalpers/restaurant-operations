@@ -38,6 +38,7 @@ import {
 import type { Actor } from "../../src/modules/auth/types";
 import { createEmployee } from "../../src/modules/employees/services/employee-service";
 import { createTable } from "../../src/modules/restaurant/services/table-service";
+import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -343,11 +344,13 @@ export async function removeRestaurantE2eData(): Promise<void> {
     await database.delete(employeeStatusHistory).where(inArray(employeeStatusHistory.employeeId, employeeIds));
     await database.delete(employeePositions).where(inArray(employeePositions.employeeId, employeeIds));
     await database.delete(employeeLocations).where(inArray(employeeLocations.employeeId, employeeIds));
+    await clearAuditEvents(database, { employeeIds: employeeIds });
     await database.delete(employees).where(inArray(employees.id, employeeIds));
   }
 
   if (userIds.length) {
     await database.delete(userRoles).where(inArray(userRoles.userId, userIds));
+    await clearAuditEvents(database, { userIds: userIds });
     await database.delete(users).where(inArray(users.id, userIds));
   }
 

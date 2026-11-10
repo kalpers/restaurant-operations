@@ -45,8 +45,21 @@ const TOTAL_COLUMNS: ReportColumn[] = [
   { key: "noRateHours", label: "Hours with no rate", kind: "hours" },
 ];
 
-function totalsRow(totals: LaborTotals): ReportRow {
-  return { ...totals };
+/**
+ * Any labor cost can reveal a wage: a position or day with one person scheduled shows
+ * their rate as cost / hours. So every cost figure, and labor % of sales, needs
+ * `hr.compensation.view` as well as `reports.labor`. Without it, labor is hours only.
+ */
+function totalColumns(canViewCompensation: boolean): ReportColumn[] {
+  return canViewCompensation ? TOTAL_COLUMNS : TOTAL_COLUMNS.filter((column) => column.key !== "cost");
+}
+
+function totalsRow(totals: LaborTotals, canViewCompensation: boolean): ReportRow {
+  if (canViewCompensation) {
+    return { ...totals };
+  }
+
+  return Object.fromEntries(Object.entries(totals).filter(([key]) => key !== "cost")) as ReportRow;
 }
 
 /**
@@ -139,7 +152,10 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
   const notes: string[] = [];
   let laborPercent: string | null = null;
 
-  if (context.canViewSales) {
+  const canViewCost = context.canViewCompensation;
+  const showLaborPercent = context.canViewSales && canViewCost;
+
+  if (showLaborPercent) {
     const netSales = await netSalesTotal(context);
 
     laborPercent = percentOf(total.cost, netSales);
@@ -151,9 +167,7 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
     { key: "employee", label: "Employee", kind: "text" },
     { key: "shifts", label: "Assigned shifts", kind: "count" },
     { key: "hours", label: "Scheduled hours", kind: "hours" },
-    ...(context.canViewCompensation
-      ? ([{ key: "cost", label: "Hourly labor cost", kind: "money" }] as ReportColumn[])
-      : []),
+    ...(canViewCost ? ([{ key: "cost", label: "Hourly labor cost", kind: "money" }] as ReportColumn[]) : []),
     { key: "salariedHours", label: "Salaried hours (not costed)", kind: "hours" },
     { key: "noRateHours", label: "Hours with no rate", kind: "hours" },
   ];
@@ -163,29 +177,31 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
       key: "summary",
       title: "Scheduled labor",
       description: [
-        "From published schedules: scheduled hours, not clocked time. Cost uses each employee's hourly rate for the position worked, in effect on the shift date.",
+        canViewCost
+          ? "From published schedules: scheduled hours, not clocked time. Cost uses each employee's hourly rate for the position worked, in effect on the shift date."
+          : "From published schedules: scheduled hours, not clocked time. Labor cost needs the compensation-view permission.",
         ...notes,
       ].join(" "),
       columns: [
-        ...TOTAL_COLUMNS,
-        ...(context.canViewSales
+        ...totalColumns(canViewCost),
+        ...(showLaborPercent
           ? ([{ key: "laborPercent", label: "Labor % of net sales", kind: "percent" }] as ReportColumn[])
           : []),
       ],
       rows: [
         {
-          ...totalsRow(total),
-          ...(context.canViewSales ? { laborPercent } : {}),
+          ...totalsRow(total, canViewCost),
+          ...(showLaborPercent ? { laborPercent } : {}),
         },
       ],
     },
     {
       key: "positions",
       title: "By position",
-      columns: [{ key: "position", label: "Position", kind: "text" }, ...TOTAL_COLUMNS],
+      columns: [{ key: "position", label: "Position", kind: "text" }, ...totalColumns(canViewCost)],
       rows: [...byPosition.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([position, totals]) => ({ position, ...totalsRow(totals) })),
+        .map(([position, totals]) => ({ position, ...totalsRow(totals, canViewCost) })),
     },
     {
       key: "daily",
@@ -193,20 +209,18 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
       columns: [
         { key: "businessDate", label: "Shift date", kind: "date" },
         { key: "position", label: "Position", kind: "text" },
-        ...TOTAL_COLUMNS,
+        ...totalColumns(canViewCost),
       ],
       rows: [...byDatePosition.entries()].map(([key, totals]) => {
         const [businessDate, position] = key.split("\u0000");
 
-        return { businessDate: businessDate!, position: position!, ...totalsRow(totals) };
+        return { businessDate: businessDate!, position: position!, ...totalsRow(totals, canViewCost) };
       }),
     },
     {
       key: "employees",
       title: "By employee",
-      description: context.canViewCompensation
-        ? undefined
-        : "Per-employee cost needs the compensation-view permission.",
+      description: canViewCost ? undefined : "Labor cost needs the compensation-view permission.",
       columns: employeeColumns,
       rows: [...byEmployee.entries()]
         .map(([employeeId, totals]) => {
@@ -220,7 +234,7 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
             noRateHours: totals.noRateHours,
           };
 
-          return context.canViewCompensation ? { ...row, cost: totals.cost } : row;
+          return canViewCost ? { ...row, cost: totals.cost } : row;
         })
         .sort((left, right) => String(left.employeeNumber).localeCompare(String(right.employeeNumber))),
     },

@@ -13,6 +13,7 @@ import {
   supplierItems,
 } from "@/db/schema";
 import { withTransaction } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   addDecimals,
@@ -212,6 +213,14 @@ export async function receivePurchaseOrder(
       })),
     );
     const updated = await bumpOrder(transaction, purchaseOrderId, { status });
+
+    await recordAudit(transaction, actor, {
+      action: "inventory.po-received",
+      entityId: purchaseOrderId,
+      occurredAt: receivedAt,
+      before: { status: order.status },
+      after: { receiptId: receipt!.id, poNumber: order.poNumber, status: updated.status, lineCount: postedLines.length },
+    });
 
     return { receipt: receipt!, lines: postedLines, status: updated.status, version: updated.version };
   });

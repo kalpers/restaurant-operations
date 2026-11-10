@@ -244,3 +244,24 @@ export async function deactivateAssignment(
       ),
     );
 }
+
+/**
+ * The organizations a user belongs to, through any role assignment (active or not) or a
+ * linked employee. Used to place access audit events; a user with neither has none.
+ */
+export async function findUserOrganizationIds(
+  executor: DatabaseExecutor,
+  userId: string,
+): Promise<string[]> {
+  const rows = await executor
+    .selectDistinct({ organizationId: roles.organizationId })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(eq(userRoles.userId, userId));
+  const linked = await executor
+    .select({ organizationId: employees.organizationId })
+    .from(employees)
+    .where(eq(employees.userId, userId));
+
+  return [...new Set([...rows, ...linked].map((row) => row.organizationId))].sort();
+}

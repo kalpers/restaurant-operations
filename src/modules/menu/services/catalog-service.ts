@@ -13,6 +13,7 @@ import {
   menus,
 } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import { changedFieldNames, recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 
@@ -360,14 +361,22 @@ export async function createItem(
 ) {
   assertPermission(actor, "menu.edit");
 
-  return insertCoded("menu item", async () => {
-    const [row] = await database
-      .insert(menuItems)
-      .values({ ...input, organizationId: actor.organizationId })
-      .returning();
+  return insertCoded("menu item", () =>
+    withTransaction(database, async (transaction) => {
+      const [row] = await transaction
+        .insert(menuItems)
+        .values({ ...input, organizationId: actor.organizationId })
+        .returning();
 
-    return row!;
-  });
+      await recordAudit(transaction, actor, {
+        action: "menu.item-created",
+        entityId: row!.id,
+        after: { itemCode: row!.code, name: row!.name, active: row!.active, available: row!.available },
+      });
+
+      return row!;
+    }),
+  );
 }
 
 /** `active` is catalog membership; `available` is whether it can be sold right now. */
@@ -381,12 +390,33 @@ export async function updateItem(
 
   const { expectedVersion, ...values } = input;
 
-  return updateVersioned(database, menuItems, {
-    id: itemId,
-    organizationId: actor.organizationId,
-    expectedVersion,
-    values,
-    label: "menu item",
+  return withTransaction(database, async (transaction) => {
+    const [before] = await transaction
+      .select()
+      .from(menuItems)
+      .where(and(eq(menuItems.id, itemId), eq(menuItems.organizationId, actor.organizationId)));
+    const updated = await updateVersioned(transaction, menuItems, {
+      id: itemId,
+      organizationId: actor.organizationId,
+      expectedVersion,
+      values,
+      label: "menu item",
+    });
+
+    await recordAudit(transaction, actor, {
+      action: "menu.item-updated",
+      entityId: itemId,
+      before: before ? { itemCode: before.code, name: before.name, active: before.active, available: before.available } : null,
+      after: {
+        itemCode: updated.code,
+        name: updated.name,
+        active: updated.active,
+        available: updated.available,
+        changedFields: before ? changedFieldNames(before, updated, Object.keys(values)) : Object.keys(values),
+      },
+    });
+
+    return updated;
   });
 }
 

@@ -59,6 +59,7 @@ import {
   createUserFixture,
 } from "./auth-fixtures";
 import { clearOrderData } from "./order-cleanup";
+import { clearAuditEvents } from "./audit-cleanup";
 
 export const HIRE_DATE = "2024-01-15";
 export const ABSENT_ID = "00000000-0000-4000-8000-000000000000";
@@ -207,6 +208,8 @@ export async function clearRestaurantData(database: Database): Promise<void> {
  * those tables, so each employee test file removes its rows when it finishes.
  */
 export async function clearEmployeeData(database: Database): Promise<void> {
+  // Audit events reference employees with RESTRICT, so they go first.
+  await clearAuditEvents(database);
   await clearRestaurantData(database);
   await database.delete(shiftSwapRequests);
   await database.delete(shiftAssignments);

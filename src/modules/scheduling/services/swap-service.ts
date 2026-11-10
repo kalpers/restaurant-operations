@@ -4,7 +4,9 @@ import { assertVersionMatched } from "@/db/helpers/versioning";
 import {
   withTransaction,
   type DatabaseExecutor,
+  type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   findSchedulingFacts,
@@ -285,7 +287,7 @@ export async function setSwapTarget(
 }
 
 async function acceptSwap(
-  database: Database,
+  database: DatabaseTransaction,
   actor: Actor,
   swap: SwapRow,
   expectedVersion: number,
@@ -312,7 +314,7 @@ async function acceptSwap(
 
   await assertEmployeeEligible(database, actor, swap.targetEmployeeId, shift);
 
-  return assertVersionMatched(
+  const accepted = assertVersionMatched(
     await updateSwapRow(database, swap.id, expectedVersion, {
       status: "ACCEPTED",
       acceptedAt: new Date(),
@@ -320,6 +322,15 @@ async function acceptSwap(
     }),
     { type: "swap request", id: swap.id },
   );
+
+  await recordAudit(database, actor, {
+    action: "scheduling.swap-accepted",
+    entityId: swap.id,
+    before: { status: swap.status },
+    after: { status: "ACCEPTED", shiftId: swap.shiftId, acceptingEmployeeId: swap.targetEmployeeId },
+  });
+
+  return accepted;
 }
 
 /** The target accepts for themselves. Their identity comes from the login. */
@@ -331,14 +342,16 @@ export async function acceptOwnSwap(
 ) {
   assertPermission(actor, "schedule.swap.request");
 
-  const self = await resolveSelfEmployeeId(database, actor);
-  const swap = await requireSwap(database, actor, swapId);
+  return withTransaction(database, async (transaction) => {
+    const self = await resolveSelfEmployeeId(transaction, actor);
+    const swap = await requireSwap(transaction, actor, swapId);
 
-  if (swap.targetEmployeeId !== self) {
-    throw new NotFoundError("swap request");
-  }
+    if (swap.targetEmployeeId !== self) {
+      throw new NotFoundError("swap request");
+    }
 
-  return acceptSwap(database, actor, swap, input.expectedVersion);
+    return acceptSwap(transaction, actor, swap, input.expectedVersion);
+  });
 }
 
 /** For a target who has no login or isn't able to accept themselves. */
@@ -350,9 +363,11 @@ export async function recordSwapAcceptance(
 ) {
   assertPermission(actor, "schedule.swap.approve");
 
-  const swap = await requireSwap(database, actor, swapId);
+  return withTransaction(database, async (transaction) => {
+    const swap = await requireSwap(transaction, actor, swapId);
 
-  return acceptSwap(database, actor, swap, input.expectedVersion);
+    return acceptSwap(transaction, actor, swap, input.expectedVersion);
+  });
 }
 
 /**
@@ -443,6 +458,17 @@ export async function approveSwap(
 
     // Anything prepared against the previous state of this schedule is now stale.
     await updatePeriodRow(transaction, swap.periodId);
+    await recordAudit(transaction, actor, {
+      action: "scheduling.swap-approved",
+      entityId: swapId,
+      before: { status: swap.status },
+      after: {
+        status: "COMPLETED",
+        shiftId: shift.id,
+        requestingEmployeeId: swap.requestingEmployeeId,
+        acceptingEmployeeId: swap.targetEmployeeId,
+      },
+    });
 
     return updated;
   });
@@ -456,18 +482,29 @@ export async function denySwap(
 ) {
   assertPermission(actor, "schedule.swap.approve");
 
-  const swap = await requireSwap(database, actor, swapId);
+  return withTransaction(database, async (transaction) => {
+    const swap = await requireSwap(transaction, actor, swapId);
 
-  assertOpen(swap);
+    assertOpen(swap);
 
-  return assertVersionMatched(
-    await updateSwapRow(database, swapId, input.expectedVersion, {
-      status: "DENIED",
-      deniedByUserId: actor.userId,
-      deniedAt: new Date(),
-    }),
-    { type: "swap request", id: swapId },
-  );
+    const denied = assertVersionMatched(
+      await updateSwapRow(transaction, swapId, input.expectedVersion, {
+        status: "DENIED",
+        deniedByUserId: actor.userId,
+        deniedAt: new Date(),
+      }),
+      { type: "swap request", id: swapId },
+    );
+
+    await recordAudit(transaction, actor, {
+      action: "scheduling.swap-denied",
+      entityId: swapId,
+      before: { status: swap.status },
+      after: { status: "DENIED", shiftId: swap.shiftId },
+    });
+
+    return denied;
+  });
 }
 
 /** The requester can withdraw their own. A manager uses deny. */

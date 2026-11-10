@@ -4,6 +4,7 @@ import {
   withTransaction,
   type DatabaseExecutor,
 } from "@/db/transactions/transaction-context";
+import { auditedRead, recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   BusinessRuleError,
@@ -38,9 +39,17 @@ export async function getCompensationHistory(
   employeeId: string,
 ): Promise<EmployeePositionCompensationHistory> {
   assertPermission(actor, "hr.compensation.view");
-  await requireEmployee(executor, actor, employeeId);
 
-  return findCompensationHistoryRows(executor, employeeId);
+  return auditedRead(
+    executor,
+    actor,
+    { action: "hr.compensation-viewed", entityId: employeeId, details: { employeeId, kind: "COMPENSATION" } },
+    async (transaction) => {
+      await requireEmployee(transaction, actor, employeeId);
+
+      return findCompensationHistoryRows(transaction, employeeId);
+    },
+  );
 }
 
 /**
@@ -114,7 +123,7 @@ export async function changeCompensation(
         );
       }
 
-      return insertCompensationPeriod(transaction, {
+      const created = await insertCompensationPeriod(transaction, {
         organizationId: actor.organizationId,
         employeeId: employee.id,
         positionId: input.positionId,
@@ -125,6 +134,23 @@ export async function changeCompensation(
         changeReason: input.changeReason,
         createdByUserId: actor.userId,
       });
+
+      // The wage itself is never recorded: only that it changed (README section 20).
+      await recordAudit(transaction, actor, {
+        action: "hr.compensation-changed",
+        entityId: employee.id,
+        before: open ? { recordId: open.id } : null,
+        after: {
+          recordId: created.id,
+          positionId: input.positionId,
+          payType: input.compensationType,
+          effectiveFrom: input.effectiveFrom,
+          previousRecordId: open?.id ?? null,
+          rate: input.hourlyRate ?? input.annualSalary,
+        },
+      });
+
+      return created;
     });
   } catch (error) {
     if (isExclusionViolation(error)) {

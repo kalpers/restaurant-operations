@@ -4,6 +4,7 @@ import type { Database } from "@/db";
 import { isExclusionViolation } from "@/db/helpers/database-errors";
 import { locations, menuItemPrices, menuItems } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { isPositiveDecimal, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
@@ -221,6 +222,14 @@ export async function changePrice(
           createdByUserId: actor.userId,
         })
         .returning();
+      const replaced = plan.close ? scopeRows[plan.close.index] : undefined;
+
+      await recordAudit(transaction, actor, {
+        action: "menu.price-changed",
+        entityId: menuItemId,
+        before: replaced ? { priceId: replaced.id, price: replaced.price, effectiveFrom: replaced.effectiveFrom } : null,
+        after: { priceId: created!.id, price, effectiveFrom },
+      });
 
       return created!;
     });

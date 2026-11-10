@@ -5,6 +5,7 @@ import {
   withTransaction,
   type DatabaseExecutor,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   findSchedulingFacts,
@@ -694,11 +695,20 @@ export async function publishPeriod(
         );
       }
 
-      return updatePeriodRow(transaction, periodId, {
+      const published = await updatePeriodRow(transaction, periodId, {
         status: "PUBLISHED",
         publishedAt: new Date(),
         publishedByUserId: actor.userId,
       });
+
+      await recordAudit(transaction, actor, {
+        action: "scheduling.period-published",
+        entityId: periodId,
+        before: { status: period.status },
+        after: published,
+      });
+
+      return published;
     });
   } catch (error) {
     if (isExclusionViolation(error)) {
@@ -738,9 +748,18 @@ export async function archivePeriod(
       );
     }
 
-    return updatePeriodRow(transaction, periodId, {
+    const archived = await updatePeriodRow(transaction, periodId, {
       status: "ARCHIVED",
       archivedAt: new Date(),
     });
+
+    await recordAudit(transaction, actor, {
+      action: "scheduling.period-archived",
+      entityId: periodId,
+      before: { status: period.status },
+      after: archived,
+    });
+
+    return archived;
   });
 }

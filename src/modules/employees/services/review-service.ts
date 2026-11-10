@@ -1,5 +1,9 @@
 import { assertVersionMatched } from "@/db/helpers/versioning";
-import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
+import {
+  type DatabaseExecutor,
+  withExecutorTransaction,
+} from "@/db/transactions/transaction-context";
+import { auditedRead, recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 
 import {
@@ -12,6 +16,9 @@ import {
 } from "../repositories/hr-record-repository";
 import { assertEffectiveRange } from "../rules/employee-rules";
 import { assertPermission, requireEmployee } from "./access";
+
+// Reviews and disciplinary records are restricted HR data: reads and changes are audited
+// by record and field name only, never their content.
 
 type ReviewInput = {
   reviewPeriodStart: string;
@@ -29,9 +36,17 @@ export async function listPerformanceReviews(
   employeeId: string,
 ) {
   assertPermission(actor, "hr.performance.view");
-  await requireEmployee(executor, actor, employeeId);
 
-  return findReviewRows(executor, employeeId);
+  return auditedRead(
+    executor,
+    actor,
+    { action: "hr.records-viewed", entityId: employeeId, details: { employeeId, kind: "PERFORMANCE" } },
+    async (transaction) => {
+      await requireEmployee(transaction, actor, employeeId);
+
+      return findReviewRows(transaction, employeeId);
+    },
+  );
 }
 
 export async function addPerformanceReview(
@@ -42,12 +57,23 @@ export async function addPerformanceReview(
 ) {
   assertPermission(actor, "hr.performance.manage");
   assertEffectiveRange(input.reviewPeriodStart, input.reviewPeriodEnd);
-  await requireEmployee(executor, actor, employeeId);
 
-  return insertReview(executor, {
-    ...input,
-    employeeId,
-    reviewerUserId: actor.userId,
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, employeeId);
+
+    const review = await insertReview(transaction, {
+      ...input,
+      employeeId,
+      reviewerUserId: actor.userId,
+    });
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-created",
+      entityId: employeeId,
+      details: { employeeId, recordId: review.id, kind: "PERFORMANCE", status: input.status },
+    });
+
+    return review;
   });
 }
 
@@ -66,12 +92,29 @@ export async function updatePerformanceReview(
     input.changes.reviewPeriodStart,
     input.changes.reviewPeriodEnd,
   );
-  await requireEmployee(executor, actor, input.employeeId);
 
-  return assertVersionMatched(
-    await updateReviewRow(executor, input, input.changes),
-    { type: "performance review", id: input.reviewId },
-  );
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, input.employeeId);
+
+    const result = assertVersionMatched(
+      await updateReviewRow(transaction, input, input.changes),
+      { type: "performance review", id: input.reviewId },
+    );
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-updated",
+      entityId: input.employeeId,
+      details: {
+        employeeId: input.employeeId,
+        recordId: input.reviewId,
+        kind: "PERFORMANCE",
+        status: input.changes.status,
+        changedFields: Object.keys(input.changes),
+      },
+    });
+
+    return result;
+  });
 }
 
 type DisciplinaryInput = {
@@ -89,9 +132,17 @@ export async function listDisciplinaryActions(
   employeeId: string,
 ) {
   assertPermission(actor, "hr.disciplinary.view");
-  await requireEmployee(executor, actor, employeeId);
 
-  return findDisciplinaryRows(executor, employeeId);
+  return auditedRead(
+    executor,
+    actor,
+    { action: "hr.records-viewed", entityId: employeeId, details: { employeeId, kind: "DISCIPLINARY" } },
+    async (transaction) => {
+      await requireEmployee(transaction, actor, employeeId);
+
+      return findDisciplinaryRows(transaction, employeeId);
+    },
+  );
 }
 
 function assertDisciplinaryDates(input: DisciplinaryInput): void {
@@ -108,12 +159,23 @@ export async function addDisciplinaryAction(
 ) {
   assertPermission(actor, "hr.disciplinary.manage");
   assertDisciplinaryDates(input);
-  await requireEmployee(executor, actor, employeeId);
 
-  return insertDisciplinaryAction(executor, {
-    ...input,
-    employeeId,
-    createdByUserId: actor.userId,
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, employeeId);
+
+    const action = await insertDisciplinaryAction(transaction, {
+      ...input,
+      employeeId,
+      createdByUserId: actor.userId,
+    });
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-created",
+      entityId: employeeId,
+      details: { employeeId, recordId: action.id, kind: "DISCIPLINARY" },
+    });
+
+    return action;
   });
 }
 
@@ -129,10 +191,26 @@ export async function updateDisciplinaryAction(
 ) {
   assertPermission(actor, "hr.disciplinary.manage");
   assertDisciplinaryDates(input.changes);
-  await requireEmployee(executor, actor, input.employeeId);
 
-  return assertVersionMatched(
-    await updateDisciplinaryRow(executor, input, input.changes),
-    { type: "disciplinary action", id: input.actionId },
-  );
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, input.employeeId);
+
+    const result = assertVersionMatched(
+      await updateDisciplinaryRow(transaction, input, input.changes),
+      { type: "disciplinary action", id: input.actionId },
+    );
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-updated",
+      entityId: input.employeeId,
+      details: {
+        employeeId: input.employeeId,
+        recordId: input.actionId,
+        kind: "DISCIPLINARY",
+        changedFields: Object.keys(input.changes),
+      },
+    });
+
+    return result;
+  });
 }

@@ -1,9 +1,12 @@
 import type { Database } from "@/db";
 import { assertVersionMatched } from "@/db/helpers/versioning";
 import {
-  withTransaction,
   type DatabaseExecutor,
+  type DatabaseTransaction,
+  withExecutorTransaction,
+  withTransaction,
 } from "@/db/transactions/transaction-context";
+import { auditedRead, changedFieldNames, recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { ConflictError, NotFoundError } from "@/shared/errors/app-error";
 
@@ -37,19 +40,27 @@ export async function getEmployeePersonal(
   employeeId: string,
 ): Promise<EmployeePersonalDetail> {
   assertPermission(actor, "hr.personal.view");
-  await requireEmployee(executor, actor, employeeId);
 
-  const personal = await findPersonalRow(executor, employeeId);
+  return auditedRead(
+    executor,
+    actor,
+    { action: "hr.personal-viewed", entityId: employeeId, details: { employeeId, kind: "PERSONAL" } },
+    async (transaction) => {
+      await requireEmployee(transaction, actor, employeeId);
 
-  if (!personal) {
-    throw new NotFoundError("employee");
-  }
+      const personal = await findPersonalRow(transaction, employeeId);
 
-  return {
-    ...personal,
-    addresses: await findAddresses(executor, employeeId),
-    emergencyContacts: await findEmergencyContacts(executor, employeeId),
-  };
+      if (!personal) {
+        throw new NotFoundError("employee");
+      }
+
+      return {
+        ...personal,
+        addresses: await findAddresses(transaction, employeeId),
+        emergencyContacts: await findEmergencyContacts(transaction, employeeId),
+      };
+    },
+  );
 }
 
 export async function updatePersonalContact(
@@ -63,14 +74,24 @@ export async function updatePersonalContact(
   },
 ): Promise<{ id: string; version: number }> {
   assertPermission(actor, "hr.personal.edit");
-  await requireEmployee(executor, actor, employeeId);
 
   const { expectedVersion, ...changes } = input;
 
-  return assertVersionMatched(
-    await updateEmployeeRow(executor, employeeId, expectedVersion, changes),
-    { type: "employee", id: employeeId },
-  );
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, employeeId);
+
+    const before = await findPersonalRow(transaction, employeeId);
+    const result = assertVersionMatched(
+      await updateEmployeeRow(transaction, employeeId, expectedVersion, changes),
+      { type: "employee", id: employeeId },
+    );
+
+    await auditPersonal(transaction, actor, employeeId, "CONTACT", null, {
+      changedFields: changedFieldNames(before ?? {}, changes, ["personalEmail", "phone"]),
+    });
+
+    return result;
+  });
 }
 
 /** A new address closes the open one of the same type the day before, keeping history. */
@@ -115,7 +136,13 @@ export async function addAddress(
       );
     }
 
-    return insertAddress(transaction, { ...input, employeeId });
+    const created = await insertAddress(transaction, { ...input, employeeId });
+
+    await auditPersonal(transaction, actor, employeeId, "ADDRESS_ADDED", created.id, {
+      changedFields: ["addressType", "addressLine1", "addressLine2", "city", "state", "postalCode", "country", "effectiveFrom"],
+    });
+
+    return created;
   });
 }
 
@@ -146,6 +173,9 @@ export async function endAddress(
     });
 
     await endAddressRow(transaction, address.id, input.effectiveTo);
+    await auditPersonal(transaction, actor, input.employeeId, "ADDRESS_ENDED", address.id, {
+      changedFields: ["effectiveTo"],
+    });
   });
 }
 
@@ -174,7 +204,13 @@ export async function addEmergencyContact(
       await clearPrimaryContact(transaction, employeeId);
     }
 
-    return insertEmergencyContact(transaction, { ...input, employeeId });
+    const created = await insertEmergencyContact(transaction, { ...input, employeeId });
+
+    await auditPersonal(transaction, actor, employeeId, "EMERGENCY_CONTACT_ADDED", created.id, {
+      changedFields: Object.keys(input),
+    });
+
+    return created;
   });
 }
 
@@ -203,6 +239,26 @@ export async function updateEmergencyContact(
       throw new NotFoundError("emergency contact");
     }
 
+    await auditPersonal(transaction, actor, input.employeeId, "EMERGENCY_CONTACT_UPDATED", input.contactId, {
+      changedFields: Object.keys(input.changes),
+    });
+
     return contact;
+  });
+}
+
+/** Personal-data changes record which fields changed, never their values. */
+function auditPersonal(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  employeeId: string,
+  kind: string,
+  recordId: string | null,
+  details: { changedFields: string[] },
+): Promise<void> {
+  return recordAudit(transaction, actor, {
+    action: "hr.personal-updated",
+    entityId: employeeId,
+    details: { employeeId, recordId, kind, ...details },
   });
 }

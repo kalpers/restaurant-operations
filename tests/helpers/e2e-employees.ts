@@ -34,6 +34,7 @@ import {
 } from "../../src/modules/auth/services/permission-service";
 import { createEmployee } from "../../src/modules/employees/services/employee-service";
 import { E2E_DOCUMENT_STORAGE_PATH } from "./e2e-storage";
+import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -185,6 +186,7 @@ export async function removeHrE2eData(): Promise<void> {
     await database.delete(employeeLocations).where(inArray(employeeLocations.employeeId, employeeIds));
     await database.delete(employeeAddresses).where(inArray(employeeAddresses.employeeId, employeeIds));
     await database.delete(employeeEmergencyContacts).where(inArray(employeeEmergencyContacts.employeeId, employeeIds));
+    await clearAuditEvents(database, { employeeIds: employeeIds });
     await database.delete(employees).where(inArray(employees.id, employeeIds));
   }
 
@@ -196,6 +198,7 @@ export async function removeHrE2eData(): Promise<void> {
 
   if (userIds.length > 0) {
     await database.delete(userRoles).where(inArray(userRoles.userId, userIds));
+    await clearAuditEvents(database, { userIds: userIds });
     await database.delete(users).where(inArray(users.id, userIds));
   }
 

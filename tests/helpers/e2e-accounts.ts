@@ -12,6 +12,7 @@ import {
   users,
 } from "../../src/db/schema";
 import { hashPassword } from "../../src/modules/auth/password";
+import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -153,6 +154,7 @@ export async function removeE2eAccounts(): Promise<void> {
 
   if (ids.length > 0) {
     await database.delete(userRoles).where(inArray(userRoles.userId, ids));
+    await clearAuditEvents(database, { userIds: ids });
     await database.delete(users).where(inArray(users.id, ids));
   }
 
@@ -166,6 +168,7 @@ export async function removeE2eAccounts(): Promise<void> {
     await database
       .delete(locationSettings)
       .where(inArray(locationSettings.locationId, locationIds));
+    await clearAuditEvents(database, { locationIds: locationIds });
     await database.delete(locations).where(inArray(locations.id, locationIds));
   }
 

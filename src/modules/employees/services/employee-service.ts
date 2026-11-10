@@ -2,9 +2,11 @@ import type { Database } from "@/db";
 import { isUniqueViolation } from "@/db/helpers/database-errors";
 import { assertVersionMatched } from "@/db/helpers/versioning";
 import {
+  withExecutorTransaction,
   withTransaction,
   type DatabaseExecutor,
 } from "@/db/transactions/transaction-context";
+import { changedFieldNames, recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   ConflictError,
@@ -31,7 +33,7 @@ import {
   updateEmployeeRow,
 } from "../repositories/employee-repository";
 import { findPositionInOrganization } from "../repositories/reference-repository";
-import { actorHolds, assertPermission, requireEmployee } from "./access";
+import { actorHolds, assertPermission, requireEmployee, scopeOf } from "./access";
 
 /** The list reads no restricted table. Status is removed unless the actor may see it. */
 export async function listEmployees(
@@ -161,6 +163,12 @@ export async function createEmployee(
         changedByUserId: actor.userId,
       });
 
+      await recordAudit(transaction, actor, {
+        action: "hr.employee-created",
+        entityId: employee.id,
+        after: { employeeNumber: input.employeeNumber, status: "ACTIVE" },
+      });
+
       return employee;
     });
   } catch (error) {
@@ -191,12 +199,24 @@ export async function updateEmployeeGeneral(
   },
 ): Promise<{ id: string; version: number }> {
   assertPermission(actor, "employees.edit");
-  await requireEmployee(executor, actor, employeeId);
 
   const { expectedVersion, ...changes } = input;
 
-  return assertVersionMatched(
-    await updateEmployeeRow(executor, employeeId, expectedVersion, changes),
-    { type: "employee", id: employeeId },
-  );
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, employeeId);
+
+    const before = await findGeneralRow(transaction, employeeId, scopeOf(actor));
+    const result = assertVersionMatched(
+      await updateEmployeeRow(transaction, employeeId, expectedVersion, changes),
+      { type: "employee", id: employeeId },
+    );
+
+    await recordAudit(transaction, actor, {
+      action: "hr.employee-updated",
+      entityId: employeeId,
+      details: { changedFields: changedFieldNames(before ?? {}, changes, Object.keys(changes)) },
+    });
+
+    return result;
+  });
 }

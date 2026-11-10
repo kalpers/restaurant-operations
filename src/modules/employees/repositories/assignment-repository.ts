@@ -138,6 +138,7 @@ export async function findPositionAssignmentById(
   const [row] = await executor
     .select({
       id: employeePositions.id,
+      positionId: employeePositions.positionId,
       locationId: employeePositions.locationId,
       primaryPosition: employeePositions.primaryPosition,
       effectiveFrom: employeePositions.effectiveFrom,

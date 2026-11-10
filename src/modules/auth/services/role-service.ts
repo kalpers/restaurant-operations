@@ -11,6 +11,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/shared/errors/app-error";
+import { recordAudit } from "@/modules/auditing";
 
 import {
   bumpRoleVersion,
@@ -93,9 +94,19 @@ export async function createRole(
   input: { code: string; name: string; description: string | null },
 ): Promise<{ id: string; version: number }> {
   try {
-    return await insertRole(database, {
-      ...input,
-      organizationId: actor.organizationId,
+    return await withTransaction(database, async (transaction) => {
+      const role = await insertRole(transaction, {
+        ...input,
+        organizationId: actor.organizationId,
+      });
+
+      await recordAudit(transaction, actor, {
+        action: "admin.role-created",
+        entityId: role.id,
+        after: { roleCode: input.code, roleName: input.name, permissionCodes: [] },
+      });
+
+      return role;
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -126,10 +137,19 @@ export async function setRoleActive(
 
     assertActorHolds(actor, await findRolePermissionCodes(transaction, role.id));
 
-    return assertVersionMatched(await updateRoleActive(transaction, input), {
+    const result = assertVersionMatched(await updateRoleActive(transaction, input), {
       type: "role",
       id: role.id,
     });
+
+    await recordAudit(transaction, actor, {
+      action: input.active ? "admin.role-activated" : "admin.role-deactivated",
+      entityId: role.id,
+      before: { roleCode: role.code, active: role.active },
+      after: { roleCode: role.code, active: result.active },
+    });
+
+    return result;
   });
 }
 
@@ -150,10 +170,10 @@ export async function replaceRolePermissions(
 
     const current = new Set(await findRolePermissionCodes(transaction, role.id));
 
-    assertActorHolds(actor, [
-      ...[...requested].filter((code) => !current.has(code)),
-      ...[...current].filter((code) => !requested.has(code)),
-    ]);
+    const added = [...requested].filter((code) => !current.has(code)).sort();
+    const removed = [...current].filter((code) => !requested.has(code)).sort();
+
+    assertActorHolds(actor, [...added, ...removed]);
 
     const result = assertVersionMatched(
       await bumpRoleVersion(transaction, role.id, input.expectedVersion),
@@ -165,6 +185,12 @@ export async function replaceRolePermissions(
       role.id,
       known.map((permission) => permission.id),
     );
+
+    await recordAudit(transaction, actor, {
+      action: "admin.role-permissions-replaced",
+      entityId: role.id,
+      details: { roleCode: role.code, added, removed },
+    });
 
     return result;
   });

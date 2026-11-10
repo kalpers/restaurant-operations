@@ -2,6 +2,7 @@ import type { Database } from "@/db";
 import { withTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   closeOrderForSettlement,
@@ -126,6 +127,18 @@ export async function completeSettlement(
             occurredAt: now,
           },
         ]);
+        await recordAudit(transaction, actor, {
+          action: "settlements.completed",
+          entityId: settlement.id,
+          occurredAt: now,
+          before: { status: settlement.status },
+          after: {
+            orderId: order.id,
+            status: "COMPLETED",
+            amountDue: settlement.orderAmountSnapshot,
+            businessDate: location.businessDate,
+          },
+        });
 
         return {
           settlementId: settlement.id,

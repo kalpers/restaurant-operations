@@ -35,3 +35,14 @@ export function withReadOnlySnapshot<Result>(
     accessMode: "read only",
   });
 }
+
+/**
+ * Runs the callback in a transaction on any executor: a new transaction on the database,
+ * or a savepoint inside a caller's transaction. For operations that accept either.
+ */
+export function withExecutorTransaction<Result>(
+  executor: DatabaseExecutor,
+  callback: (transaction: DatabaseTransaction) => Promise<Result>,
+): Promise<Result> {
+  return (executor as Database).transaction(callback);
+}

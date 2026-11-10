@@ -15,6 +15,7 @@ import {
   type DatabaseExecutor,
   type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { compareDecimals, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
@@ -315,12 +316,16 @@ export async function approveCount(
       acknowledgeActivity: input.acknowledgeActivity,
     });
 
+    let varianceCount = 0;
+
     for (const line of lines) {
       const posting = variancePosting(line.varianceQuantity!);
 
       if (!posting) {
         continue;
       }
+
+      varianceCount += 1;
 
       const result = await postInventoryTransaction(transaction, {
         organizationId: actor.organizationId,
@@ -345,7 +350,7 @@ export async function approveCount(
         .where(eq(inventoryCountLines.id, line.id));
     }
 
-    return bumpCount(transaction, countId, {
+    const approved = await bumpCount(transaction, countId, {
       status: "APPROVED",
       approvedAt: now,
       approvedByUserId: actor.userId,
@@ -353,6 +358,16 @@ export async function approveCount(
         ? { activityAcknowledgedAt: now, activityAcknowledgedByUserId: actor.userId }
         : {}),
     });
+
+    await recordAudit(transaction, actor, {
+      action: "inventory.count-approved",
+      entityId: countId,
+      occurredAt: now,
+      before: { status: count.status },
+      after: { status: "APPROVED", lineCount: lines.length, varianceCount },
+    });
+
+    return approved;
   });
 }
 

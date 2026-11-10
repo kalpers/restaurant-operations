@@ -6,6 +6,7 @@ import {
   type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   AuthorizationError,
@@ -144,6 +145,11 @@ export async function assignLocation(
         });
 
         await advanceVersion(transaction, employee, input.expectedVersion);
+        await recordAudit(transaction, targetActor, {
+          action: "hr.location-assigned",
+          entityId: employee.id,
+          after: { recordId: assignment.id, assignedLocationId: location.id, startDate: input.effectiveFrom, primary: false },
+        });
 
         return assignment;
       }),
@@ -212,6 +218,11 @@ export async function endLocationAssignment(
       input.effectiveTo,
     );
     await advanceVersion(transaction, employee, input.expectedVersion);
+    await recordAudit(transaction, actor, {
+      action: "hr.location-ended",
+      entityId: employee.id,
+      after: { recordId: assignment.id, assignedLocationId: assignment.locationId, endDate: input.effectiveTo },
+    });
   });
 }
 
@@ -247,6 +258,11 @@ export async function setPrimaryLocation(
     await setPrimaryLocationRow(transaction, assignment.id);
     await advanceVersion(transaction, employee, input.expectedVersion, {
       primaryLocationId: assignment.locationId,
+    });
+    await recordAudit(transaction, actor, {
+      action: "hr.location-primary-set",
+      entityId: employee.id,
+      after: { recordId: assignment.id, assignedLocationId: assignment.locationId },
     });
   });
 }
@@ -322,6 +338,16 @@ export async function assignPosition(
         });
 
         await advanceVersion(transaction, employee, input.expectedVersion);
+        await recordAudit(transaction, targetActor, {
+          action: "hr.position-assigned",
+          entityId: employee.id,
+          after: {
+            recordId: assignment.id,
+            positionId: position.id,
+            startDate: input.effectiveFrom,
+            primary: input.primaryPosition,
+          },
+        });
 
         return assignment;
       }),
@@ -370,6 +396,11 @@ export async function endPositionAssignment(
       input.effectiveTo,
     );
     await advanceVersion(transaction, employee, input.expectedVersion);
+    await recordAudit(transaction, actor, {
+      action: "hr.position-ended",
+      entityId: employee.id,
+      after: { recordId: assignment.id, positionId: assignment.positionId, endDate: input.effectiveTo },
+    });
   });
 }
 
@@ -407,5 +438,10 @@ export async function setPrimaryPosition(
     );
     await setPrimaryPositionRow(transaction, assignment.id);
     await advanceVersion(transaction, employee, input.expectedVersion);
+    await recordAudit(transaction, actor, {
+      action: "hr.position-primary-set",
+      entityId: employee.id,
+      after: { recordId: assignment.id, positionId: assignment.positionId },
+    });
   });
 }

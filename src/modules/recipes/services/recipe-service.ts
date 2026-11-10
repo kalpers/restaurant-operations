@@ -12,6 +12,7 @@ import {
   unitsOfMeasure,
 } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
@@ -263,6 +264,12 @@ export async function createDraftRevision(
       })
       .returning();
 
+    await recordAudit(transaction, actor, {
+      action: "recipes.revision-created",
+      entityId: recipeId,
+      after: { revisionId: row!.id, versionNumber: row!.revisionNumber, status: row!.status },
+    });
+
     return row!;
   });
 }
@@ -372,12 +379,26 @@ export async function publishRevision(
           .where(eq(recipeVersions.id, plan.closePrior.id));
       }
 
-      return await updateRevision(transaction, recipeId, revisionId, input.expectedVersion, {
+      const published = await updateRevision(transaction, recipeId, revisionId, input.expectedVersion, {
         status: "PUBLISHED",
         effectiveFrom: plan.effectiveFrom,
         publishedByUserId: actor.userId,
         publishedAt: now,
       });
+
+      await recordAudit(transaction, actor, {
+        action: "recipes.revision-published",
+        entityId: recipeId,
+        before: { revisionId, status: draft.status },
+        after: {
+          revisionId,
+          versionNumber: published.revisionNumber,
+          status: published.status,
+          effectiveFrom: published.effectiveFrom,
+        },
+      });
+
+      return published;
     });
   } catch (error) {
     if (isExclusionViolation(error)) {
@@ -408,12 +429,21 @@ export async function retireRevision(
     const revision = await requireRevision(transaction, recipeId, revisionId);
     const plan = planRetire(revision, now);
 
-    return updateRevision(transaction, recipeId, revisionId, input.expectedVersion, {
+    const retired = await updateRevision(transaction, recipeId, revisionId, input.expectedVersion, {
       status: "RETIRED",
       effectiveTo: plan.effectiveTo,
       retiredByUserId: actor.userId,
       retiredAt: now,
     });
+
+    await recordAudit(transaction, actor, {
+      action: "recipes.revision-retired",
+      entityId: recipeId,
+      before: { revisionId, status: revision.status },
+      after: { revisionId, versionNumber: retired.revisionNumber, status: retired.status },
+    });
+
+    return retired;
   });
 }
 

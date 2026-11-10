@@ -8,6 +8,7 @@ import {
   orderItemVoids,
 } from "@/db/schema";
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { assertNoOpenSettlement } from "@/modules/settlements/repositories/settlement-repository";
 import { postSaleReversal } from "@/modules/inventory/services/order-consumption";
@@ -155,13 +156,23 @@ export async function voidOrderItem(
       throw new NotFoundError("order item");
     }
 
+    const at = new Date();
+
     await voidSubmittedItem(transaction, actor, item, {
       reason,
       disposition: input.disposition,
-      at: new Date(),
+      at,
     });
 
     const updated = await recomputeAndBumpOrder(transaction, orderId);
+
+    await recordAudit(transaction, actor, {
+      action: "orders.item-voided",
+      entityId: orderId,
+      occurredAt: at,
+      before: { orderItemId: item.id, status: item.status },
+      after: { orderItemId: item.id, status: "VOIDED", disposition: input.disposition, reason },
+    });
 
     return { id: orderId, version: updated.version };
   });
@@ -237,6 +248,13 @@ export async function voidOrder(
       reason,
       userId: actor.userId,
       at,
+    });
+    await recordAudit(transaction, actor, {
+      action: "orders.order-voided",
+      entityId: orderId,
+      occurredAt: at,
+      before: { status: order.status },
+      after: { status: "VOIDED", reason, voidedItemCount: items.length },
     });
 
     return { id: orderId, version: updated.version };

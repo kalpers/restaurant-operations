@@ -39,6 +39,7 @@ import {
   createModifier,
   setGroupModifier,
 } from "../../src/modules/menu/services/modifier-service";
+import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -288,6 +289,7 @@ export function createMenuE2e(scope: "MENU" | "RECIPES") {
 
     if (userIds.length) {
       await database.delete(userRoles).where(inArray(userRoles.userId, userIds));
+      await clearAuditEvents(database, { userIds: userIds });
       await database.delete(users).where(inArray(users.id, userIds));
     }
 

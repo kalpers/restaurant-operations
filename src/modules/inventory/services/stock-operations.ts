@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Database } from "@/db";
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import { userHasPermission } from "@/modules/auth/services/permission-service";
 import type { Actor } from "@/modules/auth/types";
 import { negateDecimal } from "@/shared/decimal/decimal";
@@ -28,8 +29,8 @@ export async function recordWaste(
 ): Promise<PostingResult> {
   assertPermission(actor, "inventory.waste");
 
-  return withTransaction(database, (transaction) =>
-    postInventoryTransaction(transaction, {
+  return withTransaction(database, async (transaction) => {
+    const posted = await postInventoryTransaction(transaction, {
       organizationId: actor.organizationId,
       locationId: actor.locationId,
       inventoryItemId: input.inventoryItemId,
@@ -40,8 +41,12 @@ export async function recordWaste(
       notes: input.notes,
       occurredAt: input.occurredAt,
       createdByUserId: actor.userId,
-    }),
-  );
+    });
+
+    await auditMovement(transaction, actor, "inventory.waste-recorded", input, posted);
+
+    return posted;
+  });
 }
 
 /** A manual correction. There is no "set quantity": only an increase or a decrease. */
@@ -52,8 +57,8 @@ export async function recordAdjustment(
 ): Promise<PostingResult> {
   assertPermission(actor, "inventory.adjust");
 
-  return withTransaction(database, (transaction) =>
-    postInventoryTransaction(transaction, {
+  return withTransaction(database, async (transaction) => {
+    const posted = await postInventoryTransaction(transaction, {
       organizationId: actor.organizationId,
       locationId: actor.locationId,
       inventoryItemId: input.inventoryItemId,
@@ -64,8 +69,12 @@ export async function recordAdjustment(
       notes: input.notes,
       occurredAt: input.occurredAt,
       createdByUserId: actor.userId,
-    }),
-  );
+    });
+
+    await auditMovement(transaction, actor, "inventory.adjusted", input, posted);
+
+    return posted;
+  });
 }
 
 /**
@@ -132,7 +141,28 @@ export async function transferStock(
       createdByUserId: actor.userId,
     });
 
+    await recordAudit(transaction, actor, {
+      action: "inventory.transferred",
+      entityId: input.inventoryItemId,
+      after: { transferId, quantity: out.baseQuantityDelta, destinationLocationId: input.toLocationId },
+    });
+
     return { transferId, out, in: arrived };
+  });
+}
+
+/** The free-text notes are not recorded; the ledger row keeps them. */
+function auditMovement(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  action: "inventory.adjusted" | "inventory.waste-recorded",
+  input: { inventoryItemId: string; reasonCode: string },
+  posted: PostingResult,
+): Promise<void> {
+  return recordAudit(transaction, actor, {
+    action,
+    entityId: input.inventoryItemId,
+    after: { transactionId: posted.transactionId, quantity: posted.baseQuantityDelta, reasonCode: input.reasonCode },
   });
 }
 

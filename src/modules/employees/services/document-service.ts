@@ -1,7 +1,12 @@
 import type { Database } from "@/db";
-import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
+import {
+  type DatabaseExecutor,
+  withExecutorTransaction,
+  withTransaction,
+} from "@/db/transactions/transaction-context";
 import type { FileStorageService } from "@/infrastructure/storage/file-storage-service";
 import { StoredFileNotFoundError } from "@/infrastructure/storage/file-storage-service";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { AuthorizationError, NotFoundError } from "@/shared/errors/app-error";
 
@@ -70,16 +75,30 @@ export async function uploadDocument(
   const storageKey = await storage.put(input.bytes);
 
   try {
-    return await insertDocument(database, {
-      employeeId: input.employeeId,
-      documentType: input.documentType,
-      name: input.name,
-      description: input.description,
-      storageKey,
-      mimeType,
-      fileSize: input.bytes.length,
-      sensitive: input.sensitive,
-      uploadedByUserId: actor.userId,
+    return await withTransaction(database, async (transaction) => {
+      const document = await insertDocument(transaction, {
+        employeeId: input.employeeId,
+        documentType: input.documentType,
+        name: input.name,
+        description: input.description,
+        storageKey,
+        mimeType,
+        fileSize: input.bytes.length,
+        sensitive: input.sensitive,
+        uploadedByUserId: actor.userId,
+      });
+
+      await recordAudit(transaction, actor, {
+        action: "hr.record-created",
+        entityId: input.employeeId,
+        details: {
+          employeeId: input.employeeId,
+          recordId: document.id,
+          kind: input.sensitive ? "SENSITIVE_DOCUMENT" : "DOCUMENT",
+        },
+      });
+
+      return document;
     });
   } catch (error) {
     await storage.remove(storageKey).catch(() => undefined);
@@ -96,21 +115,38 @@ export async function readDocumentForDownload(
   input: { employeeId: string; documentId: string },
 ): Promise<{ name: string; mimeType: string; bytes: Buffer }> {
   assertPermission(actor, "hr.documents.view");
-  await requireEmployee(executor, actor, input.employeeId);
 
-  const document = await findDocumentForDownload(
-    executor,
-    input.employeeId,
-    input.documentId,
-  );
+  // Authorize and record the download together; the bytes are read after commit, because
+  // file storage is never called inside a transaction.
+  const document = await withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, input.employeeId);
 
-  if (!document) {
-    throw new NotFoundError("document");
-  }
+    const found = await findDocumentForDownload(
+      transaction,
+      input.employeeId,
+      input.documentId,
+    );
 
-  if (document.sensitive && !actorHolds(actor, "hr.documents.sensitive.view")) {
-    throw new AuthorizationError();
-  }
+    if (!found) {
+      throw new NotFoundError("document");
+    }
+
+    if (found.sensitive && !actorHolds(actor, "hr.documents.sensitive.view")) {
+      throw new AuthorizationError();
+    }
+
+    await recordAudit(transaction, actor, {
+      action: "hr.document-downloaded",
+      entityId: input.employeeId,
+      details: {
+        employeeId: input.employeeId,
+        recordId: input.documentId,
+        kind: found.sensitive ? "SENSITIVE_DOCUMENT" : "DOCUMENT",
+      },
+    });
+
+    return found;
+  });
 
   try {
     return {

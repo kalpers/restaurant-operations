@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, getDatabase } from "@/db";
 import { employeePositionCompensation, schedulePeriods, shifts, tableSessions } from "@/db/schema";
 import type { Actor } from "@/modules/auth/types";
-import { runReport } from "@/modules/reporting/services/report-service";
+import { buildDashboard, runReport } from "@/modules/reporting/services/report-service";
 import type { ReportResult } from "@/modules/reporting/types";
 import { assignEmployee, cancelShift, publishPeriod } from "@/modules/scheduling/services/schedule-service";
 import { localToInstant } from "@/shared/time/zoned-time";
@@ -140,15 +140,32 @@ describe("labor reporting", () => {
     expect(row(report, "coverage", "businessDate", TUESDAY)).toMatchObject({ shifts: 1, required: 2, assigned: 1, unfilled: 1 });
   });
 
-  it("hides per-employee cost without hr.compensation.view", async () => {
+  it("hides every labor cost without hr.compensation.view, because any total can reveal a wage", async () => {
     const report = await labor(withoutWages);
-    const employees = report.sections.find((section) => section.key === "employees")!;
 
-    expect(employees.columns.map((column) => column.key)).not.toContain("cost");
-    expect(employees.rows.every((candidate) => !("cost" in candidate))).toBe(true);
+    for (const section of report.sections) {
+      expect(section.columns.map((column) => column.key), section.key).not.toContain("cost");
+      expect(section.rows.every((candidate) => !("cost" in candidate)), section.key).toBe(true);
+    }
+
+    // Hours stay visible.
+    expect(report.sections.find((section) => section.key === "positions")!.rows.length).toBeGreaterThan(0);
     expect(report.notes.join(" ")).toMatch(/compensation/);
-    // Without reports.sales there is no labor % either.
     expect(report.sections.find((section) => section.key === "summary")!.rows[0]).not.toHaveProperty("laborPercent");
+  });
+
+  it("shows no labor % with reports.sales but without hr.compensation.view", async () => {
+    const salesOnly = await actorWith(database(), scenario, ["reports.view", "reports.labor", "reports.sales"]);
+    const report = await labor(salesOnly);
+    const summary = report.sections.find((section) => section.key === "summary")!;
+
+    expect(summary.columns.map((column) => column.key)).not.toContain("laborPercent");
+    expect(summary.rows[0]).not.toHaveProperty("laborPercent");
+
+    const dashboard = await buildDashboard(database(), salesOnly, scenario.locationA, TUESDAY);
+    const tiles = dashboard.groups.find((group) => group.area === "labor")!.tiles.map((tile) => tile.key);
+
+    expect(tiles).toEqual(["hours"]);
   });
 
   it("filters to one employee", async () => {

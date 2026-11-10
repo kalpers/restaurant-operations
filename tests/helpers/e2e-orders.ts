@@ -100,6 +100,12 @@ export const REPORTS_SCOPE: E2eScope = {
   tablePrefix: "REP-",
 };
 
+export const AUDIT_SCOPE: E2eScope = {
+  emailDomain: "audit-e2e.example.test",
+  rolePrefix: "AUDIT_E2E_",
+  tablePrefix: "AUD-",
+};
+
 export const CODE_PREFIX = "E2EO_";
 
 export type OrdersAccount = { id: string; email: string; password: string };

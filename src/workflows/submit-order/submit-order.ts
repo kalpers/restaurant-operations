@@ -10,6 +10,7 @@ import {
 import { withTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { assertNoOpenSettlement } from "@/modules/settlements/repositories/settlement-repository";
 import { createTicketsForSendBatch } from "@/modules/kitchen/services/ticket-generation";
@@ -311,6 +312,19 @@ export async function sendOrderItems(
             occurredAt: sentAt,
           },
         ]);
+        // Inside the idempotent block: a replayed SEND writes no second audit event.
+        await recordAudit(transaction, actor, {
+          action: "orders.items-sent",
+          entityId: orderId,
+          occurredAt: sentAt,
+          after: {
+            orderNumber: order.orderNumber,
+            sendBatchId: batch!.id,
+            batchNumber: batch!.batchNumber,
+            itemCount: drafts.length,
+            orderItemIds: drafts.map((draft) => draft.id),
+          },
+        });
 
         return {
           orderId,

@@ -12,6 +12,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/shared/errors/app-error";
+import { recordAudit } from "@/modules/auditing";
 
 import { normalizeEmail } from "../email";
 import {
@@ -138,6 +139,12 @@ export async function createUserWithRole(
         assignedByUserId: actor.userId,
       });
 
+      await recordAudit(transaction, actor, {
+        action: "admin.user-created",
+        entityId: user.id,
+        after: { roleId: input.roleId, locationId: actor.locationId },
+      });
+
       return user;
     });
   } catch (error) {
@@ -194,10 +201,18 @@ export async function setUserActive(
       );
     }
 
-    return assertVersionMatched(await updateUserActive(transaction, input), {
+    const result = assertVersionMatched(await updateUserActive(transaction, input), {
       type: "user",
       id: input.userId,
     });
+
+    await recordAudit(transaction, actor, {
+      action: input.active ? "admin.user-enabled" : "admin.user-disabled",
+      entityId: input.userId,
+      after: { active: result.active },
+    });
+
+    return result;
   });
 }
 
@@ -230,6 +245,12 @@ export async function disableUserForTermination(
     userId,
   });
   await disableUserRow(transaction, userId);
+  await recordAudit(transaction, actor, {
+    action: "admin.user-disabled",
+    entityId: userId,
+    after: { active: false },
+    details: { reason: "TERMINATION" },
+  });
 }
 
 /** What the Employees domain may know about a user it is linking. */
@@ -258,6 +279,12 @@ export async function assignRole(
       roleId: input.roleId,
       locationId: actor.locationId,
       assignedByUserId: actor.userId,
+    });
+
+    await recordAudit(transaction, actor, {
+      action: "admin.role-assigned",
+      entityId: input.userId,
+      after: { roleId: input.roleId, locationId: actor.locationId },
     });
   });
 }
@@ -291,5 +318,10 @@ export async function removeRole(
     }
 
     await deactivateAssignment(transaction, key);
+    await recordAudit(transaction, actor, {
+      action: "admin.role-removed",
+      entityId: input.userId,
+      before: { roleId: role.id, roleCode: role.code, locationId: actor.locationId },
+    });
   });
 }

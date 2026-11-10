@@ -155,6 +155,20 @@
       "when": 1794259944304,
       "tag": "0021_reporting_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794269899458,
+      "tag": "0022_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794269902427,
+      "tag": "0023_audit_constraints",
+      "breakpoints": true
     }
   ]
 }

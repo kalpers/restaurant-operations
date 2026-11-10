@@ -29,6 +29,7 @@ const RECONSTRUCTION_DATABASE = "restaurant_ops_test_reconstruction";
 
 const EXPECTED_TABLES = [
   "drizzle.__drizzle_migrations",
+  "public.audit_events",
   "public.certification_types",
   "public.discount_definitions",
   "public.employee_addresses",
@@ -356,6 +357,19 @@ describe("reconstruction from checked-in migrations", () => {
       { tgname: "order_settlements_guard_trigger" },
       { tgname: "orders_settlement_guard_trigger" },
       { tgname: "settlement_tenders_guard_trigger" },
+    ]);
+  });
+
+  it("upgrades a Phase 12 database in place, with an empty append-only audit trail", async () => {
+    await upgradeFromMigrationIndex(21);
+    expect(await query("SELECT * FROM audit_events")).toEqual([]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname LIKE 'audit_events_%' ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "audit_events_append_only_trigger" },
+      { tgname: "audit_events_no_truncate_trigger" },
     ]);
   });
 

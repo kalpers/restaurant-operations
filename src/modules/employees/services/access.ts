@@ -33,7 +33,7 @@ export function assertPermission(actor: Actor, permission: PermissionCode): void
   }
 }
 
-function scopeOf(actor: Actor) {
+export function scopeOf(actor: Actor) {
   return { organizationId: actor.organizationId, locationId: actor.locationId };
 }
 

@@ -5,6 +5,7 @@ import {
   type DatabaseExecutor,
   type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { NotFoundError } from "@/shared/errors/app-error";
 
@@ -84,6 +85,14 @@ export async function changeEmployeeStatus(
       changedByUserId: actor.userId,
     });
 
+    // The free-text reason is HR detail and is not recorded.
+    await recordAudit(transaction, actor, {
+      action: "hr.status-changed",
+      entityId: employee.id,
+      before: { status: employee.employmentStatus },
+      after: { status: input.status },
+    });
+
     return updated;
   });
 }
@@ -129,6 +138,13 @@ export async function recordTermination(
     status: "TERMINATED",
     reason: input.reason,
     changedByUserId: actor.userId,
+  });
+
+  await recordAudit(transaction, actor, {
+    action: "hr.employee-terminated",
+    entityId: employee.id,
+    before: { status: employee.employmentStatus },
+    after: { status: "TERMINATED", effectiveDate: input.terminationDate, userDisabled: employee.userId !== null },
   });
 
   return updated;

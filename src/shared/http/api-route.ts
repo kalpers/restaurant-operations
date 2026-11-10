@@ -4,6 +4,8 @@ import { readErrorCode } from "@/infrastructure/health/check-database-health";
 import { writeLog } from "@/infrastructure/logging/logger";
 import { AppError, ValidationError } from "@/shared/errors/app-error";
 
+import { runWithRequestContext } from "./request-context";
+
 type RouteContext<Params> = { params: Promise<Params> };
 
 type ApiRouteArgs<Params> = {
@@ -47,7 +49,9 @@ export function apiRoute<Params = Record<string, never>>(
 
     try {
       const params = await context.params;
-      const result = await handler({ request, params, requestId });
+      const result = await runWithRequestContext({ requestId }, () =>
+        handler({ request, params, requestId }),
+      );
 
       if (result.response) {
         return result.response;

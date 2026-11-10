@@ -1,5 +1,9 @@
 import { assertVersionMatched } from "@/db/helpers/versioning";
-import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
+import {
+  type DatabaseExecutor,
+  withExecutorTransaction,
+} from "@/db/transactions/transaction-context";
+import { auditedRead, changedFieldNames, recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { NotFoundError } from "@/shared/errors/app-error";
 
@@ -18,11 +22,23 @@ export async function listNotes(
   employeeId: string,
 ) {
   assertPermission(actor, "hr.notes.view");
-  await requireEmployee(executor, actor, employeeId);
 
-  return findNoteRows(executor, employeeId, {
-    includeSensitive: actorHolds(actor, "hr.notes.sensitive.view"),
-  });
+  const includeSensitive = actorHolds(actor, "hr.notes.sensitive.view");
+  const read = async (transaction: DatabaseExecutor) => {
+    await requireEmployee(transaction, actor, employeeId);
+
+    return findNoteRows(transaction, employeeId, { includeSensitive });
+  };
+
+  // Only reading sensitive and manager notes is audited.
+  return includeSensitive
+    ? auditedRead(
+        executor,
+        actor,
+        { action: "hr.records-viewed", entityId: employeeId, details: { employeeId, kind: "SENSITIVE_NOTES" } },
+        read,
+      )
+    : read(executor);
 }
 
 type NoteInput = {
@@ -44,12 +60,22 @@ export async function addNote(
     assertPermission(actor, "hr.notes.sensitive.manage");
   }
 
-  await requireEmployee(executor, actor, employeeId);
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, employeeId);
 
-  return insertNote(executor, {
-    ...input,
-    employeeId,
-    createdByUserId: actor.userId,
+    const note = await insertNote(transaction, {
+      ...input,
+      employeeId,
+      createdByUserId: actor.userId,
+    });
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-created",
+      entityId: employeeId,
+      details: { employeeId, recordId: note.id, kind: noteKind(input) },
+    });
+
+    return note;
   });
 }
 
@@ -65,32 +91,52 @@ export async function updateNote(
   },
 ) {
   assertPermission(actor, "hr.notes.manage");
-  await requireEmployee(executor, actor, input.employeeId);
 
-  const note = await findNoteById(executor, input.employeeId, input.noteId);
+  return withExecutorTransaction(executor, async (transaction) => {
+    await requireEmployee(transaction, actor, input.employeeId);
 
-  if (
-    !note ||
-    (noteRequiresSensitiveAccess(note) &&
-      !actorHolds(actor, "hr.notes.sensitive.view"))
-  ) {
-    throw new NotFoundError("note");
-  }
+    const note = await findNoteById(transaction, input.employeeId, input.noteId);
 
-  if (
-    noteRequiresSensitiveAccess(note) ||
-    noteRequiresSensitiveAccess(input.changes)
-  ) {
-    assertPermission(actor, "hr.notes.sensitive.manage");
-  }
+    if (
+      !note ||
+      (noteRequiresSensitiveAccess(note) &&
+        !actorHolds(actor, "hr.notes.sensitive.view"))
+    ) {
+      throw new NotFoundError("note");
+    }
 
-  return assertVersionMatched(
-    await updateNoteRow(
-      executor,
-      note.id,
-      input.expectedVersion,
-      input.changes,
-    ),
-    { type: "note", id: note.id },
-  );
+    if (
+      noteRequiresSensitiveAccess(note) ||
+      noteRequiresSensitiveAccess(input.changes)
+    ) {
+      assertPermission(actor, "hr.notes.sensitive.manage");
+    }
+
+    const result = assertVersionMatched(
+      await updateNoteRow(
+        transaction,
+        note.id,
+        input.expectedVersion,
+        input.changes,
+      ),
+      { type: "note", id: note.id },
+    );
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-updated",
+      entityId: input.employeeId,
+      details: {
+        employeeId: input.employeeId,
+        recordId: note.id,
+        kind: noteKind(input.changes),
+        changedFields: changedFieldNames(note, input.changes, ["noteType", "title", "content", "sensitive"]),
+      },
+    });
+
+    return result;
+  });
+}
+
+function noteKind(note: { noteType: string; sensitive: boolean }): string {
+  return noteRequiresSensitiveAccess(note) ? "SENSITIVE_NOTE" : "NOTE";
 }

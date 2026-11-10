@@ -48,6 +48,7 @@ import {
   createSupplier,
   createSupplierItem,
 } from "../../src/modules/inventory/services/supplier-service";
+import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -248,6 +249,7 @@ export async function removeInventoryE2eData(): Promise<void> {
     await database.select({ id: recipes.id }).from(recipes).where(like(recipes.code, `${CODE_PREFIX}%`))
   ).map((row) => row.id);
 
+  await clearAuditEvents(database, { userIds });
   await database.transaction(async (transaction) => {
     for (const table of APPEND_ONLY) {
       await transaction.execute(`ALTER TABLE ${table} DISABLE TRIGGER ${table}_append_only_trigger` as never);

@@ -3,6 +3,7 @@ import {
   withTransaction,
   type DatabaseExecutor,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import {
   BusinessRuleError,
@@ -77,7 +78,15 @@ export async function addCertification(
     assertCertificationDates({ ...input, ...type });
     await assertDocumentIsEmployees(transaction, employeeId, input.documentId);
 
-    return insertCertification(transaction, { ...input, employeeId });
+    const certification = await insertCertification(transaction, { ...input, employeeId });
+
+    await recordAudit(transaction, actor, {
+      action: "hr.record-created",
+      entityId: employeeId,
+      details: { employeeId, recordId: certification.id, kind: "CERTIFICATION" },
+    });
+
+    return certification;
   });
 }
 
@@ -123,6 +132,16 @@ export async function updateCertification(
     );
 
     await updateCertificationRow(transaction, certification.id, input.details);
+    await recordAudit(transaction, actor, {
+      action: "hr.record-updated",
+      entityId: input.employeeId,
+      details: {
+        employeeId: input.employeeId,
+        recordId: certification.id,
+        kind: "CERTIFICATION",
+        changedFields: Object.keys(input.details),
+      },
+    });
   });
 }
 
@@ -159,5 +178,15 @@ export async function verifyCertification(
       certification.id,
       actor.userId,
     );
+    await recordAudit(transaction, actor, {
+      action: "hr.record-updated",
+      entityId: input.employeeId,
+      details: {
+        employeeId: input.employeeId,
+        recordId: certification.id,
+        kind: "CERTIFICATION",
+        status: "VERIFIED",
+      },
+    });
   });
 }

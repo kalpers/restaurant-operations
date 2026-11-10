@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
-import { withReadOnlySnapshot } from "@/db/transactions/transaction-context";
+import { withReadOnlySnapshot, withTransaction } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
 import { AuthorizationError, NotFoundError } from "@/shared/errors/app-error";
@@ -78,7 +79,7 @@ function notesFor(area: ReportArea, context: ReportContext): string[] {
     notes.push("Labor is scheduled hours from published schedules; there is no time clock.");
 
     if (!context.canViewCompensation) {
-      notes.push("Per-employee cost is hidden: it needs the compensation-view permission.");
+      notes.push("Labor cost and labor % are hidden: they need the compensation-view permission.");
     }
   }
 
@@ -139,7 +140,24 @@ export async function exportReportCsv(
     throw new NotFoundError("That report section does not exist.");
   }
 
-  return { fileName: csvFileName(report, sectionKey), csv: reportToCsv(report, sections) };
+  const csv = reportToCsv(report, sections);
+
+  // The report ran READ ONLY; recording the export is a separate, short write. If it can't
+  // be recorded, the export is refused.
+  await withTransaction(database, (transaction) =>
+    recordAudit(transaction, actor, {
+      action: "reports.exported",
+      entityId: null,
+      details: {
+        area: sectionKey ? `${area}:${sectionKey}` : area,
+        from: filters.from,
+        to: filters.to,
+        rowCount: sections.reduce((total, section) => total + section.rows.length, 0),
+      },
+    }),
+  );
+
+  return { fileName: csvFileName(report, sectionKey), csv };
 }
 
 export type DashboardTile = { key: string; label: string; value: ReportCell; kind: "money" | "count" | "minutes" | "percent" | "hours" | "cost" };
@@ -237,8 +255,11 @@ function tilesFor(area: ReportArea, sections: ReportSection[], context: ReportCo
 
       return [
         { key: "hours", label: "Scheduled hours", value: summary?.hours ?? "0.0000", kind: "hours" },
-        { key: "cost", label: "Scheduled labor cost", value: summary?.cost ?? "0.00", kind: "money" },
-        ...(context.canViewSales
+        // Cost and labor % can reveal a wage, so they need hr.compensation.view too.
+        ...(context.canViewCompensation
+          ? [{ key: "cost", label: "Scheduled labor cost", value: summary?.cost ?? "0.00", kind: "money" as const }]
+          : []),
+        ...(context.canViewSales && context.canViewCompensation
           ? [{ key: "laborPercent", label: "Labor % of sales", value: summary?.laborPercent ?? null, kind: "percent" as const }]
           : []),
       ];

@@ -6,6 +6,7 @@ import { isUniqueViolation } from "@/db/helpers/database-errors";
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { lockOrderRow, readOrderLocation, type OrderRow } from "@/modules/orders/repositories/order-repository";
 import { assertOrderOpen } from "@/modules/orders/rules/order-lifecycle";
@@ -132,6 +133,12 @@ export async function openSettlement(
       at: now,
     });
     await writeOutboxEvents(transaction, [settlementEvent(actor, "settlement.opened", created!, now)]);
+    await recordAudit(transaction, actor, {
+      action: "settlements.opened",
+      entityId: created!.id,
+      occurredAt: now,
+      after: { orderId: created!.orderId, status: "OPEN", amountDue: created!.orderAmountSnapshot },
+    });
 
     return {
       settlementId: created!.id,
@@ -261,6 +268,22 @@ export async function recordTender(
         await writeOutboxEvents(transaction, [
           settlementEvent(actor, "settlement.tender-recorded", settlement, now, { tenderId: tender!.id }),
         ]);
+        // Card and provider details on the tender are not copied into the audit trail.
+        await recordAudit(transaction, actor, {
+          action: "settlements.tender-recorded",
+          entityId: settlement.id,
+          occurredAt: now,
+          after: {
+            tenderId: tender!.id,
+            tenderType: tender!.tenderType,
+            status: tender!.status,
+            amount: tender!.amount,
+            tipAmount: tender!.tipAmount,
+            cashReceived: tender!.receivedAmount,
+            changeGiven: tender!.changeAmount,
+            description: tender!.otherDescription,
+          },
+        });
 
         return {
           settlementId: settlement.id,
@@ -329,6 +352,13 @@ export async function voidTender(
     await writeOutboxEvents(transaction, [
       settlementEvent(actor, "settlement.tender-voided", settlement, now, { tenderId: tender.id }),
     ]);
+    await recordAudit(transaction, actor, {
+      action: "settlements.tender-voided",
+      entityId: settlement.id,
+      occurredAt: now,
+      before: { tenderId: tender.id, tenderType: tender.tenderType, amount: tender.amount, status: tender.status },
+      after: { tenderId: tender.id, status: "VOIDED", reason: input.reason },
+    });
 
     return {
       settlementId: settlement.id,
@@ -384,6 +414,13 @@ export async function cancelSettlement(
       at: now,
     });
     await writeOutboxEvents(transaction, [settlementEvent(actor, "settlement.cancelled", settlement, now)]);
+    await recordAudit(transaction, actor, {
+      action: "settlements.cancelled",
+      entityId: settlement.id,
+      occurredAt: now,
+      before: { status: settlement.status },
+      after: { orderId: settlement.orderId, status: "CANCELLED", reason: input.reason },
+    });
 
     return { settlementId: settlement.id, status: "CANCELLED" };
   });

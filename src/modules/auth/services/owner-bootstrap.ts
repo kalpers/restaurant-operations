@@ -1,6 +1,7 @@
 import type { Database } from "@/db";
 import { withTransaction } from "@/db/transactions/transaction-context";
 import { findLocationsByCode } from "@/modules/organization/repositories/organization-repository";
+import { recordAudit } from "@/modules/auditing";
 import { BusinessRuleError, ValidationError } from "@/shared/errors/app-error";
 
 import { normalizeEmail } from "../email";
@@ -92,7 +93,7 @@ export async function bootstrapOwner(
       throw new Error("The account could not be created or found.");
     }
 
-    return {
+    const result = {
       userCreated: newUserId !== undefined,
       roleAssigned: await activateAssignment(transaction, {
         userId,
@@ -101,5 +102,16 @@ export async function bootstrapOwner(
         assignedByUserId: null,
       }),
     };
+
+    // A re-run that changes nothing writes no audit event.
+    if (result.userCreated || result.roleAssigned) {
+      await recordAudit(transaction, { system: true, organizationId: location.organizationId }, {
+        action: "auth.owner-bootstrapped",
+        entityId: userId,
+        details: { roleCode: OWNER_ROLE_CODE },
+      });
+    }
+
+    return result;
   });
 }

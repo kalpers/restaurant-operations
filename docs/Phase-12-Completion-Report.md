@@ -16,7 +16,7 @@ Phase 12 is implemented. A new read-only Reporting module serves eight report ar
 - seeds are idempotent;
 - reset safeguards hold.
 
-CI has not run; nothing is committed.
+Committed in `5dfe02f`. GitHub Actions passed on that commit; the project owner reported the result, I did not see the run.
 
 **Problem found by E2E and fixed.** The first full E2E runs failed 13, then 5 tests in other specs: sign-ins as managers landed on the login page. The cause was my bug. The inventory report's supplier-cost section called `toISOString()` on a timestamp that Drizzle's raw `execute` returns as text, not a `Date`. The section only has rows once a supplier cost is recorded that day. My integration fixtures never recorded one, but the E2E inventory spec does, so later dashboards crashed. A baseline run of `d6d3440` (my changes stashed) passed 109 of 109, which confirmed the regression was mine. The fix converts the value safely, and a new integration test covers that section.
 
@@ -209,7 +209,7 @@ No materialized view or summary table is justified at this volume.
   - Labor reads compensation only to compute aggregates. Per-employee cost needs `hr.compensation.view`.
   - The employee filter list shows name and number only.
   - Cost needs `inventory.cost.view`.
-- **Wage inference:** by-position labor totals are visible with `reports.labor` alone. Where a position has one employee, that reveals their wage. This follows your planning decision; see Risks.
+- **Wage inference: resolved after this report** (owner request, 2026-11-09, recorded in `docs/Audit-Domain-Completion-Report.md`). Every labor cost figure and labor % now also need `hr.compensation.view`; `reports.labor` alone shows hours.
 - **Injection:** all SQL values are bound parameters through Drizzle's `sql` template; CSV output neutralizes formula prefixes.
 - **Errors:** structured `{ error: { code, message, requestId } }`; no SQL or stack traces exposed.
 
@@ -233,7 +233,7 @@ Modified:
 - `tests/helpers/e2e-orders.ts`: `REPORTS_SCOPE`, `settleInCashFor`
 - `README.md`: §33 "Phase 12 Reporting"
 
-`docs/Phase-11-Completion-Report.md` has your uncommitted CI-pass edit from before this phase. I didn't change it.
+`docs/Phase-11-Completion-Report.md`: your CI-pass edit from before this phase, committed with `5dfe02f`. I didn't change it.
 
 ## Architecture Deviations
 
@@ -246,14 +246,14 @@ Modified:
 
 ## Risks
 
-1. **Wage inference from position totals** (above). Mitigation if wanted: require `hr.compensation.view` for all labor cost, or suppress positions with one employee.
+1. **Wage inference from position totals: resolved** after this report. All labor cost now needs `hr.compensation.view`.
 2. **Scheduled, not actual, labor.** Labor % may differ from payroll; the report and dashboard say so.
 3. **Dev-server streaming noise.** E2E runs log "The destination stream errored while writing data" when a test navigates away while the overview is still streaming. It's harmless, and I haven't compared it with the baseline log.
 
 ## Outstanding Issues
 
 1. **Audit domain:** still your decision (carried since Phase 3). Phase 13's plan expects "audit verified", so it needs deciding before Phase 13.
-2. **Not committed and no CI run.**
+2. **Commit and CI: resolved.** Committed in `5dfe02f`; GitHub Actions passed.
 3. **Carried over:** the Phase 6 held-table move gap, the old `restaurant-ops-postgres-1` container and volume, the stray `C:\Users\kneal\package-lock.json` (Next.js warns about it on every dev start), and the unanchored `out/` and `uploads/` rules in `.gitignore`.
 
 ## Accepted Risks
@@ -262,4 +262,4 @@ No new accepted risk. DEV-001, DEV-002 and DEV-003 are unchanged; no dependency 
 
 ## Next-Phase Readiness
 
-**Phase 13 readiness: READY**, subject to review of this report, a commit and CI. Phase 13 can reconcile its simulated day against these reports: sales to tenders, consumption to the ledger, fulfillment to tickets, and labor to the published schedule. The audit decision must be made first, because Phase 13 validates audit.
+**Phase 13 readiness: READY**, subject to review of this report. CI passed on `5dfe02f`. Phase 13 can reconcile its simulated day against these reports: sales to tenders, consumption to the ledger, fulfillment to tickets, and labor to the published schedule. The audit decision must be made first, because Phase 13 validates audit.

@@ -66,6 +66,7 @@ describe("visibleNavigation", () => {
       "Tables",
       "Sections",
       "Reports",
+      "Audit",
       "Organization",
       "Locations",
       "Areas",

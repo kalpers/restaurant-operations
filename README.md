@@ -1618,7 +1618,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Read-only by construction.** `src/modules/reporting/` runs every report inside `withReadOnlySnapshot` (a `REPEATABLE READ, READ ONLY` transaction), so PostgreSQL refuses any write and every figure in a report comes from one snapshot. It imports no other module's services, has no tables of its own, and uses indexed aggregation queries, with no views, summary tables or caches. Each report is for one Location and an inclusive business-date range of at most 92 days. Sources with a `business_date` column filter on it. Sources stored only as instants (kitchen items, Table Sessions, reservations, waitlist, settlement cancellations, supplier costs) use `businessDateRangeBounds` from BusinessDateService, which always agrees with `businessDateOf`, including across DST gaps. There is no calendar-date filter.
 
-**Approved policies.** *Sales* are CLOSED orders by `orders.business_date`, from the stored totals that Phase 9 derives from price and discount snapshots. Open checks and voids are separate figures, and net sales reconcile exactly to RECORDED tenders on completed settlements. *Labor* is scheduled, not clocked: ACTIVE assignments on non-cancelled shifts in PUBLISHED (or ARCHIVED) periods, by `shift_date`. Each is costed at the HOURLY `employee_position_compensation` rate in effect on that date for the Employee and the Position worked. SALARY work and work with no rate show hours only. *Audit* viewing is not built; `audit_events` remains an open decision.
+**Approved policies.** *Sales* are CLOSED orders by `orders.business_date`, from the stored totals that Phase 9 derives from price and discount snapshots. Open checks and voids are separate figures, and net sales reconcile exactly to RECORDED tenders on completed settlements. *Labor* is scheduled, not clocked: ACTIVE assignments on non-cancelled shifts in PUBLISHED (or ARCHIVED) periods, by `shift_date`. Each is costed at the HOURLY `employee_position_compensation` rate in effect on that date for the Employee and the Position worked. SALARY work and work with no rate show hours only. *Audit* viewing was not built in Phase 12; see Audit Domain below.
 
 **Areas.**
 - *Sales*: by order type and date; covers count once per Table Session.
@@ -1630,7 +1630,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 - *Labor*: by position and date, plus coverage of required vs assigned.
 - *Seating*: sessions, covers, duration and turns per table used; reservation statuses and no-show rate; waitlist outcomes and waits.
 
-**Authorization.** Each report needs `reports.view` plus its area's code (`reports.sales` covers menu performance). The actor is resolved at the requested Location, so another location's figures are refused. CSV export also needs `reports.export`. Cost columns also need `inventory.cost.view`; per-employee labor cost also needs `hr.compensation.view`; labor % of sales also needs `reports.sales`. Grants are unchanged from Phase 2: Owner and General Manager hold every reports code; Manager holds all but `reports.labor` and `reports.export`; Inventory Manager holds `reports.view` and `reports.inventory`. No permission or seed was added.
+**Authorization.** Each report needs `reports.view` plus its area's code (`reports.sales` covers menu performance). The actor is resolved at the requested Location, so another location's figures are refused. CSV export also needs `reports.export`. Cost columns also need `inventory.cost.view`; every labor cost figure (totals, by position, by date, per employee, and the dashboard tile) also needs `hr.compensation.view`, because a position or day with one person scheduled reveals their rate as cost ÷ hours; without it labor shows hours only. Labor % of sales needs both `hr.compensation.view` and `reports.sales`. Grants are unchanged from Phase 2: Owner and General Manager hold every reports code; Manager holds all but `reports.labor` and `reports.export`; Inventory Manager holds `reports.view` and `reports.inventory`. No permission or seed was added.
 
 **Surfaces.**
 - APIs: `GET /api/reports/{area}` (JSON), `GET /api/reports/{area}/export` (RFC 4180 CSV with a header block; spreadsheet formulas neutralized), `GET /api/reports/dashboard`.
@@ -1638,6 +1638,31 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 - `/dashboard` is the operational overview. Holders of `reports.view` see one business date's headline figures per permitted area, streamed so the page never waits on them.
 
 **Indexes.** Migration `0021` adds `kitchen_ticket_items (location_id, submitted_at)` and `table_sessions (location_id, seated_at)`, the two report filters that sequential-scanned in a 5,000-order measurement.
+
+### Audit Domain
+
+Built as its own step between Phase 12 and Phase 13 (owner decision, 2026-11-09), closing the question open since Phase 3. Report: `docs/Audit-Domain-Completion-Report.md`.
+
+**Table.** `audit_events` (migrations `0022`, `0023`) holds organization, location (null for organization-level events), actor type (`USER` or `SYSTEM`), acting user, the employee linked to that user at the time, action (`domain.action-name`), category, entity type and ID, time, request ID, and optional `before`, `after` and `details` JSONB. It is append-only: a trigger refuses UPDATE, DELETE and TRUNCATE. Domain histories (ledger, status histories, price and compensation history) stay separate and remain the source of truth for values.
+
+**Written with the action.** `recordAudit` in `src/modules/auditing/` takes the caller's transaction, so an event exists only if its action committed. SEND writes one event inside its idempotent block, so a replay writes none. The request ID comes from request context set by `apiRoute`; pages, Auth.js callbacks and CLI scripts record none.
+
+**Allow-listed fields.** `src/modules/auditing/audit-actions.ts` lists every audited action with the only fields it may keep; anything else is dropped, and nested objects are never stored. A unit test refuses any listed field named like a password, hash, token, secret, card, CVV, PIN, account, routing number, SSN, birth date, address, phone, email, rate, wage or salary. Wage changes record only that the rate changed (`rate: true`), never an amount. Personal and restricted HR changes record changed field names only, never values. Free-text HR reasons and inventory notes are not copied. Tender card, provider and authorization details are not copied.
+
+**What is recorded.**
+- *Access*: sign-in success, and failure with reason `BAD_PASSWORD` or `DISABLED` for a known account (an unknown email writes nothing; the typed email is never stored). A failure's event is written after the sign-in response is sent (Next.js `after`), so a wrong password on a real account answers in the same time as an unknown email; sign-out (best effort, after the session ends).
+- *Security*: owner bootstrap (SYSTEM), role create, activate and deactivate, permission changes (added and removed codes), user create, enable and disable (including by termination), role assignment and removal.
+- *HR*: employee create and edit, status changes, termination, position and location assignments, compensation changes, personal data, notes, reviews, disciplinary records, documents and certifications. Reads of personal data, compensation, sensitive notes, reviews and disciplinary records, and document downloads, are recorded in the same transaction as the read: if the event can't be written, no data is returned.
+- *Scheduling*: publish, archive, swap accepted, approved and denied.
+- *Orders*: SEND, item and order voids, discounts and comps applied and removed.
+- *Menu*: price changes, item create and update, recipe revisions created, published and retired.
+- *Inventory*: adjustments, waste, transfers, count approvals, purchase-order receipts.
+- *Settlements*: opened, tender recorded and voided, completed, cancelled.
+- *Reporting*: CSV exports (area, range, row count), written in a short transaction after the READ ONLY report; if it can't be written, the export is refused.
+
+Not recorded: viewing the audit trail, ordinary reads, draft order edits and kitchen status changes (which have their own history).
+
+**Viewing.** `GET /api/audit` and the `/audit` page need `audit.view` (Owner and General Manager). They show the current location's events plus organization-level ones, newest first, filtered by business-date range (at most 92 days), category, action, actor and entity, 100 per page with a cursor. There is no export of the audit trail. No permission or seed was added.
 
 ## 34. AWS POC Deployment Target
 
@@ -1783,6 +1808,16 @@ Reporting must remain read-only and derive results from:
 - Inventory ledger history
 - Fulfillment history
 - BusinessDateService-derived business dates
+
+### Audit Domain (before Phase 13)
+
+Deliver:
+- `audit_events`, append-only, written in the same transaction as each audited action
+- The audit registry with per-action allow-listed fields
+- Audit events for access, security administration, HR changes and restricted reads, scheduling, orders, menu and recipes, inventory, settlements and CSV export
+- Audit viewing API and page, controlled by `audit.view`
+- Audit tests
+- Audit Domain Completion Report (`docs/Audit-Domain-Completion-Report.md`)
 
 ### Phase 13: Full Integration/E2E
 

@@ -9,6 +9,7 @@ import {
   type DatabaseExecutor,
   type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { compareDecimals, significantScale, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
@@ -223,6 +224,16 @@ export async function applyOrderDiscount(
       .values({ orderId, ...snapshot(definition, actor, input.reason) })
       .returning({ id: orderDiscounts.id });
     const updated = await recomputeAndBumpOrder(transaction, orderId);
+    const [applied] = await transaction
+      .select({ amount: orderDiscounts.appliedAmount, isComp: orderDiscounts.isComp, reason: orderDiscounts.reason })
+      .from(orderDiscounts)
+      .where(eq(orderDiscounts.id, row!.id));
+
+    await recordAudit(transaction, actor, {
+      action: "orders.discount-applied",
+      entityId: orderId,
+      after: { discountId: row!.id, definitionCode: definition.code, ...applied },
+    });
 
     return { discountId: row!.id, orderVersion: updated.version };
   });
@@ -264,6 +275,20 @@ export async function applyItemDiscount(
       .values({ orderItemId: itemId, ...snapshot(definition, actor, input.reason) })
       .returning({ id: orderItemDiscounts.id });
     const updated = await recomputeAndBumpOrder(transaction, orderId);
+    const [applied] = await transaction
+      .select({
+        amount: orderItemDiscounts.appliedAmount,
+        isComp: orderItemDiscounts.isComp,
+        reason: orderItemDiscounts.reason,
+      })
+      .from(orderItemDiscounts)
+      .where(eq(orderItemDiscounts.id, row!.id));
+
+    await recordAudit(transaction, actor, {
+      action: "orders.discount-applied",
+      entityId: orderId,
+      after: { discountId: row!.id, orderItemId: itemId, definitionCode: definition.code, ...applied },
+    });
 
     return { discountId: row!.id, orderVersion: updated.version };
   });
@@ -330,6 +355,13 @@ export async function removeDiscount(
     }
 
     const updated = await recomputeAndBumpOrder(transaction, orderId);
+
+    await recordAudit(transaction, actor, {
+      action: "orders.discount-removed",
+      entityId: orderId,
+      before: { discountId, status: "APPLIED" },
+      after: { discountId, reason },
+    });
 
     return { id: orderId, version: updated.version };
   });

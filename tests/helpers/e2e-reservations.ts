@@ -38,6 +38,7 @@ import {
 } from "../../src/modules/reservations/services/reservation-service";
 import { createTable } from "../../src/modules/restaurant/services/table-service";
 import { localDateOf, localTimeOf } from "../../src/shared/time/zoned-time";
+import { clearAuditEvents } from "../fixtures/audit-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -352,6 +353,7 @@ export async function removeReservationE2eData(): Promise<void> {
   if (userIds.length) {
     await database.delete(tableConditionHistory).where(inArray(tableConditionHistory.changedByUserId, userIds));
     await database.delete(userRoles).where(inArray(userRoles.userId, userIds));
+    await clearAuditEvents(database, { userIds: userIds });
     await database.delete(users).where(inArray(users.id, userIds));
   }
 
