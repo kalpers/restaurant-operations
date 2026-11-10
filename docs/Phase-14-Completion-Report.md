@@ -153,7 +153,7 @@ No index was needed.
 | Typecheck | PASS |
 | Unit tests | PASS: 659 of 659 (baseline 634) |
 | Integration tests | 1,140 of 1,141 on a clean run with nothing else running. The one failure is a 5-second timeout in `tests/integration/database/migrations.test.ts` (see below). Two earlier runs that overlapped other database work had 2 such timeouts each. Every Phase 14 test passed in every run |
-| E2E tests | PASS: 120 of 120 (baseline 115) |
+| E2E tests | PASS: 120 of 120 (baseline 115) under `next dev`; after the fixes below, 120 of 120 in CI mode (`next start`) with retries off, and 119 of 120 under `next dev` (one dev-only flake, see E2E reliability fixes) |
 | Production build | PASS; `/scheduling/timeline` and `/api/scheduling/timeline` listed |
 | `npm audit --omit=dev` | PASS: 0 vulnerabilities |
 | `npm audit` (including dev) | 11 moderate, unchanged from Phase 13 (DEV-002) |
@@ -213,23 +213,45 @@ The E2E run logs the known "Outbox batch failed; it will be retried" line once a
 - `src/app/(app)/my-schedule/page.tsx`: a "View day" link for shifts at the current location
 - `src/components/app-shell/navigation.ts` and `.test.ts`: the Timeline entry
 - `tests/e2e/scheduling.spec.ts`, `tests/helpers/e2e-scheduling.ts` (`approvedTimeOff`), `tests/integration/validation/restaurant-day.test.ts`
-- `tests/helpers/e2e-day.ts`: the Phase 13 retry fix
+- `tests/helpers/e2e-day.ts`: the restaurant-day retry fix
+- `tests/e2e/inventory.spec.ts`: the count test's variance flow limited to its own item
+- `playwright.config.ts`: `next start` in CI
+- `.github/workflows/ci.yml`: upload Playwright failure files
+- `src/components/scheduling/timeline/schedule-timeline.tsx`: `data-ready` hydration marker
 - `README.md`: §11 pointer; §33 "Phase 14 Schedule Timeline"; §36 Phase 14 entry with AWS renumbered to 15 and 16
 - `CLAUDE.md`: phase list
 - `docs/accepted-risks.md` and `docs/Phase-13-Validation-Seed-Data.md`: "Phase 14 AWS" now "Phase 15"
 - `docs/User-Guide.md`: "Viewing the day's schedule"
 
-## Phase 13 E2E retry fix
+## E2E reliability fixes
 
-**What CI showed.** After Phase 13, CI reported `restaurant-day.spec.ts` as failed. Every attempt was refused at Publish, with "Draft" where "Published" was expected.
+The owner's CI runs after Phase 13 and Phase 14 reported failing and flaky E2E tests. The Phase 14 run took 14.7 minutes, with 1 failed and 11 flaky across unrelated specs. These were investigated, and fixed where the cause was confirmed.
 
-**Cause.** The spec always schedules the same fixed week (`DAY_WEEK`) and only disables its accounts afterwards, so the published period stays in the test database. CI runs with 2 retries. When the first attempt failed at any later step, each retry drafted the same week again, and publishing it was refused, because two published periods can't share a date. The retries therefore hid the first attempt's real error.
+**1. The restaurant-day spec couldn't survive a retry.**
+- *Cause:* the spec always schedules the same fixed week (`DAY_WEEK`) and leaves it published. When the first CI attempt failed for any reason, each retry drafted the same week, and Publish was refused because two published periods can't share a date. That gave the "Draft" where "Published" was expected in the Phase 13 run, and it hid the first attempt's real error.
+- *Reproduced:* `--repeat-each=2` gave a pass, then the CI error.
+- *Fix:* `createDraftSchedule` in `tests/helpers/e2e-day.ts` archives any period an earlier attempt published for that week, through `archivePeriod`, so nothing is deleted.
+- *Verified:* both repeats pass. In the Phase 14 CI run this spec was flaky, not failed, meaning a retry recovered.
 
-**Reproduced.** Locally, `--repeat-each=2` on the same database gave: first run passed, second run failed with exactly the CI error.
+**2. CI ran E2E against `next dev`.**
+- *Cause:* every first request compiles a route on demand, and on a busy runner the 5-second assertion after a save and refresh timed out. The failed combine-table test and the swap test both stopped at that kind of assertion, and the run took twice as long as the one before.
+- *Fix:* by owner decision, in CI only, `playwright.config.ts` starts `next start` on the build CI already makes. Local runs keep `next dev`; `npm run build` then `CI=1 npm run test:e2e` reproduces CI mode.
+- *Verified:* the full suite in CI mode, with retries off, ran 120 of 120 in 3.0 minutes, against 7.7–8.0 under `next dev`.
 
-**Fix.** `createDraftSchedule` in `tests/helpers/e2e-day.ts` now archives any period an earlier attempt of this spec published for that week before drafting a new one. It goes through `archivePeriod`, so nothing is deleted.
+**3. A Phase 14 test acted before hydration.**
+- *Cause:* the server-rendered timeline shows before React hydrates. Under the faster production server, one test pressed Escape before the panel's key listener existed.
+- *Fix:* the timeline sets `data-ready="true"` once hydrated, using `useSyncExternalStore`. Its tests wait for that before clicking or pressing keys, and check that the panel focuses its Close button.
+- *Verified:* 25 of 25 runs in production mode, with no retries.
 
-**Verified.** `--repeat-each=2` now passes twice. What made the first CI attempt fail is still unknown, because CI keeps no Playwright artifacts (see Remaining issues, item 3).
+**4. The inventory count test depended on other specs.**
+- *Cause:* the test approved a full count, which holds every item stocked at MAIN. Other specs running at the same time send orders that move those items' stock, and by the Phase 8 policy, approval then needs an explicit acknowledgement, so the count stayed "Submitted".
+- *Reproduced:* running it with the orders, kitchen and settlements specs on 2 workers failed 1 time in 2.
+- *Fix:* the test still starts a full count from the screen and checks it opens. The variance, submit and approve steps now use a count started through the API and limited to the test's own item.
+- *Verified:* 3 of 3 passes in that combination.
+
+**5. CI now keeps Playwright failure files.** By owner decision, `.github/workflows/ci.yml` uploads `test-results/` when the E2E step fails, kept for 7 days.
+
+**Not fixed: dev-mode-only flakes.** In a local `next dev` full run, `reservations.spec.ts:261` failed once at the first assertion after a save. It passes 3 of 3 alone and in CI mode, and CI no longer uses `next dev`. The other Phase 14 CI flakes weren't individually investigated. None failed in either of the two CI-mode full runs.
 
 ## Risks
 
@@ -242,7 +264,7 @@ The E2E run logs the known "Outbox batch failed; it will be retried" line once a
 
 1. **Your decision: the migration-upgrade test timeouts.** These tests replay the full chain and sit close to Vitest's 5-second default. Giving that `describe` an explicit timeout (for example 30 s, as other long tests do) would remove the intermittent failure. I haven't changed it, because the file is outside this phase. Say if you want it.
 2. **Carried over:** the outbox log line at E2E start, and the optional E2E cleanups noted in Phase 13.
-3. **Your decision: keep Playwright artifacts in CI.** `.github/workflows/ci.yml` doesn't upload `test-results/`, so a CI failure's `error-context.md` and trace are lost. The Phase 13 run also had 4 flaky tests (menu, reservations, restaurant, and the scheduling template test at `scheduling.spec.ts:201`). Each passed on retry, and none can be diagnosed without those files. An `actions/upload-artifact` step on failure would keep them.
+3. **Confirm in CI.** CI's switch to `next start` and the artifact upload have run only locally in CI mode. The next GitHub Actions run is their first real test.
 
 ## Next-phase readiness
 

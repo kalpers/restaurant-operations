@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
 import { barPlacement, formatDuration } from "@/modules/scheduling/rules/timeline-layout";
 import type {
@@ -31,6 +39,9 @@ type TimelineState = {
 };
 
 const LANE_HEIGHT = 40;
+
+/** Hydration is the only change `useSyncExternalStore` needs to see here. */
+const noSubscription = () => () => {};
 const HOUR_WIDTH = 56;
 const NAME_WIDTH = 168;
 
@@ -219,6 +230,13 @@ export function ScheduleTimeline({
   const barRefs = useRef(new Map<string, HTMLButtonElement>());
   const returnFocusTo = useRef<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.parse(data.generatedAt));
+  // False in the server render and during hydration, true once React has hydrated, so
+  // tests know the bars and keys respond.
+  const ready = useSyncExternalStore(
+    noSubscription,
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 60_000);
@@ -255,7 +273,7 @@ export function ScheduleTimeline({
   const next = addDays(data.date, 1);
 
   return (
-    <div>
+    <div data-testid="schedule-timeline" data-ready={ready ? "true" : "false"}>
       <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Day">
         <Link href={timelineHref({ ...state, date: previous, selected: null })} className={BUTTON_CLASS}>
           Previous day

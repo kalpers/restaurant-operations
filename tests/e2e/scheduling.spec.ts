@@ -486,6 +486,15 @@ test.describe("schedule timeline", () => {
   const barFor = (page: Page, displayName: string) =>
     page.getByRole("button", { name: new RegExp(`^${displayName}, Server`) });
 
+  /** Server-rendered bars show before React hydrates; clicks and keys need it hydrated. */
+  const timelineReady = (page: Page) =>
+    expect(page.getByTestId("schedule-timeline")).toHaveAttribute("data-ready", "true");
+
+  const openTimeline = async (page: Page, date: string) => {
+    await page.goto(`/scheduling/timeline?date=${date}`);
+    await timelineReady(page);
+  };
+
   test("a manager groups the day, selects bars and reads the details", async ({ page }) => {
     const { owner, staff, week } = await publishedDay();
     const manager = await createRoleAccount("MANAGER");
@@ -516,7 +525,9 @@ test.describe("schedule timeline", () => {
     await expect(page.getByText("E2E private reason")).toHaveCount(0);
 
     await page.reload();
+    await timelineReady(page);
     await expect(panel).toContainText(staff.displayName);
+    await expect(panel.getByRole("button", { name: "Close" })).toBeFocused();
 
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
@@ -545,7 +556,7 @@ test.describe("schedule timeline", () => {
     const manager = await createRoleAccount("MANAGER");
 
     await signIn(page, manager);
-    await page.goto(`/scheduling/timeline?date=${week.monday}`);
+    await openTimeline(page, week.monday);
     await page.getByRole("link", { name: "Next day" }).click();
     await expect(page).toHaveURL(new RegExp(`date=${nextDate(week.monday, 1)}`));
     await page.getByRole("link", { name: "Previous day" }).click();
@@ -571,7 +582,7 @@ test.describe("schedule timeline", () => {
     const server = await createRoleAccount("SERVER");
 
     await signIn(page, server);
-    await page.goto(`/scheduling/timeline?date=${week.monday}`);
+    await openTimeline(page, week.monday);
 
     const staffBar = barFor(page, staff.displayName);
 
@@ -594,7 +605,7 @@ test.describe("schedule timeline", () => {
 
     await page.setViewportSize({ width: 375, height: 800 });
     await signIn(page, server);
-    await page.goto(`/scheduling/timeline?date=${week.monday}`);
+    await openTimeline(page, week.monday);
     await expect(page.getByTestId("timeline-frame")).toBeVisible();
 
     const pageOverflow = await page.evaluate(

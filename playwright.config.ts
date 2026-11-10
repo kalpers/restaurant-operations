@@ -34,7 +34,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
+    // CI tests the production build its earlier `npm run build` step made, which is what
+    // ships and has no on-demand route compiles; under `next dev` a busy runner let
+    // assertions after a save time out. Locally, `next dev` needs no build first. To run
+    // the CI mode locally: `npm run build`, then `CI=1 npm run test:e2e`.
+    command: isCi() ? "npm run start" : "npm run dev",
     url: baseURL,
     env: {
       DATABASE_URL: requireTestDatabaseUrl(),

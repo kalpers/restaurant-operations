@@ -1733,6 +1733,8 @@ Phase 14 added a read-only Gantt view of one day's schedule at the current Locat
 
 **Read-only and cost.** The timeline writes nothing and isn't audited, because ordinary reads aren't. It doesn't subscribe to realtime updates. A day costs a fixed number of queries whatever the staff count; the reviewer violation check adds a fixed set per period covering the day. It uses the existing indexes on `schedule_periods (location_id, start_date)`, `shifts (schedule_period_id, shift_date)` and `shift_assignments (shift_id, status)`. The app has no dark mode, so the timeline is light-only.
 
+**E2E in CI.** In CI, Playwright runs against `next start` on the build the workflow already makes, not `next dev`. Local runs keep `next dev`; `npm run build` then `CI=1 npm run test:e2e` reproduces CI mode. When the E2E step fails, CI uploads `test-results/`, kept for 7 days. The timeline sets `data-ready="true"` once hydrated, and its tests wait for that before clicking.
+
 ## 34. AWS POC Deployment Target
 
 The POC must be deployable to AWS while keeping application code cloud-provider independent.

@@ -223,32 +223,33 @@ test.describe("inventory count", () => {
     const manager = await createRoleAccount("MANAGER");
     const name = `E2E Cheese ${uniqueCode().slice(-6)}`;
 
-    await createStockedItem(manager, { name, baseUnit: "SLICE", opening: "10" });
+    const item = await createStockedItem(manager, { name, baseUnit: "SLICE", opening: "10" });
+
     await signIn(page, manager);
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Inventory counts", exact: true }).click();
 
-    const countName = `E2E count ${uniqueCode().slice(-6)}`;
+    // Starting a full count from the screen works.
+    const fullCountName = `E2E full count ${uniqueCode().slice(-6)}`;
 
-    await page.getByRole("region", { name: "Start a count" }).getByLabel("Count name").fill(countName);
+    await page.getByRole("region", { name: "Start a count" }).getByLabel("Count name").fill(fullCountName);
     await page.getByRole("button", { name: "Start count" }).click();
-    await page.getByRole("link", { name: `Open ${countName}` }).click();
+    await page.getByRole("link", { name: `Open ${fullCountName}` }).click();
     await expect(page).toHaveURL(/\/inventory\/counts\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("listitem", { name: `Count line ${name}` })).toContainText("Expected 10 SLICE");
 
-    // Every other line (other items stocked here) is counted at its expected quantity.
-    const countId = page.url().split("/").pop()!;
-    const detail = await (await page.request.get(`/api/inventory/counts/${countId}`)).json();
+    // The variance flow counts only this test's item. A full count also holds every other
+    // item stocked here, which other specs move while this one runs; by the Phase 8
+    // policy, approval then needs an acknowledgement, and the result would depend on timing.
+    const countName = `E2E count ${uniqueCode().slice(-6)}`;
+    const started = await page.request.post("/api/inventory/counts", {
+      data: { name: countName, inventoryItemIds: [item.id] },
+    });
 
-    for (const line of detail.lines as { id: string; itemName: string; expectedQuantity: string; version: number }[]) {
-      if (line.itemName !== name) {
-        const saved = await page.request.patch(`/api/inventory/counts/${countId}/lines/${line.id}`, {
-          data: { countedQuantity: line.expectedQuantity, notes: null, expectedVersion: line.version },
-        });
+    expect(started.status()).toBe(201);
 
-        expect(saved.ok()).toBe(true);
-      }
-    }
+    const countId = ((await started.json()) as { id: string }).id;
 
-    await page.reload();
+    await page.goto(`/inventory/counts/${countId}`);
 
     const mine = page.getByRole("listitem", { name: `Count line ${name}` });
 
