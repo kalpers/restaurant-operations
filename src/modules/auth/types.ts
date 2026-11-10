@@ -14,6 +14,8 @@ export type AuthContext = {
   userId: string;
   email: string;
   active: true;
+  /** Set by an administrator's reset: every guard sends the user to change it first. */
+  mustChangePassword: boolean;
   locations: AuthorizedLocation[];
 };
 

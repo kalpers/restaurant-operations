@@ -109,6 +109,24 @@ Receiving goods changes on-hand inventory; creating a purchase order by itself d
 
 Open **Reporting**, choose an available report, and set the date range. Which reports and export actions appear depends on your permissions. Reports use the selected location and operational business dates; an early-morning clock time may belong to the previous restaurant business date.
 
+### Your password and account security
+
+- **Changing your password.** Choose **Change password** in the header, enter your current password, then the new one twice. It must be at least 14 characters and different from the current one. You stay signed in on this device, and every other device where you were signed in is signed out.
+- **Too many wrong passwords.** After 5 wrong passwords within 15 minutes, sign-in is locked for 15 minutes. The message stays "Invalid email or password", even if you then type the right one. Wait, or ask an administrator to unlock the account.
+- **After an administrator resets your password.** Sign in with the temporary password they give you. You go straight to **Change password**, and the app opens nothing else until you choose a new one.
+
+### Administration: users and System health
+
+- **Unlock an account.** In **Admin → Users**, a locked account shows **Locked until …**. Choose **Unlock** to end the lockout now; the password doesn't change.
+- **Reset a password.** Choose **Reset password** on the user's card and confirm.
+  - A temporary password appears **once**. Give it to the person directly; it can't be shown again.
+  - The person is signed out everywhere and must choose a new password at next sign-in.
+  - You can't reset your own password this way; use **Change password**.
+- **System health.** Owners and General Managers open **Admin → System health**.
+  - *What it shows:* how many realtime events are waiting, the oldest one's age, and any dead-lettered events, which are events delivery gave up on after repeated failures.
+  - *Retry:* re-queues a dead-lettered event. An event only tells screens to refresh, so a dead-lettered one never blocks newer updates.
+  - *Housekeeping:* published events are deleted automatically after 7 days. Order, kitchen, settlement and audit history is never deleted.
+
 ## Common Questions
 
 **Why is a page missing?** Navigation is based on your permissions at a location. Ask an administrator to review access; a hidden link is not a substitute for server-side authorization.
@@ -125,6 +143,7 @@ Open **Reporting**, choose an available report, and set the date range. Which re
 
 - The application records settlement details but does not process payments.
 - Tax calculation is deferred; settlement amounts shown are pre-tax.
+- There is no "forgot password" email or reset link. An administrator resets passwords in the app.
 - Full offline operation is not supported. If a request fails, check the displayed error and current record state before retrying a consequential action.
 
 For system architecture and implementation requirements, see the [project README](../README.md).

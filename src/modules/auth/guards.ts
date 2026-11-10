@@ -11,20 +11,41 @@ import {
   hasPermission,
   requirePermission,
 } from "./services/permission-service";
-import { getSessionUserId } from "./session";
+import { getSessionIdentity } from "./session";
 import type { Actor, AuthContext, AuthorizedLocation } from "./types";
 
 export const CURRENT_LOCATION_COOKIE = "restaurant_ops_location";
 
+export const PASSWORD_CHANGE_PATH = "/account/password";
+
 /**
- * The current user, resolved from the database. Null when signed out, disabled or
- * deleted. Cached for one render so a layout and its page share a single lookup.
+ * The current user, resolved from the database. Null when signed out, disabled, deleted,
+ * or signed in before their last password change. Cached for one render so a layout and its
+ * page share a single lookup.
  */
 export const getCurrentAuth = cache(async (): Promise<AuthContext | null> => {
-  const userId = await getSessionUserId();
+  const identity = await getSessionIdentity();
 
-  return userId ? getUserAuthContext(getDatabase(), userId) : null;
+  return identity
+    ? getUserAuthContext(getDatabase(), identity.userId, {
+        session: identity.authTime === undefined ? {} : { authTime: identity.authTime },
+      })
+    : null;
 });
+
+/**
+ * For the password-change endpoint only: the signed-in user even while a forced change is
+ * pending. Throws an error that maps to 401.
+ */
+export async function requireCurrentUserAllowingPasswordChange(): Promise<AuthContext> {
+  const auth = await getCurrentAuth();
+
+  if (!auth) {
+    throw new AuthenticationError();
+  }
+
+  return auth;
+}
 
 /**
  * The location being worked at. The cookie is only a preference: it counts only if the
@@ -42,12 +63,18 @@ export async function resolveCurrentLocation(
   );
 }
 
-/** For Route Handlers. Throws an error that maps to 401. */
+/**
+ * For Route Handlers. Throws an error that maps to 401, or 403 `PASSWORD_CHANGE_REQUIRED`
+ * while an administrator's reset is pending (every API guard goes through here).
+ */
 export async function requireCurrentUser(): Promise<AuthContext> {
-  const auth = await getCurrentAuth();
+  const auth = await requireCurrentUserAllowingPasswordChange();
 
-  if (!auth) {
-    throw new AuthenticationError();
+  if (auth.mustChangePassword) {
+    throw new AuthorizationError(
+      "Change your password before continuing.",
+      "PASSWORD_CHANGE_REQUIRED",
+    );
   }
 
   return auth;
@@ -89,12 +116,26 @@ export async function requireApiActor(): Promise<Actor> {
   };
 }
 
-/** For pages. Signed-out users go to the login page. */
-export async function requirePageUser(): Promise<AuthContext> {
+/** For the password-change page only. Signed-out users go to the login page. */
+export async function requirePageUserAllowingPasswordChange(): Promise<AuthContext> {
   const auth = await getCurrentAuth();
 
   if (!auth) {
     redirect("/login");
+  }
+
+  return auth;
+}
+
+/**
+ * For pages. Signed-out users go to the login page; a user with a pending forced change goes
+ * to the password-change page (every page guard goes through here).
+ */
+export async function requirePageUser(): Promise<AuthContext> {
+  const auth = await requirePageUserAllowingPasswordChange();
+
+  if (auth.mustChangePassword) {
+    redirect(PASSWORD_CHANGE_PATH);
   }
 
   return auth;

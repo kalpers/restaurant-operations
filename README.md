@@ -353,6 +353,28 @@ reports.export
 admin.roles
 ```
 
+As built in Phase 16, sign-in and password lifecycle are hardened:
+
+- **Throttling and lockout.**
+  - *Storage:* failures are counted in PostgreSQL (`login_throttles`), never in memory or Redis. Keys are HMAC-SHA256 of the normalized email and, only when `AUTH_CLIENT_IP_HEADER` names a trusted proxy's header, of the client IP. The typed email and IP are never stored.
+  - *Limits:* `AUTH_LOCKOUT_THRESHOLD` (5) failures within `AUTH_LOCKOUT_WINDOW_MINUTES` (15) lock the key for `AUTH_LOCKOUT_DURATION_MINUTES` (15). Unknown emails are counted the same way, so a lock reveals nothing.
+  - *Counting:* each failure is one atomic upsert. A success deletes the account key's row in the login transaction.
+  - *Outcome while locked:* the same `null` and "Invalid email or password", after the same dummy Argon2 verification. The password is not checked.
+  - *Audit:* a known account's lock records `auth.account-locked`, deferred like `auth.sign-in-failed`.
+  - *Unlock:* a holder of `admin.users.manage` can unlock from the Users page, under the no-escalation rule (`auth.account-unlocked`).
+- **Password change.** Any signed-in user can change their own password at `/account/password` (`POST /api/account/password`, linked from the header).
+  - *Rules:* the current password is required, a wrong one counts toward the lockout, and the new one must meet the length rules and differ.
+  - *Effects:* the hash is replaced, `password_changed_at` set, `must_change_password` cleared and `version` bumped, with `auth.password-changed`, in one transaction.
+- **Administrator reset.** `POST /api/admin/users/{id}/password-reset` requires `admin.users.manage`, the no-escalation rule and the user's `version`, and refuses the actor's own account.
+  - *Temporary password:* the server returns a random 16-character password once. It is never logged, audited or stored except as a hash.
+  - *Effects:* it sets `must_change_password` and `password_changed_at`, clears any lockout, and records `admin.user-password-reset`.
+- **Forced change.** While `must_change_password` is set, every page guard redirects to `/account/password` and every API guard returns 403 `PASSWORD_CHANGE_REQUIRED`. The only exceptions are the change page and endpoint and next-auth's own session and sign-out endpoints.
+- **Sessions end on a change.**
+  - *The claim:* the JWT carries `authTime`, the sign-in instant, set at sign-in and carried unchanged on refresh.
+  - *The check:* resolving the auth context rejects a session whose `authTime` is earlier than `password_changed_at`, like a disabled user's. Tokens from before Phase 16 have no `authTime`, so they are valid until the user's first change.
+  - *The changer:* after a self-service change, the server sets a fresh session cookie.
+- **No email, reset links or MFA.** Recovery is an administrator's reset, or `bootstrap:owner` for the last Owner.
+
 ## 10. Domain 03: Employees and HR
 
 Tables:
@@ -1100,7 +1122,19 @@ Critical commands such as SEND must accept a client-generated idempotency key. R
 
 As built in Phase 9, `idempotency_records` holds (organization, scope, key), the actor, a SHA-256 fingerprint of the canonical request (including the actor) and the stored response. The key is claimed inside the command's own transaction (`src/infrastructure/idempotency/`), so a rolled-back attempt leaves nothing and a concurrent duplicate waits on the unique key. A matching retry returns the stored response; the same key with a different request or actor is refused with `IDEMPOTENCY_KEY_REUSED` (409).
 
-As built in Phase 10, `outbox_events` rows are written inside the transaction that makes the change (SEND, item transitions, voids, Remakes, notifications), carry identifiers only, and are append-only except for their publishing state. One processor per Node.js process, started from `src/instrumentation.ts` (`OUTBOX_POLL_INTERVAL_MS`, default 1000, 0 turns it off), claims unpublished rows in sequence with `FOR UPDATE SKIP LOCKED`, hands them to the in-process realtime adapter, and marks them published; a publisher failure records the attempt and retries. The adapter fans events out to authenticated Server-Sent Events connections (`/api/realtime/stream`), filtered by organization, location and, for notifications, recipient. An event only means "refetch": screens read through their normal authorized queries and fall back to a slow refresh, with a Live/Reconnecting indicator. This fits the single-instance POC; several app instances would each need a feed (for example LISTEN/NOTIFY). Outbox retention is an operational task, not built.
+As built in Phase 10, `outbox_events` rows are written inside the transaction that makes the change (SEND, item transitions, voids, Remakes, notifications), carry identifiers only, and are append-only except for their publishing state. One processor per Node.js process, started from `src/instrumentation.ts` (`OUTBOX_POLL_INTERVAL_MS`, default 1000, 0 turns it off), claims unpublished rows in sequence with `FOR UPDATE SKIP LOCKED`, hands them to the in-process realtime adapter, and marks them published; a publisher failure records the attempt and retries. The adapter fans events out to authenticated Server-Sent Events connections (`/api/realtime/stream`), filtered by organization, location and, for notifications, recipient. An event only means "refetch": screens read through their normal authorized queries and fall back to a slow refresh, with a Live/Reconnecting indicator. This fits the single-instance POC; several app instances would each need a feed (for example LISTEN/NOTIFY).
+
+As built in Phase 16:
+
+- **Backoff.** A failed publish sets `next_attempt_at` to now + 1 s × 2^(attempts−1), capped at 5 minutes. The processor claims only rows that are unpublished, not dead-lettered, and due.
+- **Dead letter.** At `OUTBOX_MAX_ATTEMPTS` (10) attempts, `failed_at` is set and the row is never claimed again automatically. It is logged once at `error`, with identifiers only. Events only mean "refetch", so a backed-off or dead-lettered event never blocks later ones.
+- **System health.** **Admin → System health** (`/admin/system`, `GET /api/admin/system/health`, `admin.system.view`) shows the unpublished count, the oldest unpublished age, the dead-lettered count and the 50 most recent dead-lettered events: type, aggregate, attempts, last error name and times, never payloads.
+  - *Retry* (`admin.system.manage`) clears `failed_at` and `next_attempt_at`, resets `attempts`, and records `system.outbox-event-retried` (category `SYSTEM`).
+  - *Grants:* both permissions go to Owner and General Manager.
+- **Retention.** `runMaintenance` (`src/infrastructure/maintenance/`) deletes published outbox events older than `OUTBOX_RETENTION_DAYS` (7), and sign-in throttle rows whose window and lock have both expired.
+  - *How it runs:* in batches of 1,000, under a `pg_try_advisory_lock`, so only one runner works at a time. It runs from `npm run maintenance` (counts only) and from an in-process timer started in `src/instrumentation.ts` (`MAINTENANCE_INTERVAL_MS`, default one hour, 0 turns it off). A failure is logged and never stops the server.
+  - *The guard:* the outbox guard trigger allows deleting only published, non-dead-lettered rows.
+  - *Never purged:* unpublished and dead-lettered events, `idempotency_records` (send batches, Remakes and tenders reference them), audit events, ledgers, snapshots and all other history.
 
 ## 24. Transaction Boundaries
 
@@ -1774,6 +1808,25 @@ Phase 15 changed presentation only. It added no table, column, permission, migra
 - *Axe:* `tests/e2e/accessibility.spec.ts` runs axe (WCAG 2.1 A/AA) on Login, Dashboard, Floor, Order, Kitchen, Settlement, Timeline, Audit, Reservations and Employees. It fails on serious or critical issues.
 - *Shell:* `tests/e2e/ui-shell.spec.ts` covers grouped navigation, the phone drawer, confirmations, toasts, not-found and the menu search. Specs use `tests/helpers/e2e-ui.ts` (`openNavLink`, `confirmDialog`, `expectToast`).
 
+### Phase 16 Hardening
+
+Phase 16 closed four reliability and security gaps and added no restaurant feature or dependency. Plan: `docs/Phase-16-Hardening.md`. Report: `docs/Phase-16-Completion-Report.md`. The policies as built are under section 9 (throttling, lockout, password change, reset, forced change, session invalidation) and section 23 (outbox backoff, dead letter, System health, retention).
+
+- **Schema:**
+  - `login_throttles`;
+  - `users.must_change_password` and `users.password_changed_at`;
+  - `outbox_events.next_attempt_at` and `failed_at`, with the unpublished partial index rebuilt to exclude dead-lettered rows;
+  - the `SYSTEM` audit category;
+  - the outbox guard trigger now allows deleting published, non-dead-lettered rows only.
+  - Migrations: `0024_hardening.sql` (generated) and `0025_outbox_retention_guard.sql` (custom).
+- **Permissions:** `admin.system.view` and `admin.system.manage`, for Owner and General Manager (owner decision: no separate administrator role exists). Seeded by `security.system-permissions`.
+- **Audit actions:** `auth.account-locked`, `auth.account-unlocked`, `auth.password-changed` and `admin.user-password-reset`, all SECURITY with no details, and `system.outbox-event-retried` (SYSTEM). None holds an email, password, IP or payload.
+- **Configuration** (`src/config/env.ts`, defaults in `.env.example`):
+  - `AUTH_LOCKOUT_THRESHOLD`, `AUTH_LOCKOUT_WINDOW_MINUTES`, `AUTH_LOCKOUT_DURATION_MINUTES`;
+  - `AUTH_CLIENT_IP_HEADER`, `AUTH_IP_THRESHOLD`;
+  - `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_RETENTION_DAYS`, `MAINTENANCE_INTERVAL_MS`.
+- **Commands:** `npm run maintenance` runs one retention pass and prints counts only.
+
 ## 34. Cloud Deployment (On Hold)
 
 Cloud deployment is on hold by owner decision (2026-11-10). No deployment phase is scheduled. `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure.
@@ -1924,6 +1977,12 @@ Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved fr
 Deliver a consistent, accessible presentation layer without changing behavior: design tokens and shared UI primitives in `src/components/ui/`, grouped permission-filtered navigation with a phone drawer, confirmation before destructive actions, toasts, route-level loading/error/not-found states, empty states, human status labels, a readable audit viewer, upgraded Floor, Kitchen/Bar/Expo, Order, Settlement, Dashboard and Login screens, and an automated accessibility check. Light theme only. No migration, permission, API or domain rule change. Plan: `docs/Phase-15-UI-Look-and-Feel.md`.
 
 Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved from Phases 15 and 16 to 16 and 17. Documents written before then that mention "Phase 15" for AWS work mean Phase 16.
+
+### Phase 16: Hardening
+
+Close reliability and security gaps without adding restaurant features: Postgres-backed sign-in throttling with temporary lockout and admin unlock (identical failure message and timing preserved), outbox backoff and dead letter with an Admin → System health page and audited retry, a maintenance runner that purges published outbox rows past retention and expired throttle rows (idempotency records and all history are kept), and a password lifecycle: self-service change, admin reset with a one-time temporary password, forced change at next sign-in, and ending older sessions after a change. No email, reset links or MFA. Plan: `docs/Phase-16-Hardening.md`.
+
+Added by owner decision on 2026-11-10. It is not a deployment phase; cloud deployment stays on hold.
 
 ### Cloud Deployment: On Hold
 

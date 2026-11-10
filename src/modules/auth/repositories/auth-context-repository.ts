@@ -16,7 +16,13 @@ export async function findUserIdentity(
   userId: string,
 ) {
   const [user] = await executor
-    .select({ id: users.id, email: users.email, active: users.active })
+    .select({
+      id: users.id,
+      email: users.email,
+      active: users.active,
+      mustChangePassword: users.mustChangePassword,
+      passwordChangedAt: users.passwordChangedAt,
+    })
     .from(users)
     .where(eq(users.id, userId));
 

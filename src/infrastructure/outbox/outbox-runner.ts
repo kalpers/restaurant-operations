@@ -1,5 +1,6 @@
 import { getEnv } from "@/config/env";
 import { getDatabase } from "@/db";
+import { readErrorCode } from "@/infrastructure/health/check-database-health";
 import { writeLog } from "@/infrastructure/logging/logger";
 import { publishToSubscribers } from "@/infrastructure/realtime/realtime-hub";
 
@@ -15,7 +16,7 @@ const store = globalThis as typeof globalThis & { restaurantOpsOutboxRunner?: Ru
  * Errors are logged once per failure streak and retried, never thrown into the server.
  */
 export function startOutboxProcessor(): void {
-  const interval = getEnv().OUTBOX_POLL_INTERVAL_MS;
+  const { OUTBOX_POLL_INTERVAL_MS: interval, OUTBOX_MAX_ATTEMPTS: maxAttempts } = getEnv();
 
   if (interval === 0 || store.restaurantOpsOutboxRunner) {
     return;
@@ -29,7 +30,7 @@ export function startOutboxProcessor(): void {
     let published = 0;
 
     try {
-      published = await processOutboxBatch(getDatabase(), publishToSubscribers);
+      published = await processOutboxBatch(getDatabase(), publishToSubscribers, { maxAttempts });
 
       if (runner.failing) {
         runner.failing = false;
@@ -45,6 +46,8 @@ export function startOutboxProcessor(): void {
           operation: "process-batch",
           message: "Outbox batch failed; it will be retried.",
           errorName: error instanceof Error ? error.name : "UnknownError",
+          // The PostgreSQL SQLSTATE or driver code, never its message.
+          errorCode: readErrorCode(error),
         });
       }
     }

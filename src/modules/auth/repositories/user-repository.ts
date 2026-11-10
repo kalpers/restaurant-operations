@@ -4,7 +4,7 @@ import { nextVersion } from "@/db/helpers/versioning";
 import { employees, locations, roles, userRoles, users } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 
-/** The only query that reads a password hash. Its result stays in the auth module. */
+/** One of the two queries that read a password hash. Its result stays in the auth module. */
 export async function findCredentialsByNormalizedEmail(
   executor: DatabaseExecutor,
   normalizedEmail: string,
@@ -42,6 +42,67 @@ export async function findUserStatusById(
     .where(eq(users.id, userId));
 
   return user;
+}
+
+/** The normalized email and version, for throttle keys and password changes. */
+export async function findUserAccountById(executor: DatabaseExecutor, userId: string) {
+  const [user] = await executor
+    .select({
+      id: users.id,
+      normalizedEmail: users.normalizedEmail,
+      version: users.version,
+    })
+    .from(users)
+    .where(eq(users.id, userId));
+
+  return user;
+}
+
+/**
+ * The other query that reads a password hash, to verify a self-service change's current
+ * password. Its result stays in the auth module.
+ */
+export async function findPasswordHashById(executor: DatabaseExecutor, userId: string) {
+  const [user] = await executor
+    .select({ id: users.id, normalizedEmail: users.normalizedEmail, passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.id, userId));
+
+  return user;
+}
+
+/**
+ * Replaces the password hash. A self-service change clears the forced-change flag; an
+ * administrator's reset sets it. Either way `password_changed_at` moves, which ends every
+ * older session. Returns no rows on a stale version.
+ */
+export function updateUserPassword(
+  executor: DatabaseExecutor,
+  input: {
+    userId: string;
+    passwordHash: string;
+    mustChangePassword: boolean;
+    expectedVersion?: number;
+  },
+) {
+  return executor
+    .update(users)
+    .set({
+      passwordHash: input.passwordHash,
+      mustChangePassword: input.mustChangePassword,
+      passwordChangedAt: sql`now()`,
+      version: nextVersion(users.version),
+    })
+    .where(
+      input.expectedVersion === undefined
+        ? eq(users.id, input.userId)
+        : and(eq(users.id, input.userId), eq(users.version, input.expectedVersion)),
+    )
+    .returning({
+      id: users.id,
+      version: users.version,
+      passwordChangedAt: users.passwordChangedAt,
+    });
 }
 
 export async function findUserStatusByNormalizedEmail(
@@ -159,7 +220,9 @@ export function findUserAssignmentRowsAtLocation(
     .select({
       id: users.id,
       email: users.email,
+      normalizedEmail: users.normalizedEmail,
       active: users.active,
+      mustChangePassword: users.mustChangePassword,
       lastLoginAt: users.lastLoginAt,
       version: users.version,
       roleId: roles.id,

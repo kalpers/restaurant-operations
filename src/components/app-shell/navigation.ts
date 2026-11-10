@@ -40,6 +40,7 @@ export type NavigationIcon =
   | "users"
   | "roles"
   | "permissions"
+  | "system"
   | "tables"
   | "sections";
 
@@ -111,6 +112,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/admin/users", label: "Users", permission: "admin.users.view", group: "admin", icon: "users" },
   { href: "/admin/roles", label: "Roles", permission: "admin.roles.view", group: "admin", icon: "roles" },
   { href: "/admin/permissions", label: "Permissions", permission: "admin.roles.view", group: "admin", icon: "permissions" },
+  { href: "/admin/system", label: "System health", permission: "admin.system.view", group: "admin", icon: "system" },
 ];
 
 /** Usability only. Every page and API enforces its own permission on the server. */

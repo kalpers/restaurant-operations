@@ -1,3 +1,4 @@
+import { ResetPasswordButton } from "@/components/admin/reset-password-button";
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
 import { getDatabase } from "@/db";
@@ -6,11 +7,18 @@ import { MINIMUM_PASSWORD_LENGTH } from "@/modules/auth/password";
 import { hasPermission } from "@/modules/auth/services/permission-service";
 import { listRoles } from "@/modules/auth/services/role-service";
 import { listUsersAtLocation } from "@/modules/auth/services/user-service";
+import { listLocationsWithSettings } from "@/modules/organization/services/organization-service";
+
+function formatLockTime(value: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(value);
+}
 
 export default async function UsersPage() {
   const { auth, location } = await requirePagePermission("admin.users.view");
   const database = getDatabase();
   const users = await listUsersAtLocation(database, location.locationId);
+  const [locationRow] = await listLocationsWithSettings(database, [location.locationId]);
+  const timeZone = locationRow?.location.timezone ?? "UTC";
   const canManage = hasPermission(
     auth,
     "admin.users.manage",
@@ -59,9 +67,19 @@ export default async function UsersPage() {
           <li key={user.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="font-medium break-all">{user.email}</p>
-              <p className={user.active ? "text-success-800" : "text-danger-700"}>
-                {user.active ? "Active" : "Disabled"}
-              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                {user.lockedUntil && (
+                  <p className="text-warning-800" data-testid="user-locked">
+                    Locked until {formatLockTime(user.lockedUntil, timeZone)}
+                  </p>
+                )}
+                {user.mustChangePassword && (
+                  <p className="text-neutral-600">Must change password</p>
+                )}
+                <p className={user.active ? "text-success-800" : "text-danger-700"}>
+                  {user.active ? "Active" : "Disabled"}
+                </p>
+              </div>
             </div>
             <ul className="mb-3 grid gap-2">
               {user.roles.map((role) => (
@@ -83,6 +101,17 @@ export default async function UsersPage() {
             </ul>
             {canManage && (
               <div className="grid gap-4">
+                {user.lockedUntil && (
+                  <ActionButton
+                    method="POST"
+                    url={`/api/admin/users/${user.id}/unlock`}
+                    label="Unlock"
+                    confirm={{ title: "Unlock this account?", body: "The sign-in lockout ends now. Their password doesn't change.", confirmLabel: "Unlock" }}
+                  />
+                )}
+                {user.id !== auth.userId && (
+                  <ResetPasswordButton userId={user.id} email={user.email} version={user.version} />
+                )}
                 {user.id !== auth.userId && (
                   <ActionButton
                     method="PATCH"

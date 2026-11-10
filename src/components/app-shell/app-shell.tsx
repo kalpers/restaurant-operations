@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, UtensilsCrossed, X } from "lucide-react";
+import { KeyRound, Menu, UtensilsCrossed, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -173,6 +173,13 @@ export function AppShell({ groups, email, headerActions, children }: AppShellPro
                   </span>
                   <span className="truncate">{email}</span>
                 </span>
+                <Link
+                  href="/account/password"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-neutral-800 hover:bg-neutral-100"
+                >
+                  <KeyRound aria-hidden className="size-4" />
+                  Change password
+                </Link>
                 <SignOutButton />
               </div>
             </div>

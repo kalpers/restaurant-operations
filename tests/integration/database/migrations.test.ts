@@ -63,6 +63,7 @@ const EXPECTED_TABLES = [
   "public.kitchen_tickets",
   "public.location_settings",
   "public.locations",
+  "public.login_throttles",
   "public.menu_availability",
   "public.menu_categories",
   "public.menu_item_modifier_groups",
@@ -371,6 +372,31 @@ describe("reconstruction from checked-in migrations", () => {
       { tgname: "audit_events_append_only_trigger" },
       { tgname: "audit_events_no_truncate_trigger" },
     ]);
+  });
+
+  it("upgrades a Phase 15 database in place, keeping published outbox history deletable only", async () => {
+    await upgradeFromMigrationIndex(23);
+    expect(await query("SELECT * FROM login_throttles")).toEqual([]);
+    expect(
+      await query("SELECT must_change_password, password_changed_at FROM users"),
+    ).toEqual([{ must_change_password: false, password_changed_at: null }]);
+
+    await query(`
+      INSERT INTO outbox_events (organization_id, event_type, aggregate_type, aggregate_id, payload, occurred_at, published_at)
+      SELECT id, 'order.closed', 'order', gen_random_uuid(), '{}'::jsonb, now(), now() FROM organizations
+      UNION ALL
+      SELECT id, 'order.closed', 'order', gen_random_uuid(), '{}'::jsonb, now(), NULL FROM organizations
+    `);
+    await expect(query("DELETE FROM outbox_events WHERE published_at IS NULL")).rejects.toThrow(
+      /Only a published outbox event can be deleted/,
+    );
+    await query("DELETE FROM outbox_events WHERE published_at IS NOT NULL");
+    expect(await query("SELECT count(*)::int AS total FROM outbox_events")).toEqual([{ total: 1 }]);
+    await expect(
+      query("UPDATE outbox_events SET failed_at = now(), published_at = now()"),
+    ).rejects.toThrow(/outbox_events_published_or_failed/);
+    await query("UPDATE outbox_events SET failed_at = now()");
+    await expect(query("DELETE FROM outbox_events")).rejects.toThrow(/Only a published outbox event can be deleted/);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {

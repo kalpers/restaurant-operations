@@ -1,6 +1,18 @@
 import { z } from "zod";
 
 const DEFAULT_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
+/** A whole number within bounds, with a default when unset. */
+function wholeNumber(options: { min: number; max: number; default: number }) {
+  return z.coerce
+    .number({ error: "must be a whole number" })
+    .int({ error: "must be a whole number" })
+    .min(options.min, { error: `must be at least ${options.min}` })
+    .max(options.max, { error: `must be at most ${options.max}` })
+    .default(options.default);
+}
+
+const emptyAsUnset = (value: unknown) => (value === "" ? undefined : value);
 const MAXIMUM_DOCUMENT_BYTES = 50 * 1024 * 1024;
 
 const envSchema = z
@@ -44,9 +56,28 @@ const envSchema = z
       .min(0, { error: "must not be negative" })
       .max(60_000, { error: "must be at most 60000" })
       .default(1000),
+    // Phase 16 outbox failure handling and retention (README section 23).
+    OUTBOX_MAX_ATTEMPTS: wholeNumber({ min: 1, max: 100, default: 10 }),
+    OUTBOX_RETENTION_DAYS: wholeNumber({ min: 1, max: 3650, default: 7 }),
+    // How often the in-process maintenance runner purges expired rows. 0 turns it off.
+    MAINTENANCE_INTERVAL_MS: wholeNumber({ min: 0, max: 86_400_000, default: 3_600_000 }),
+    // Phase 16 sign-in throttling (README section 9).
+    AUTH_LOCKOUT_THRESHOLD: wholeNumber({ min: 1, max: 100, default: 5 }),
+    AUTH_LOCKOUT_WINDOW_MINUTES: wholeNumber({ min: 1, max: 1440, default: 15 }),
+    AUTH_LOCKOUT_DURATION_MINUTES: wholeNumber({ min: 1, max: 1440, default: 15 }),
+    // Set only behind a trusted proxy that writes this header (e.g. x-forwarded-for).
+    // Unset, the default, means no per-IP throttling, because the header could be spoofed.
+    AUTH_CLIENT_IP_HEADER: z.preprocess(
+      emptyAsUnset,
+      z
+        .string({ error: "must be a string" })
+        .regex(/^[a-z0-9-]{1,64}$/, { error: "must be a lowercase header name" })
+        .optional(),
+    ),
+    AUTH_IP_THRESHOLD: wholeNumber({ min: 1, max: 10_000, default: 50 }),
     // An empty value, as in a copied .env.example, counts as unset.
     NEXTAUTH_SECRET: z.preprocess(
-      (value) => (value === "" ? undefined : value),
+      emptyAsUnset,
       z
         .string({ error: "must be a string" })
         .min(32, { error: "must be at least 32 characters" })

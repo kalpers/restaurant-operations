@@ -24,7 +24,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:demo": "tsx scripts/seed-demo.ts",
     "db:seed:validation": "tsx scripts/seed-validation.ts",
-    "bootstrap:owner": "tsx scripts/bootstrap-owner.ts"
+    "bootstrap:owner": "tsx scripts/bootstrap-owner.ts",
+    "maintenance": "tsx scripts/maintenance.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.2",

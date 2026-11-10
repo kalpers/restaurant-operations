@@ -132,3 +132,50 @@ describe("parseEnv", () => {
     expect(message).not.toContain("admin");
   });
 });
+
+describe("Phase 16 hardening settings", () => {
+  it("defaults every limit when unset", () => {
+    const env = parseEnv(validEnv);
+
+    expect(env).toMatchObject({
+      AUTH_LOCKOUT_THRESHOLD: 5,
+      AUTH_LOCKOUT_WINDOW_MINUTES: 15,
+      AUTH_LOCKOUT_DURATION_MINUTES: 15,
+      AUTH_IP_THRESHOLD: 50,
+      OUTBOX_MAX_ATTEMPTS: 10,
+      OUTBOX_RETENTION_DAYS: 7,
+      MAINTENANCE_INTERVAL_MS: 3_600_000,
+    });
+    expect(env.AUTH_CLIENT_IP_HEADER).toBeUndefined();
+  });
+
+  it("treats an empty client IP header as unset and accepts a lowercase header name", () => {
+    expect(parseEnv({ ...validEnv, AUTH_CLIENT_IP_HEADER: "" }).AUTH_CLIENT_IP_HEADER).toBeUndefined();
+    expect(parseEnv({ ...validEnv, AUTH_CLIENT_IP_HEADER: "x-forwarded-for" }).AUTH_CLIENT_IP_HEADER).toBe(
+      "x-forwarded-for",
+    );
+  });
+
+  it("parses configured values", () => {
+    expect(
+      parseEnv({ ...validEnv, AUTH_LOCKOUT_THRESHOLD: "3", MAINTENANCE_INTERVAL_MS: "0", OUTBOX_MAX_ATTEMPTS: "4" }),
+    ).toMatchObject({ AUTH_LOCKOUT_THRESHOLD: 3, MAINTENANCE_INTERVAL_MS: 0, OUTBOX_MAX_ATTEMPTS: 4 });
+  });
+
+  it.each([
+    ["AUTH_LOCKOUT_THRESHOLD", "0"],
+    ["AUTH_LOCKOUT_THRESHOLD", "2.5"],
+    ["AUTH_LOCKOUT_WINDOW_MINUTES", "abc"],
+    ["AUTH_LOCKOUT_DURATION_MINUTES", "-1"],
+    ["AUTH_IP_THRESHOLD", "0"],
+    ["AUTH_CLIENT_IP_HEADER", "X-Forwarded-For"],
+    ["OUTBOX_MAX_ATTEMPTS", "0"],
+    ["OUTBOX_RETENTION_DAYS", "0"],
+    ["MAINTENANCE_INTERVAL_MS", "-5"],
+  ])("rejects %s=%s without echoing the value", (name, value) => {
+    const message = errorMessageFor({ ...validEnv, [name]: value });
+
+    expect(message).toContain(name);
+    expect(message).not.toContain(`=${value}`);
+  });
+});

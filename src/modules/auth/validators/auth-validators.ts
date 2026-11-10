@@ -44,3 +44,11 @@ export const userRoleParamsSchema = z.object({
   userId: z.uuid(),
   roleId: z.uuid(),
 });
+
+/** Shape only; length rules and the current-password check are in the password service. */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(MAXIMUM_PASSWORD_LENGTH),
+  newPassword: z.string().min(1).max(MAXIMUM_PASSWORD_LENGTH),
+});
+
+export const resetPasswordSchema = z.object({ expectedVersion });

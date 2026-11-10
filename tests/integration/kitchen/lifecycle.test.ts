@@ -322,7 +322,7 @@ describe("fulfillment lifecycle", () => {
 
   it("the outbox processor publishes committed events once, in sequence, to matching subscribers", async () => {
     // Publish whatever earlier tests left, so this test sees only its own events.
-    await processOutboxBatch(database(), () => {}, 10_000);
+    await processOutboxBatch(database(), () => {}, { limit: 10_000 });
 
     const { order, sent } = await sendOrder(database(), scenario, [{ menuItemId: scenario.cocktail.id }]);
     const received: string[] = [];
@@ -368,7 +368,7 @@ describe("fulfillment lifecycle", () => {
   });
 
   it("a publisher failure leaves the event unpublished with its attempt recorded", async () => {
-    await processOutboxBatch(database(), () => {}, 10_000);
+    await processOutboxBatch(database(), () => {}, { limit: 10_000 });
     await sendOrder(database(), scenario, [{ menuItemId: scenario.cocktail.id }]);
 
     const count = await processOutboxBatch(database(), () => {
@@ -379,11 +379,14 @@ describe("fulfillment lifecycle", () => {
     expect(count).toBe(0);
     expect(pending.length).toBe(2);
     expect(pending.every((row) => row.attempts === 1 && row.lastError === "TypeError")).toBe(true);
-    expect(await processOutboxBatch(database(), () => {})).toBe(2);
+    // Backed off by one second (Phase 16), then published.
+    expect(pending.every((row) => row.nextAttemptAt !== null && row.failedAt === null)).toBe(true);
+    expect(await processOutboxBatch(database(), () => {})).toBe(0);
+    expect(await processOutboxBatch(database(), () => {}, { now: new Date(Date.now() + 2000) })).toBe(2);
   });
 
   it("a recipient-only notification event reaches only that user", async () => {
-    await processOutboxBatch(database(), () => {}, 10_000);
+    await processOutboxBatch(database(), () => {}, { limit: 10_000 });
 
     const { item } = await burgerOrder();
     const started = await step(item.id, "start", item.version);

@@ -21,3 +21,29 @@ export function getAuthConfig(): { secret: string; secureCookies: boolean } {
     secureCookies: env.APP_BASE_URL.startsWith("https://"),
   };
 }
+
+export type ThrottleConfig = {
+  /** Keys throttle rows, so no typed email or IP is stored. Rotating it resets counters. */
+  secret: string;
+  threshold: number;
+  windowMs: number;
+  durationMs: number;
+  /** Null unless a trusted proxy header is configured. */
+  clientIpHeader: string | null;
+  ipThreshold: number;
+};
+
+/** Sign-in throttling limits (Phase 16, README section 9). */
+export function getThrottleConfig(): ThrottleConfig {
+  const env = getEnv();
+  const { secret } = getAuthConfig();
+
+  return {
+    secret,
+    threshold: env.AUTH_LOCKOUT_THRESHOLD,
+    windowMs: env.AUTH_LOCKOUT_WINDOW_MINUTES * 60_000,
+    durationMs: env.AUTH_LOCKOUT_DURATION_MINUTES * 60_000,
+    clientIpHeader: env.AUTH_CLIENT_IP_HEADER ?? null,
+    ipThreshold: env.AUTH_IP_THRESHOLD,
+  };
+}

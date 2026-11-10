@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   pgTable,
   primaryKey,
   text,
@@ -28,6 +29,10 @@ export const users = pgTable(
     emailVerifiedAt: timestamptz("email_verified_at"),
     lastLoginAt: timestamptz("last_login_at"),
     disabledAt: timestamptz("disabled_at"),
+    /** Set by an administrator's reset; every guard sends the user to change it. */
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /** Sessions signed in before this instant are rejected. Null until a first change. */
+    passwordChangedAt: timestamptz("password_changed_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -121,5 +126,25 @@ export const userRoles = pgTable(
       table.locationId,
     ),
     index("user_roles_role_id_idx").on(table.roleId),
+  ],
+);
+
+/**
+ * Sign-in throttling (Phase 16). One row per throttle key: an HMAC of a normalized email or
+ * a client IP, never the value itself. Counted with one atomic upsert per failure, so the
+ * limit holds across restarts and processes. Lockout is always temporary.
+ */
+export const loginThrottles = pgTable(
+  "login_throttles",
+  {
+    keyHash: text("key_hash").primaryKey(),
+    failureCount: integer("failure_count").notNull(),
+    windowStartedAt: timestamptz("window_started_at").notNull(),
+    lockedUntil: timestamptz("locked_until"),
+    updatedAt: timestamptz("updated_at").notNull(),
+  },
+  (table) => [
+    check("login_throttles_failure_count_positive", sql`${table.failureCount} > 0`),
+    check("login_throttles_key_hash_format", sql`${table.keyHash} ~ '^[0-9a-f]{64}$'`),
   ],
 );

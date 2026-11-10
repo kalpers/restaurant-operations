@@ -14,6 +14,7 @@ const context: AuthContext = {
   userId: "user-1",
   email: "person@example.com",
   active: true,
+  mustChangePassword: false,
   locations: [
     {
       locationId: "location-a",

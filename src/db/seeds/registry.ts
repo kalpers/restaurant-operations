@@ -25,6 +25,7 @@ import {
 } from "./scheduling-foundation";
 import { securityFoundationSeed } from "./security-foundation";
 import { securityHrPermissionsSeed } from "./security-hr-permissions";
+import { securitySystemPermissionsSeed } from "./security-system-permissions";
 
 /** Seeds run in this order. Later phases register their seeds here. */
 export const seeds: readonly Seed[] = [
@@ -46,4 +47,5 @@ export const seeds: readonly Seed[] = [
   securityOrdersPermissionsSeed,
   securityKitchenPermissionsSeed,
   securitySettlementPermissionsSeed,
+  securitySystemPermissionsSeed,
 ];

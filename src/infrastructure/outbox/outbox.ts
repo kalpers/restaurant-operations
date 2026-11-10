@@ -1,8 +1,11 @@
-import { asc, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import { outboxEvents } from "@/db/schema";
 import type { DatabaseTransaction } from "@/db/transactions/transaction-context";
+import { writeLog } from "@/infrastructure/logging/logger";
+
+import { isDeadLetter, retryDelayMs } from "./outbox-policy";
 
 // Transactional outbox (README sections 3, 23 and 24). Domains write events inside the
 // transaction that makes the change, so an event exists only if its change committed. The
@@ -62,22 +65,43 @@ export async function writeOutboxEvents(
 
 const MAX_ERROR_LENGTH = 500;
 
+export const DEFAULT_OUTBOX_MAX_ATTEMPTS = 10;
+
+export type ProcessOutboxOptions = {
+  limit?: number;
+  /** For tests with a controlled clock. */
+  now?: Date;
+  maxAttempts?: number;
+};
+
 /**
- * Publishes one batch of committed events. Rows are claimed with SKIP LOCKED, so two
- * processors never publish the same event. A publisher failure leaves the event unpublished
- * with its attempt count and error, and it is retried on the next batch. Returns how many
- * events were published.
+ * Publishes one batch of committed events that are due. Rows are claimed with SKIP LOCKED,
+ * so two processors never publish the same event. A publisher failure records the attempt
+ * and its error name and backs the event off (1 s, doubling, capped at 5 min); at the
+ * maximum attempts it is dead-lettered and never claimed again automatically. Events only
+ * mean "refetch", so a backed-off or dead-lettered event never blocks later ones. Returns
+ * how many events were published.
  */
 export async function processOutboxBatch(
   database: Database,
   publish: OutboxPublisher,
-  limit = 100,
+  options: ProcessOutboxOptions = {},
 ): Promise<number> {
+  const limit = options.limit ?? 100;
+  const now = options.now ?? new Date();
+  const maxAttempts = options.maxAttempts ?? DEFAULT_OUTBOX_MAX_ATTEMPTS;
+
   return database.transaction(async (transaction) => {
     const rows = await transaction
       .select()
       .from(outboxEvents)
-      .where(isNull(outboxEvents.publishedAt))
+      .where(
+        and(
+          isNull(outboxEvents.publishedAt),
+          isNull(outboxEvents.failedAt),
+          or(isNull(outboxEvents.nextAttemptAt), lte(outboxEvents.nextAttemptAt, now)),
+        ),
+      )
       .orderBy(asc(outboxEvents.sequence))
       .limit(limit)
       .for("update", { skipLocked: true });
@@ -101,21 +125,37 @@ export async function processOutboxBatch(
         published.push(row.id);
       } catch (error) {
         const message = error instanceof Error ? error.name : "PublishError";
+        const attempts = row.attempts + 1;
+        const deadLetter = isDeadLetter(attempts, maxAttempts);
 
         await transaction
           .update(outboxEvents)
           .set({
-            attempts: sql`${outboxEvents.attempts} + 1`,
+            attempts,
             lastError: message.slice(0, MAX_ERROR_LENGTH),
+            nextAttemptAt: deadLetter ? null : new Date(now.getTime() + retryDelayMs(attempts)),
+            failedAt: deadLetter ? now : null,
           })
-          .where(inArray(outboxEvents.id, [row.id]));
+          .where(eq(outboxEvents.id, row.id));
+
+        if (deadLetter) {
+          // Logged once, when it happens. Identifiers only: never the payload.
+          writeLog({
+            severity: "error",
+            module: "outbox",
+            operation: "dead-letter",
+            message: `Outbox event dead-lettered after ${attempts} attempts (${row.eventType} on ${row.aggregateType} ${row.aggregateId}).`,
+            entityId: row.id,
+            errorName: message.slice(0, MAX_ERROR_LENGTH),
+          });
+        }
       }
     }
 
     if (published.length > 0) {
       await transaction
         .update(outboxEvents)
-        .set({ publishedAt: new Date(), attempts: sql`${outboxEvents.attempts} + 1` })
+        .set({ publishedAt: now, nextAttemptAt: null, attempts: sql`${outboxEvents.attempts} + 1` })
         .where(inArray(outboxEvents.id, published));
     }
 

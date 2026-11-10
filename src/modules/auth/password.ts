@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { hash, verify, type Algorithm } from "@node-rs/argon2";
 
 export const MINIMUM_PASSWORD_LENGTH = 14;
@@ -36,4 +38,24 @@ let dummyHash: Promise<string> | undefined;
 export async function verifyAgainstDummyHash(password: string): Promise<void> {
   dummyHash ??= hashPassword(crypto.randomUUID());
   await verifyPassword(await dummyHash, password);
+}
+
+/** URL-safe: 64 characters, so `byte & 63` picks one without modulo bias. */
+export const TEMPORARY_PASSWORD_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+export const TEMPORARY_PASSWORD_LENGTH = 16;
+
+/**
+ * A random temporary password for an administrator's reset (Phase 16). It is shown once to
+ * the administrator and stored only as a hash: never logged, audited or kept.
+ */
+export function generateTemporaryPassword(): string {
+  const bytes = randomBytes(TEMPORARY_PASSWORD_LENGTH);
+  let password = "";
+
+  for (const byte of bytes) {
+    password += TEMPORARY_PASSWORD_ALPHABET[byte & 63];
+  }
+
+  return password;
 }

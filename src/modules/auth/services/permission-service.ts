@@ -7,18 +7,27 @@ import {
   findUserIdentity,
 } from "../repositories/auth-context-repository";
 import type { Actor, AuthContext, AuthorizedLocation } from "../types";
+import { isSessionCurrent } from "./session-validity";
 
 /**
  * Resolves a user's current access from the database. Returns null for an unknown or
  * disabled user, so a still-valid session token grants nothing.
+ *
+ * Pass `session` when resolving a request's session: a session signed in before the user's
+ * last password change is then treated like a disabled user's (Phase 16).
  */
 export async function getUserAuthContext(
   executor: DatabaseExecutor,
   userId: string,
+  options: { session?: { authTime?: number } } = {},
 ): Promise<AuthContext | null> {
   const user = await findUserIdentity(executor, userId);
 
   if (!user?.active) {
+    return null;
+  }
+
+  if (options.session && !isSessionCurrent(options.session.authTime, user.passwordChangedAt)) {
     return null;
   }
 
@@ -59,6 +68,7 @@ export async function getUserAuthContext(
     userId: user.id,
     email: user.email,
     active: true,
+    mustChangePassword: user.mustChangePassword,
     locations: [...byLocation.values()],
   };
 }

@@ -66,13 +66,27 @@ export const outboxEvents = pgTable(
     publishedAt: timestamptz("published_at"),
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
+    /** After a failed publish: not claimed again before this instant (backoff). */
+    nextAttemptAt: timestamptz("next_attempt_at"),
+    /** Dead-lettered after the maximum attempts: never claimed again automatically. */
+    failedAt: timestamptz("failed_at"),
   },
   (table) => [
     unique("outbox_events_sequence_unique").on(table.sequence),
     check("outbox_events_event_type_format", sql`${table.eventType} ~ '^[a-z]+[.][a-z-]+$'`),
     check("outbox_events_attempts_non_negative", sql`${table.attempts} >= 0`),
+    check(
+      "outbox_events_published_or_failed",
+      sql`NOT (${table.publishedAt} IS NOT NULL AND ${table.failedAt} IS NOT NULL)`,
+    ),
     index("outbox_events_unpublished_idx")
       .on(table.sequence)
-      .where(sql`${table.publishedAt} IS NULL`),
+      .where(sql`${table.publishedAt} IS NULL AND ${table.failedAt} IS NULL`),
+    index("outbox_events_failed_idx")
+      .on(table.organizationId, table.failedAt)
+      .where(sql`${table.failedAt} IS NOT NULL`),
+    index("outbox_events_published_at_idx")
+      .on(table.publishedAt)
+      .where(sql`${table.publishedAt} IS NOT NULL`),
   ],
 );

@@ -338,6 +338,7 @@ describe("permission resolution", () => {
       "active",
       "email",
       "locations",
+      "mustChangePassword",
       "userId",
     ]);
   });

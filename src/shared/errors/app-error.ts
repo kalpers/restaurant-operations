@@ -23,8 +23,8 @@ export class AuthenticationError extends AppError {
 }
 
 export class AuthorizationError extends AppError {
-  constructor(message = "You do not have permission to do this.") {
-    super("PERMISSION_DENIED", message, 403);
+  constructor(message = "You do not have permission to do this.", code = "PERMISSION_DENIED") {
+    super(code, message, 403);
   }
 }
 

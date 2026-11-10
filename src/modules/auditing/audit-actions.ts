@@ -26,6 +26,20 @@ export const AUDIT_ACTIONS = {
   "auth.sign-in-failed": { category: "ACCESS", entityType: "user", scope: "ORGANIZATION", fields: ["reason"] },
   "auth.signed-out": { category: "ACCESS", entityType: "user", scope: "ORGANIZATION", fields: [] },
 
+  // Sign-in throttling and password lifecycle (Phase 16). No email, password or IP is kept.
+  "auth.account-locked": { category: "SECURITY", entityType: "user", scope: "ORGANIZATION", fields: [] },
+  "auth.account-unlocked": { category: "SECURITY", entityType: "user", scope: "ORGANIZATION", fields: [] },
+  "auth.password-changed": { category: "SECURITY", entityType: "user", scope: "ORGANIZATION", fields: [] },
+  "admin.user-password-reset": { category: "SECURITY", entityType: "user", scope: "ORGANIZATION", fields: [] },
+
+  // System operations (Phase 16). Never an event payload.
+  "system.outbox-event-retried": {
+    category: "SYSTEM",
+    entityType: "outbox_event",
+    scope: "ORGANIZATION",
+    fields: ["eventType", "aggregateType", "attempts"],
+  },
+
   // Security administration
   "auth.owner-bootstrapped": { category: "SECURITY", entityType: "user", scope: "ORGANIZATION", fields: ["roleCode"] },
   "admin.role-created": {

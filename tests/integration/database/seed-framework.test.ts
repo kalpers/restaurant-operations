@@ -179,6 +179,7 @@ describe("runSeeds", () => {
       "security.orders-permissions",
       "security.kitchen-permissions",
       "security.settlement-permissions",
+      "security.system-permissions",
     ]);
   });
 });

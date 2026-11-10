@@ -8,6 +8,8 @@ export const PERMISSION_CATALOG = [
   { code: "admin.users.manage", name: "Manage users", category: "Administration" },
   { code: "admin.roles.view", name: "View roles and permissions", category: "Administration" },
   { code: "admin.roles.manage", name: "Manage roles and permissions", category: "Administration" },
+  { code: "admin.system.view", name: "View system health", category: "Administration" },
+  { code: "admin.system.manage", name: "Retry dead-lettered system events", category: "Administration" },
 
   { code: "organization.view", name: "View organization", category: "Organization" },
   { code: "organization.manage", name: "Manage organization", category: "Organization" },

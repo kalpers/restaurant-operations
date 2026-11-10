@@ -54,9 +54,9 @@ describe("password hashing", () => {
 });
 
 describe("permission catalog", () => {
-  it("has 121 unique codes", () => {
-    expect(ALL_PERMISSION_CODES).toHaveLength(121);
-    expect(new Set(ALL_PERMISSION_CODES).size).toBe(121);
+  it("has 123 unique codes", () => {
+    expect(ALL_PERMISSION_CODES).toHaveLength(123);
+    expect(new Set(ALL_PERMISSION_CODES).size).toBe(123);
   });
 
   it("uses the domain.action format", () => {
@@ -196,19 +196,28 @@ describe("session token contents", () => {
     expect(SESSION_MAX_AGE_SECONDS).toBe(28_800);
   });
 
-  it("holds only the user ID, whatever the library put in the token", () => {
-    expect(
-      signIn({
-        token: { sub: "ignored", name: "Name", email: "person@example.com" },
-        user: { id: "user-1" },
-      }),
-    ).toEqual({ sub: "user-1" });
+  it("holds only the user ID and the sign-in instant, whatever the library put in the token", () => {
+    const before = Date.now();
+    const token = signIn({
+      token: { sub: "ignored", name: "Name", email: "person@example.com", authTime: 1 },
+      user: { id: "user-1" },
+    });
+
+    expect(Object.keys(token).sort()).toEqual(["authTime", "sub"]);
+    expect(token.sub).toBe("user-1");
+    expect(token.authTime).toBeGreaterThanOrEqual(before);
+    expect(token.authTime).toBeLessThanOrEqual(Date.now());
   });
 
-  it("keeps the user ID on later requests", () => {
-    expect(signIn({ token: { sub: "user-1", email: "x@example.com" } })).toEqual({
+  it("keeps the user ID and the original sign-in instant on later requests", () => {
+    expect(signIn({ token: { sub: "user-1", email: "x@example.com", authTime: 1234, iat: 99 } })).toEqual({
       sub: "user-1",
+      authTime: 1234,
     });
+  });
+
+  it("adds no sign-in instant to a token from before Phase 16", () => {
+    expect(signIn({ token: { sub: "user-1" } })).toEqual({ sub: "user-1" });
   });
 
   it("exposes only the user ID in the session", () => {
@@ -217,12 +226,13 @@ describe("session token contents", () => {
         expires: "2026-11-05T00:00:00.000Z",
         user: { email: "person@example.com" },
       },
-      token: { sub: "user-1" },
+      token: { sub: "user-1", authTime: 1234, email: "person@example.com" },
     });
 
     expect(session).toEqual({
       expires: "2026-11-05T00:00:00.000Z",
       user: { id: "user-1" },
+      authTime: 1234,
     });
   });
 });

@@ -7,6 +7,7 @@ import {
   type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
 import {
+  AuthorizationError,
   BusinessRuleError,
   ConflictError,
   NotFoundError,
@@ -31,6 +32,7 @@ import {
   deactivateAssignment,
   disableUserRow,
   findLinkedEmployeeStatus,
+  findUserAccountById,
   findUserAssignmentRowsAtLocation,
   findUserInOrganization,
   findUserStatusById,
@@ -40,6 +42,7 @@ import {
   updateUserActive,
 } from "../repositories/user-repository";
 import type { Actor } from "../types";
+import { clearAccountThrottle, findAccountLocks } from "./login-throttle";
 import {
   assertActorHolds,
   assertNotLastOwner,
@@ -51,6 +54,10 @@ export type UserSummary = {
   id: string;
   email: string;
   active: boolean;
+  /** Set by an administrator's password reset until the user changes it. */
+  mustChangePassword: boolean;
+  /** When a sign-in lockout on this account ends; null when not locked. */
+  lockedUntil: Date | null;
   lastLoginAt: Date | null;
   version: number;
   roles: { id: string; code: string; name: string }[];
@@ -59,8 +66,14 @@ export type UserSummary = {
 export async function listUsersAtLocation(
   executor: DatabaseExecutor,
   locationId: string,
+  now: Date = new Date(),
 ): Promise<UserSummary[]> {
   const rows = await findUserAssignmentRowsAtLocation(executor, locationId);
+  const locks = await findAccountLocks(
+    executor,
+    [...new Set(rows.map((row) => row.normalizedEmail))],
+    now,
+  );
   const byUser = new Map<string, UserSummary>();
 
   for (const row of rows) {
@@ -71,6 +84,8 @@ export async function listUsersAtLocation(
         id: row.id,
         email: row.email,
         active: row.active,
+        mustChangePassword: row.mustChangePassword,
+        lockedUntil: locks.get(row.normalizedEmail) ?? null,
         lastLoginAt: row.lastLoginAt,
         version: row.version,
         roles: [],
@@ -324,4 +339,39 @@ export async function removeRole(
       before: { roleId: role.id, roleCode: role.code, locationId: actor.locationId },
     });
   });
+}
+
+/**
+ * Clears a sign-in lockout (Phase 16 policy 9). The target must hold a role at the actor's
+ * location, and the no-escalation rule applies. Recorded whether or not a lock was active.
+ */
+export async function unlockUser(
+  database: Database,
+  actor: Actor,
+  input: { userId: string },
+): Promise<{ id: string; wasLocked: boolean }> {
+  assertCanManageUsers(actor);
+
+  return withTransaction(database, async (transaction) => {
+    const user = await findUserAccountById(transaction, input.userId);
+
+    if (!user || !(await hasAssignmentAtLocation(transaction, input.userId, actor.locationId))) {
+      throw new NotFoundError("user");
+    }
+
+    assertActorHolds(actor, await findUserPermissionCodes(transaction, input.userId));
+
+    const wasLocked = await clearAccountThrottle(transaction, user.normalizedEmail);
+
+    await recordAudit(transaction, actor, { action: "auth.account-unlocked", entityId: input.userId });
+
+    return { id: input.userId, wasLocked };
+  });
+}
+
+/** The route's guard already requires it; the service checks again on its own. */
+export function assertCanManageUsers(actor: Actor): void {
+  if (!actor.permissions.has("admin.users.manage")) {
+    throw new AuthorizationError();
+  }
 }

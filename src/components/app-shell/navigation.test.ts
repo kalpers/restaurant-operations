@@ -37,7 +37,7 @@ describe("visibleNavigation", () => {
     const hrefs = visibleNavigation(ALL_PERMISSION_CODES).map((item) => item.href);
 
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(38);
+    expect(hrefs).toHaveLength(39);
   });
 });
 
@@ -83,7 +83,7 @@ describe("visibleNavigationGroups", () => {
           "Certification types",
         ],
       ],
-      ["Admin", ["Organization", "Locations", "Areas", "Tables", "Sections", "Users", "Roles", "Permissions"]],
+      ["Admin", ["Organization", "Locations", "Areas", "Tables", "Sections", "Users", "Roles", "Permissions", "System health"]],
     ]);
   });
 });
