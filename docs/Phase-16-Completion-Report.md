@@ -302,7 +302,7 @@ These were missed before CI because the local E2E run was blocked: a development
 
 ## Remaining issues
 
-1. **CI on the fixed specs.** GitHub Actions has not run since the two E2E fixes. Locally the full suite passes (134 of 134, 0 flaky).
+1. **CI on the fixed specs: resolved.** Committed in `6255e1c` and `4379848`; the owner reported GitHub Actions passed on `4379848` (2026-11-10).
 2. **E2E log line.** The harness ordering behind "Outbox batch failed" (42P01) is left as is. One possible change is to prepare the database in the web server's command before `next start`; that is your decision.
 3. **Vitest under Git Bash.** In this environment Vitest fails every file when started from Git Bash ("Cannot read properties of undefined (reading 'config')"), apparently because the drive letter's casing makes it load the runner twice. It runs normally from PowerShell, CI and other terminals.
 4. **Carried over:**
@@ -320,4 +320,4 @@ No Phase 17 is scheduled. Cloud deployment remains on hold by owner decision, an
 - `AUTH_CLIENT_IP_HEADER` behind the load balancer;
 - that `MAINTENANCE_INTERVAL_MS` is safe with several instances (advisory lock).
 
-Phase 16 is complete, subject to your review of this report and a green CI run on the fixed specs.
+Phase 16 is complete, subject to your review of this report. GitHub Actions passed on `4379848`.
