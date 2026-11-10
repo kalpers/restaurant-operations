@@ -47,13 +47,13 @@ export type SendResult = {
 
 /**
  * SEND: commits every DRAFT item of an order in one send batch, in one transaction
- * (README section 24, without the deferred audit events):
+ * (README section 24):
  *
  *   authorize -> claim idempotency key -> lock order and check version -> lock drafts
  *   -> re-resolve price and modifiers (operational menu) -> resolve recipe revision
  *   -> apply modifier effects -> create batch -> freeze snapshots -> consumption
  *   snapshots and CONSUME postings (with balances) -> kitchen/bar tickets (Phase 10)
- *   -> totals -> histories -> outbox events -> store result
+ *   -> totals -> histories -> outbox events -> audit event -> store result
  *
  * Any failure rolls everything back, including the idempotency claim. A retry with the
  * same key returns the first result and changes nothing.

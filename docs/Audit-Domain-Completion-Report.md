@@ -21,7 +21,9 @@ The audit trail now exists:
 - seeds are idempotent;
 - reset safeguards hold.
 
-Nothing is committed, and CI has not run.
+**CI.** The project owner reported both runs; I did not see them.
+- **Run #23 on `82da236`: failed.** 3 E2E tests failed and 11 were flaky, across unrelated specs.
+- **Run on `f3e3ffc`: passed.** That commit makes the test cleanup lock-free (see Regression Results).
 
 **Please review these decisions.** The first three are yours, from 2026-11-09; the rest are defaults I chose while building.
 
@@ -177,7 +179,9 @@ All integration-tested:
 
 The full integration suite ran with every hook in place before the new test file was added. All 1038 tests passed: the 1037 from Phase 12 plus the new migration test. No existing test needed a behavioral change.
 
-Test teardown had to change. Teardown that deletes users, employees or locations now first removes their audit events, using `tests/fixtures/audit-cleanup.ts`. Because audit events reference those rows with RESTRICT, the helper disables the append-only trigger for that one transaction. This follows the existing pattern for the ledger and order histories. Application code never deletes audit events.
+Test teardown had to change. Teardown that deletes users, employees or locations now first removes their audit events, using `tests/fixtures/audit-cleanup.ts`. Audit events reference those rows with RESTRICT, so the helper deletes the events inside a transaction that runs `SET LOCAL session_replication_role = replica`. That skips triggers for that transaction only and takes no table lock. Application code never deletes audit events.
+
+The first version used `ALTER TABLE audit_events DISABLE TRIGGER`. That takes an ACCESS EXCLUSIVE lock on a table nearly every action writes to, sign-in included. It could therefore stall the other E2E worker while one spec cleaned up. CI run #23 on `82da236` failed widely, and CI passed once `f3e3ffc` removed the lock. Locally, though, I sampled lock waits through a full E2E run and caught none. So the lock is the likely cause of #23, not a proven one.
 
 ## Security Review
 
@@ -270,7 +274,7 @@ Both were made on 2026-11-09 at the owner's request, after the first version of 
 
 ## Outstanding Issues
 
-1. **Not committed and no CI run.**
+1. **Commit and CI: resolved.** Committed in `82da236` and `f3e3ffc`; CI passed on `f3e3ffc`.
 2. **Carried over:**
    - the Phase 6 held-table move gap;
    - the old `restaurant-ops-postgres-1` container and volume;
@@ -284,4 +288,4 @@ No new accepted risk. DEV-001, DEV-002 and DEV-003 are unchanged; no dependency 
 
 ## Next-Phase Readiness
 
-**Phase 13 readiness: READY**, subject to review of this report, a commit and CI. Phase 13's "audit verified" step can now check that each step of the simulated day left its event. Examples: SEND once per batch, a settlement's open, tender and complete, and a schedule publish. It can also check that no event holds wage amounts, personal values or card details.
+**Phase 13 readiness: READY**, subject to review of this report. CI passed on `f3e3ffc`. Phase 13's "audit verified" step can now check that each step of the simulated day left its event. Examples: SEND once per batch, a settlement's open, tender and complete, and a schedule publish. It can also check that no event holds wage amounts, personal values or card details.

@@ -57,10 +57,12 @@ export async function settlementSections(context: ReportContext): Promise<Report
     sql`
       SELECT t.tender_type,
              COUNT(*)::int AS tenders,
-             SUM(t.amount)::numeric(14,2)::text AS amount,
-             SUM(t.tip_amount)::numeric(14,2)::text AS tips,
+             -- The grand-total row exists even with no tenders; it must read 0.00, not blank,
+             -- so it reconciles exactly to net sales. Cash received stays blank without cash.
+             COALESCE(SUM(t.amount), 0)::numeric(14,2)::text AS amount,
+             COALESCE(SUM(t.tip_amount), 0)::numeric(14,2)::text AS tips,
              SUM(t.received_amount)::numeric(14,2)::text AS received,
-             SUM(t.change_amount)::numeric(14,2)::text AS change
+             COALESCE(SUM(t.change_amount), 0)::numeric(14,2)::text AS change
       FROM settlement_tenders t
       JOIN order_settlements s ON s.id = t.settlement_id
       WHERE s.location_id = ${filters.locationId}

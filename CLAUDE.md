@@ -28,6 +28,8 @@ npm run db:migrate
 npm run db:seed               # idempotent, keyed via seed_runs
 npm run db:reset              # destructive; dev + loopback + DB named restaurant_ops only
 npm run bootstrap:owner       # interactive; never pass password as an argument
+npm run db:seed:demo          # opt-in demo staff + kitchen; local dev DB only, after bootstrap:owner
+npm run db:seed:validation    # opt-in Phase 13 validation fixture; local dev DB only, after bootstrap:owner
 ```
 These scripts are created during the phases that introduce them (lint/typecheck/test/build and `db:generate`/`db:migrate` in Phase 0; `db:seed`/`db:reset` in Phase 1; `bootstrap:owner` in Phase 2). Until then they will not exist. Requires Node 26 (current LTS, pinned in `.nvmrc`; `package.json` `engines` floor is `>=22.12.0`). Never use schema push for persistent environments; commit generated migrations in `drizzle/migrations/`. Never point `TEST_DATABASE_URL` at a shared or production DB.
 

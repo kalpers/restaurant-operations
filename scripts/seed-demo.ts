@@ -1,24 +1,13 @@
-import { and, eq, like } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 
-import { loadLocalEnv, readExplicitNodeEnv } from "../src/config/tooling-env";
+import { loadLocalEnv } from "../src/config/tooling-env";
 import { closeDatabase, getDatabase } from "../src/db";
 import {
   DEMO_AVAILABILITY,
   DEMO_EMPLOYEES,
   DEMO_POSITIONS,
 } from "../src/db/demo/demo-employees";
-import {
-  employeeAvailability,
-  employees,
-  locations,
-  positions,
-  roles,
-  userRoles,
-} from "../src/db/schema";
-import {
-  getUserAuthContext,
-  requirePermission,
-} from "../src/modules/auth/services/permission-service";
+import { employeeAvailability, employees, positions } from "../src/db/schema";
 import type { Actor } from "../src/modules/auth/types";
 import { assignPosition } from "../src/modules/employees/services/assignment-service";
 import { changeCompensation } from "../src/modules/employees/services/compensation-service";
@@ -28,54 +17,7 @@ import { createPosition } from "../src/modules/employees/services/reference-serv
 import { addRecurringAvailability } from "../src/modules/scheduling/services/availability-service";
 
 import { seedDemoKitchen } from "./demo-kitchen";
-
-const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
-/** Adds data, never removes it, but demo people don't belong in a shared database. */
-function assertLocalDevelopment(): void {
-  const url = process.env.DATABASE_URL ?? "";
-  let host = "";
-
-  try {
-    host = new URL(url).hostname.toLowerCase();
-  } catch {
-    // An unreadable URL is refused below.
-  }
-
-  if (readExplicitNodeEnv() === "production" || !LOOPBACK.has(host)) {
-    throw new Error(
-      "Demo data is for a local development database only: use a loopback DATABASE_URL and a non-production NODE_ENV.",
-    );
-  }
-}
-
-async function ownerActor(): Promise<Actor> {
-  const database = getDatabase();
-  const [location] = await database
-    .select({ id: locations.id })
-    .from(locations)
-    .where(eq(locations.locationCode, "MAIN"));
-  const [owner] = await database
-    .select({ userId: userRoles.userId })
-    .from(userRoles)
-    .innerJoin(roles, eq(roles.id, userRoles.roleId))
-    .where(
-      and(eq(roles.code, "OWNER"), eq(userRoles.locationId, location!.id)),
-    );
-
-  if (!location || !owner) {
-    throw new Error(
-      "No Owner exists at MAIN. Run `npm run bootstrap:owner` first, then run this again.",
-    );
-  }
-
-  const context = await getUserAuthContext(database, owner.userId);
-
-  return requirePermission(context!, {
-    permission: "employees.create",
-    locationId: location.id,
-  });
-}
+import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
 async function versionOf(employeeId: string): Promise<number> {
   const [row] = await getDatabase()
@@ -140,12 +82,12 @@ async function seedDemoAvailability(actor: Actor): Promise<{ employees: number; 
 
 async function main(): Promise<void> {
   loadLocalEnv();
-  assertLocalDevelopment();
+  assertLocalDevelopment("Demo data");
 
   const database = getDatabase();
 
   try {
-    const actor = await ownerActor();
+    const actor = await mainOwnerActor("employees.create");
     const positionRows = await database
       .select({ id: positions.id, code: positions.code })
       .from(positions)

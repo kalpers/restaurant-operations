@@ -1664,6 +1664,41 @@ Not recorded: viewing the audit trail, ordinary reads, draft order edits and kit
 
 **Viewing.** `GET /api/audit` and the `/audit` page need `audit.view` (Owner and General Manager). They show the current location's events plus organization-level ones, newest first, filtered by business-date range (at most 92 days), category, action, actor and entity, 100 per page with a cursor. There is no export of the audit trail. No permission or seed was added.
 
+### Phase 13 Validation
+
+Phase 13 added no domain, table, permission or migration. It validates Phases 1–12 and the Audit Domain together. Report: `docs/Phase-13-Completion-Report.md`.
+
+**The simulated day.** `tests/fixtures/restaurant-day.ts` runs README section 38 as one connected day through services and workflows only. The steps:
+
+- a manager publishes the schedule;
+- a reservation is confirmed, checked in and seated, and a walk-in is seated from the waitlist;
+- drinks go to the Bar, an appetizer is sent, and the canonical Bacon Cheeseburger is sent;
+- kitchen and bar run their tickets and the server is notified;
+- the checks settle by cash and external card;
+- sessions complete, tables go DIRTY and then CLEAN;
+- a late check settles at 00:30, before the cutoff.
+
+Only identity scaffolding (organization, location, areas, positions, role-holding actors) comes from fixtures, because no service creates an organization. No step writes an operational row directly. `tests/integration/validation/` checks the day against:
+
+- its snapshots, ledger and balances;
+- the reports in every area, which must reconcile exactly;
+- the audit trail.
+
+It also checks that changing the price, the recipe, a modifier effect and a wage afterwards changes neither the day's stored history nor its reports.
+
+**Clock.** Scheduling refuses past shifts, so the day runs on a faked `Date`: Vitest `useFakeTimers({ toFake: ["Date"] })`, with timers left real. Every business timestamp the services write comes from `new Date()`; PostgreSQL `now()` is only a column default. The business-date tests use the same clock to run complete sales at the following instants, and check that every domain, report and audit filter places each one on the same business date:
+
+- one second before the cutoff;
+- exactly at the cutoff;
+- one second after the cutoff;
+- both 1:30 AMs of a fall-back night.
+
+**Playwright.** `tests/e2e/restaurant-day.spec.ts` runs the same day on screen, with one browser per role: publish, reservation, seating, three sends, bar and kitchen, notifications, a split settlement, dirty and clean, reports with CSV export, and audit. Its setup uses services, and its cleanup only disables its accounts, which takes no table lock.
+
+**Opt-in validation data.** `npm run db:seed:validation` (`scripts/seed-validation.ts`) loads the fixture in `docs/Phase-13-Validation-Seed-Data.md` into a local development database only (loopback `DATABASE_URL`, non-production `NODE_ENV`), acting as the bootstrapped Owner through the services. It is not in the default seed list, so it never reaches a shared or AWS database. It records `phase13.validation-fixtures` in `seed_runs` when done; a rerun changes nothing.
+
+**Fix.** The settlements report's all-tenders row showed a blank amount on a day with no tenders; it now shows `0.00`, so it reconciles exactly with net sales.
+
 ## 34. AWS POC Deployment Target
 
 The POC must be deployable to AWS while keeping application code cloud-provider independent.

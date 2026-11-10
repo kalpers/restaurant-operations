@@ -1,20 +1,67 @@
 # Phase 13 Validation Seed Data
 
-The validation fixtures are registered as `phase13.validation-fixtures.v2` in the existing `applicationSeeds` list. `npm run db:seed` and `npm run db:seed:test` therefore load the same fixture through the normal transactional seed runner. The v2 key preserves the previously applied v1 fixture and its 2026 published schedule as historical data.
+An opt-in fixture for validating the full restaurant chain in a local development database. It is **not** part of `npm run db:seed`. By the owner's decision (2026-11-09), fake staff and order history must never reach a shared database or the Phase 14 AWS database.
 
-The fixture requires the existing Phase 2, 3, 5, 7, 8, and 12 seeds. It reuses the Phase 5 dining room tables and sections, and adds four employees with a published `Phase 13 Validation Week 2030` schedule (2030-10-05 through 2030-10-11) and one server-section assignment. The future schedule week avoids overlapping other integration-test schedule fixtures.
-
-It adds the `P13_BACON_CHEESEBURGER` menu item with Medium, No Onion, Extra Pickles, American, and Swiss instead of American modifiers. Recipe and modifier inventory effects support the Swiss substitution and extra pickles. Opening inventory is posted through the Inventory domain; the historical order consumption is posted through the Orders/Inventory transaction API so the ledger and balances agree.
-
-Historical records include a completed dine-in validation party and reservation, a dine-in Bacon Cheeseburger with all four canonical selections, a takeout Bacon Cheeseburger, fulfillment tickets and status history, completed cash settlements, and inventory consumption. A separate confirmed reservation named `Phase 13 Validation Party` is assigned to T02 for check-in/seating tests.
-
-The actor `phase13-validation-actor@seed.invalid` is created only for fixture provenance and receives a random, undisclosed password hash. It is not a demo login account.
-
-Run after migrations:
+## Running it
 
 ```text
+npm run db:migrate
 npm run db:seed
-npm run db:seed
+npm run bootstrap:owner
+npm run db:seed:validation
+npm run db:seed:validation    # second run: "already applied; nothing to do"
 ```
 
-The runner records the seed key and executes all fixture inserts in one transaction. A second invocation skips the seed. When changing this fixture after it has been applied to a persistent database, add a new versioned seed key rather than deleting the existing `seed_runs` marker or rewriting historical rows.
+The script (`scripts/seed-validation.ts`) refuses to run unless `DATABASE_URL` points at this machine (`localhost`, `127.0.0.1` or `[::1]`) and `NODE_ENV` is not `production`. This is the same guard `db:seed:demo` uses, now shared in `scripts/local-seed-guard.ts`.
+
+## How it is built
+
+It acts as the bootstrapped MAIN **Owner**, through the same services and workflows a person would use. It writes no table directly, except the `seed_runs` marker at the end. Every ledger row, balance, snapshot, kitchen ticket, settlement and audit event is the one the real workflow writes.
+
+No separate fixture account is created. An account that can do all of this would need Owner-level permissions, and a dormant account like that is a risk with no benefit.
+
+The services commit their own transactions, so the fixture is not one transaction. Instead, each step first checks whether an earlier run already did it:
+
+- employees, by employee number;
+- the schedule, by period name, then its shifts and assignments;
+- the visits, by guest or customer name.
+
+An interrupted run therefore resumes without duplicates. If an earlier run stopped partway through a visit, the script stops and says which record to finish or cancel in the app. A completed run is recorded as `phase13.validation-fixtures` in `seed_runs` and skipped from then on.
+
+The records are dated when the script runs, because the services use the real clock. The schedule week has its own explicit dates.
+
+## What it adds
+
+The fixture definitions are in `src/db/demo/validation-fixture.ts`.
+
+- **Menu and stock.** The demo kitchen (`seedDemoKitchen`, the same as `db:seed:demo`, and itself idempotent) supplies these, all through services:
+  - the Bacon Cheeseburger, with Medium, No Onion, Extra Pickles and Swiss instead of American;
+  - its recipe, modifier inventory effects and stations;
+  - its suppliers, and purchase-order receipts that build the stock.
+- **Four employees** (`P13-SERVER`, `P13-HOST`, `P13-COOK`, `P13-BAR`), each with an hourly wage for their position and availability every day.
+- **A published schedule**, "Phase 13 Validation Week 2030" (2030-10-05 to 2030-10-11), with one filled shift per employee on 2030-10-05.
+- **A section assignment.** The validation server is assigned to the seeded `DINING_A` section, with a recorded schedule-override reason, because the 2030 shift isn't running now.
+- **A completed dine-in visit** ("Phase 13 Validation Diner"):
+  1. a reservation is checked in;
+  2. the party is seated at a clean dining table;
+  3. the canonical burger is sent, and the kitchen runs it through Start, Ready and Complete;
+  4. a cash settlement closes the order;
+  5. the session completes, the table goes DIRTY, then it is cleaned.
+- **A takeout check** ("Phase 13 Validation Takeout") for the same burger: sent, fulfilled, settled in cash and closed.
+- **An upcoming reservation**, "Phase 13 Validation Party", for 4 at 19:00 tomorrow. It is CONFIRMED and planned on T02, for check-in and seating tests.
+
+## Changing it
+
+Once the fixture has been applied to a database, don't edit it in place. Add a new versioned key and fixture instead. Don't delete the `seed_runs` marker or rewrite the historical rows it created.
+
+## Tested by
+
+`tests/integration/validation/validation-seed.test.ts` builds a separate database: migrate, seed, bootstrap the Owner, then run the fixture twice. It checks:
+
+- the second run adds no row to any of 19 tables;
+- the schedule is published with four filled shifts;
+- both checks are closed with settlements equal to the order amount;
+- every inventory balance equals its ledger;
+- the upcoming party is CONFIRMED on T02 with no session;
+- no table is left dirty and no session is left open;
+- the guard refuses a non-local database.
