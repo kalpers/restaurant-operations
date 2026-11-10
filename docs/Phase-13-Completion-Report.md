@@ -30,7 +30,7 @@ There is no new domain, table, permission, migration or dependency.
 **Validation:**
 - lint, typecheck, unit (634), integration (1,120), build and `npm audit --omit=dev` all passed locally;
 - the full local E2E run was 113 of 115. The 2 failures were load timing; both specs pass when run alone (21/21), and the new day spec passed in the full run;
-- **CI has not run.** Nothing is committed.
+- **CI passed.** Committed as `867d097`; GitHub Actions completed successfully.
 
 **Please review:**
 1. **The opt-in seed acts as the Owner.** The seed-data doc planned a separate `phase13-validation-actor` account. I left it out: to act through the services it would need Owner-level permissions, which would leave a dormant privileged account.
@@ -289,7 +289,7 @@ Choices that differ from the Phase 13 docs:
 
 ## Outstanding Issues
 
-1. **CI and commit.** Nothing is committed; CI needs to run the full E2E suite.
+1. **CI and commit.** Resolved: committed as `867d097`, and GitHub Actions passed.
 2. **Other E2E cleanups still lock tables.** The orders and kitchen E2E cleanups still use `ALTER TABLE … DISABLE TRIGGER` on order and settlement tables. That is the lock pattern `f3e3ffc` removed from the audit cleanup. It may contribute to local and CI flakiness. Switching them to `session_replication_role` is a small, separate test-only change; I haven't made it.
 3. **Outbox log line at test start.** In every Playwright run, the dev server's outbox poller logs one "Outbox batch failed; it will be retried". That happens because global setup recreates the test database while the server is already polling. The runner then recovers by design.
 4. **The known streaming log** "The destination stream errored while writing data" still appears when a test navigates away mid-stream (carried from Phase 12).
@@ -312,7 +312,7 @@ No dependency changed.
 
 ## Next-Phase Readiness
 
-**Phase 14 (AWS POC deployment) readiness: READY, subject to review of this report and a green CI run.** The application works end to end as one system, and nothing in it is AWS-specific.
+**Phase 14 (AWS POC deployment) readiness: READY, CI is green on `867d097`; subject to review of this report.** The application works end to end as one system, and nothing in it is AWS-specific.
 
 Phase 14 should:
 - run `db:migrate` and `db:seed` only;
