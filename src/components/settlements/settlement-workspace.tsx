@@ -4,8 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
+import { Banknote, CreditCard } from "lucide-react";
+
+import { ApiErrorMessage } from "@/components/forms/api-error-message";
+import { StatusBadge } from "@/components/format/status-badge";
 import { callOrderApi, formatMoney, ORDER_TYPE_LABELS } from "@/components/orders/order-api";
-import { ConnectionBadge, useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import { useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import { buttonClass } from "@/components/ui/button";
+import { cn } from "@/components/ui/cn";
+import { INPUT_STYLE } from "@/components/ui/field";
 import type {
   OrderSettlementView,
   SettlementDetail,
@@ -28,10 +35,10 @@ export type SettlementAbilities = {
   viewOrder: boolean;
 };
 
-const BUTTON = "min-h-11 rounded border border-neutral-400 px-3 text-sm font-medium disabled:opacity-50";
-const PRIMARY = "min-h-11 rounded bg-neutral-900 px-4 font-medium text-white disabled:opacity-50";
-const INPUT = "min-h-11 w-full rounded border border-neutral-400 px-3";
-const LABEL = "grid gap-1 text-sm font-medium";
+const BUTTON = buttonClass("secondary");
+const PRIMARY = buttonClass("primary", "lg");
+const INPUT = INPUT_STYLE;
+const LABEL = "grid gap-1 text-sm font-medium text-neutral-800";
 
 const TENDER_LABELS: Record<TenderType, string> = {
   CASH: "Cash",
@@ -57,7 +64,7 @@ function newKey(prefix: string) {
 function useAction() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code: string; message: string; requestId?: string } | null>(null);
 
   async function run(url: string, body?: unknown, headers?: Record<string, string>) {
     setPending(true);
@@ -72,7 +79,7 @@ function useAction() {
     } else if (result.status === 401) {
       router.push("/login");
     } else {
-      setError(result.message);
+      setError(result);
     }
 
     return result;
@@ -81,19 +88,17 @@ function useAction() {
   return { run, pending, error };
 }
 
-function ErrorText({ error }: { error: string | null }) {
-  return error ? (
-    <p role="alert" className="text-sm text-red-700">
-      {error}
-    </p>
-  ) : null;
+function ErrorText({ error }: { error: { code: string; message: string; requestId?: string } | null }) {
+  return <ApiErrorMessage error={error} className="flex" />;
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <p className={`flex justify-between gap-2 ${strong ? "text-lg font-semibold" : ""}`}>
       <span>{label}</span>
-      <span aria-label={label}>{value}</span>
+      <span aria-label={label} className="tabular">
+        {value}
+      </span>
     </p>
   );
 }
@@ -126,15 +131,15 @@ function TenderLine({
   }
 
   return (
-    <li className="grid gap-1 rounded border border-neutral-300 p-3" data-testid="tender">
+    <li className="grid gap-1 rounded-md border border-neutral-200 bg-surface p-3" data-testid="tender">
       <p className="flex justify-between gap-2">
         <span className={tender.status === "RECORDED" ? "font-medium" : "font-medium line-through"}>
           {TENDER_LABELS[tender.tenderType]}
         </span>
-        <span>{formatMoney(tender.amount)}</span>
+        <span className="tabular">{formatMoney(tender.amount)}</span>
       </p>
-      <p className="text-xs uppercase tracking-wide text-neutral-600">
-        {tender.status}
+      <p className="flex flex-wrap items-center gap-2 text-xs text-neutral-700">
+        <StatusBadge domain="tender" status={tender.status} />
         {tender.status === "FAILED" ? " · counts $0.00" : ""}
         {tender.status === "VOIDED" ? " · record corrected, nothing reversed externally" : ""}
       </p>
@@ -207,6 +212,16 @@ function TenderForm({ settlement, tenderTypes }: { settlement: SettlementDetail;
   const tippable = isCash || isCard;
   const change = isCash && received ? previewChange(amount, tip || "0", received) : null;
 
+  const quick = (["CASH", "EXTERNAL_CARD"] as const).filter((type) => tenderTypes.includes(type));
+
+  function exact(type: TenderType) {
+    key.current = null;
+    setTenderType(type);
+    setAmount(settlement.remainingAmount);
+    setFailed(false);
+    setReceived(type === "CASH" ? settlement.remainingAmount : "");
+  }
+
   function edited<T>(setter: (value: T) => void) {
     return (value: T) => {
       key.current = null;
@@ -255,8 +270,22 @@ function TenderForm({ settlement, tenderTypes }: { settlement: SettlementDetail;
   }
 
   return (
-    <form onSubmit={submit} aria-label="Record tender" className="grid gap-3 rounded border border-neutral-300 p-3">
+    <form onSubmit={submit} aria-label="Record tender" className="grid gap-3 rounded-lg border border-neutral-200 bg-surface p-4 shadow-sm">
       <h3 className="font-semibold">Record a tender</h3>
+      {quick.length > 0 && (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Quick fill">
+          {quick.map((type) => {
+            const Icon = type === "CASH" ? Banknote : CreditCard;
+
+            return (
+              <button key={type} type="button" className={BUTTON} onClick={() => exact(type)}>
+                <Icon aria-hidden className="size-4" />
+                {type === "CASH" ? "Cash" : "Card"} – exact {formatMoney(settlement.remainingAmount)}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <label className={LABEL}>
         Tender type
         <select className={INPUT} value={tenderType} onChange={(event) => edited(setTenderType)(event.target.value as TenderType)}>
@@ -283,19 +312,19 @@ function TenderForm({ settlement, tenderTypes }: { settlement: SettlementDetail;
             Cash received
             <input className={INPUT} inputMode="decimal" value={received} onChange={(event) => edited(setReceived)(event.target.value)} required />
           </label>
-          <p className="text-sm" aria-live="polite">
+          <p className="text-base font-medium" aria-live="polite">
             Change due: {change === null ? "—" : formatMoney(change)}
           </p>
         </>
       )}
       {isCard && (
         <>
-          <p className="rounded bg-amber-50 p-2 text-sm">
+          <p className="rounded-md border border-warning-300 bg-warning-50 p-2 text-sm text-warning-900">
             Processed on an external card terminal. This only records the result. Never enter the
             card number, security code or PIN.
           </p>
           <label className="flex min-h-11 items-center gap-2 text-sm">
-            <input type="checkbox" checked={failed} onChange={(event) => edited(setFailed)(event.target.checked)} />
+            <input type="checkbox" className="size-5 accent-brand-700" checked={failed} onChange={(event) => edited(setFailed)(event.target.checked)} />
             The terminal reported this attempt as failed
           </label>
           {failed && (
@@ -393,10 +422,21 @@ function OpenSettlement({
 
   return (
     <section aria-label="Open settlement" className="grid gap-3">
-      <div className="grid gap-1 rounded border border-neutral-300 p-3">
+      {/* The remaining balance comes from the server and is the number staff look for first. */}
+      <div
+        className={cn(
+          "grid gap-1 rounded-lg border-2 p-4",
+          settlement.remainingAmount === "0.00" ? "border-success-500 bg-success-50" : "border-brand-600 bg-brand-50",
+        )}
+      >
+        <p className="text-sm font-semibold tracking-wide text-neutral-700 uppercase">Remaining</p>
+        <p aria-label="Remaining" className="tabular text-4xl font-bold">
+          {formatMoney(settlement.remainingAmount)}
+        </p>
+      </div>
+      <div className="grid gap-1 rounded-md border border-neutral-200 bg-surface p-3">
         <Row label="Order amount" value={formatMoney(settlement.orderAmountSnapshot)} />
         <Row label="Applied" value={formatMoney(settlement.tenderedAmount)} />
-        <Row label="Remaining" value={formatMoney(settlement.remainingAmount)} strong />
         {settlement.tipAmount !== "0.00" && <Row label="Tips (separate)" value={formatMoney(settlement.tipAmount)} />}
         {settlement.changeDue !== "0.00" && <Row label="Cash change given" value={formatMoney(settlement.changeDue)} />}
       </div>
@@ -416,7 +456,7 @@ function OpenSettlement({
       {abilities.complete && (
         <div className="grid gap-2">
           {view.order.draftCount > 0 && (
-            <p className="text-sm text-red-700">Send or remove the {view.order.draftCount} unsent item(s) before completing.</p>
+            <p className="text-sm text-danger-700">Send or remove the {view.order.draftCount} unsent item(s) before completing.</p>
           )}
           <button
             type="button"
@@ -467,12 +507,12 @@ function OpenSettlement({
 function CompletedSettlement({ view, settlement }: { view: OrderSettlementView; settlement: SettlementDetail }) {
   return (
     <section aria-label="Completed settlement" className="grid gap-3">
-      <p role="status" className="rounded bg-green-50 p-3">
+      <p role="status" className="rounded-md border border-success-300 bg-success-50 p-3 text-success-800">
         Settled and closed{settlement.completedAt ? ` at ${new Date(settlement.completedAt).toLocaleString()}` : ""}.
         {view.order.tableNumbers.length > 0 &&
           " The table session stays active until the guests leave: complete it on the floor, then the table is marked dirty."}
       </p>
-      <div className="grid gap-1 rounded border border-neutral-300 p-3">
+      <div className="grid gap-1 rounded-md border border-neutral-200 bg-surface p-3">
         <Row label="Order amount" value={formatMoney(settlement.orderAmountSnapshot)} />
         <Row label="Applied" value={formatMoney(settlement.tenderedAmount)} />
         <Row label="Tips (separate)" value={formatMoney(settlement.tipAmount)} />
@@ -496,7 +536,7 @@ function CompletedSettlement({ view, settlement }: { view: OrderSettlementView; 
 }
 
 export function SettlementWorkspace({ view, abilities }: { view: OrderSettlementView; abilities: SettlementAbilities }) {
-  const connection = useRealtimeRefresh(EVENTS, 60_000);
+  useRealtimeRefresh(EVENTS, 60_000);
   const open = useAction();
   const { order, current } = view;
   const cancelled = view.history.filter((entry) => entry.status === "CANCELLED");
@@ -534,7 +574,7 @@ export function SettlementWorkspace({ view, abilities }: { view: OrderSettlement
               <span>−{formatMoney(entry.appliedAmount)}</span>
             </p>
           ))}
-        <div className="grid gap-1 border-t border-neutral-300 pt-2">
+        <div className="grid gap-1 border-t border-neutral-200 pt-2">
           <Row label="Items" value={formatMoney(order.itemSubtotal)} />
           {order.discountTotal !== "0.00" && <Row label="Discounts" value={`−${formatMoney(order.discountTotal)}`} />}
           <Row label="Amount due before tax" value={formatMoney(order.subtotal)} strong />
@@ -557,17 +597,16 @@ export function SettlementWorkspace({ view, abilities }: { view: OrderSettlement
         )}
       </section>
 
-      <aside aria-label="Settlement" className="order-1 grid content-start gap-4 lg:order-2">
+      <aside aria-label="Settlement" className="order-1 grid content-start gap-4 lg:sticky lg:top-20 lg:order-2 lg:self-start">
         <div>
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-2xl font-semibold">Settle order #{order.orderNumber}</h1>
-            <ConnectionBadge status={connection} />
           </div>
           <p className="text-neutral-600">
             {ORDER_TYPE_LABELS[order.orderType] ?? order.orderType}
             {order.tableNumbers.length > 0 ? ` · Table ${order.tableNumbers.join(" + ")}` : ""}
-            {order.customerName ? ` · ${order.customerName}` : ""} ·{" "}
-            <span data-testid="order-status">{order.status}</span>
+            {order.customerName ? ` · ${order.customerName}` : ""}{" "}
+            <StatusBadge domain="order" status={order.status} data-testid="order-status" />
           </p>
           <p className="mt-1 text-xs text-neutral-600">
             Record only: payments are taken outside this app.
@@ -595,7 +634,7 @@ export function SettlementWorkspace({ view, abilities }: { view: OrderSettlement
           </div>
         )}
         {!current && order.status === "VOIDED" && (
-          <p role="status" className="rounded bg-neutral-100 p-3">
+          <p role="status" className="rounded-md border border-neutral-200 bg-neutral-100 p-3">
             This order was voided, so there is nothing to settle.
           </p>
         )}

@@ -39,7 +39,7 @@ export default async function MovementsPage() {
       {itemOptions.length === 0 && <p className="mb-6 text-neutral-600">No items are stocked here yet.</p>}
 
       {actorHolds(actor, "inventory.waste") && itemOptions.length > 0 && (
-        <section aria-label="Record waste" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Record waste" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Record waste</h2>
           <EntityForm
             method="POST"
@@ -56,7 +56,7 @@ export default async function MovementsPage() {
       )}
 
       {actorHolds(actor, "inventory.adjust") && itemOptions.length > 0 && (
-        <section aria-label="Adjust stock" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Adjust stock" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Adjust stock</h2>
           <EntityForm
             method="POST"
@@ -83,7 +83,7 @@ export default async function MovementsPage() {
       )}
 
       {actorHolds(actor, "inventory.transfer") && itemOptions.length > 0 && destinations.length > 0 && (
-        <section aria-label="Transfer stock" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Transfer stock" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Transfer to another location</h2>
           <EntityForm
             method="POST"

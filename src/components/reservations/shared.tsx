@@ -4,13 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { sendApiRequest } from "@/components/forms/api-request";
+import { INPUT_STYLE } from "@/components/ui/field";
+import { buttonClass } from "@/components/ui/button";
 
-export const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-base";
-export const BUTTON_CLASS =
-  "min-h-11 rounded border border-neutral-400 px-3 py-1 text-sm font-medium disabled:opacity-50";
-export const PRIMARY_CLASS =
-  "min-h-11 rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
+export const INPUT_CLASS = INPUT_STYLE;
+export const BUTTON_CLASS = buttonClass("secondary");
+export const PRIMARY_CLASS = buttonClass("primary");
 
 export type HostTableOption = {
   id: string;
@@ -56,7 +55,7 @@ export function useSubmit() {
 
 export function ErrorText({ error }: { error: string | null }) {
   return error ? (
-    <p role="alert" className="text-sm text-red-700">
+    <p role="alert" className="text-sm text-danger-700">
       {error}
     </p>
   ) : null;
@@ -122,7 +121,7 @@ export function TablePicker({
         {shown.map((table) => (
           <label
             key={table.id}
-            className="flex min-h-11 items-center gap-2 rounded border border-neutral-200 px-2"
+            className="flex min-h-11 items-center gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm px-2"
           >
             <input
               type="checkbox"

@@ -2,6 +2,7 @@ import { formatMoney, describeSelection } from "@/components/menu/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { getOperationalMenu } from "@/modules/menu/queries/operational-menu";
+import { EmptyState } from "@/components/ui/empty-state";
 
 /** What can be sold here right now: the same data order entry will read. */
 export default async function MenuPage() {
@@ -14,13 +15,13 @@ export default async function MenuPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
       {menu.menus.length === 0 ? (
-        <p className="text-neutral-600">No menu is offered at this location right now.</p>
+        <EmptyState title="No menu is offered at this location right now." />
       ) : (
         menu.menus.map((entry) => (
           <section key={entry.id} aria-label={`Menu ${entry.name}`} className="mb-8">
             <h2 className="mb-3 text-xl font-semibold">{entry.name}</h2>
             {entry.categories.length === 0 && (
-              <p className="text-neutral-600">Nothing on this menu is for sale yet.</p>
+              <EmptyState title="Nothing on this menu is for sale yet." />
             )}
             {entry.categories.map((category) => (
               <div key={category.id} className="mb-6">
@@ -30,7 +31,7 @@ export default async function MenuPage() {
                     <li
                       key={item.placementId}
                       aria-label={`Menu item ${item.name}`}
-                      className="rounded border border-neutral-200 p-4"
+                      className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
                     >
                       <p className="flex flex-wrap items-baseline justify-between gap-2">
                         <span className="font-medium">{item.name}</span>

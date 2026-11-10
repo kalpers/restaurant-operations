@@ -50,7 +50,7 @@ export async function PersonalSection({
         <h2 className="mb-3 text-lg font-semibold">Addresses</h2>
         <ul className="mb-4 grid gap-3">
           {personal.addresses.map((address) => (
-            <li key={address.id} className="rounded border border-neutral-200 p-3">
+            <li key={address.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
               <p className="font-medium">{humanize(address.addressType)}</p>
               <p>
                 {address.addressLine1}
@@ -101,7 +101,7 @@ export async function PersonalSection({
         <h2 className="mb-3 text-lg font-semibold">Emergency contacts</h2>
         <ul className="mb-4 grid gap-3">
           {personal.emergencyContacts.map((contact) => (
-            <li key={contact.id} className="rounded border border-neutral-200 p-3">
+            <li key={contact.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
               {canEdit ? (
                 <EntityForm
                   method="PATCH"

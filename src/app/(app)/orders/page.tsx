@@ -7,6 +7,7 @@ import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { listOrders, type OrderSummary } from "@/modules/orders/queries/order-queries";
 import { actorHolds } from "@/modules/orders/services/access";
+import { StatusBadge } from "@/components/format/status-badge";
 
 const searchSchema = z.object({
   session: z.uuid().optional(),
@@ -25,11 +26,11 @@ function OrderList({ orders, empty }: { orders: OrderSummary[]; empty: string })
           <Link
             href={`/orders/${order.id}`}
             aria-label={`Order ${order.orderNumber}`}
-            className="block rounded border border-neutral-300 p-4 hover:border-neutral-900"
+            className="block rounded-md border border-neutral-300 p-4 hover:border-neutral-900"
           >
             <p className="flex justify-between font-semibold">
               <span>#{order.orderNumber}</span>
-              <span>{order.status === "OPEN" ? formatMoney(order.subtotal) : order.status}</span>
+              <span>{order.status === "OPEN" ? formatMoney(order.subtotal) : <StatusBadge domain="order" status={order.status} />}</span>
             </p>
             <p className="text-sm">
               {ORDER_TYPE_LABELS[order.orderType]}

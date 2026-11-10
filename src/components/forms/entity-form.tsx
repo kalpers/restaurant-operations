@@ -3,7 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { sendApiRequest } from "./api-request";
+import { Button } from "@/components/ui/button";
+import { INPUT_STYLE } from "@/components/ui/field";
+import { useToast } from "@/components/ui/toast";
+
+import { ApiErrorMessage } from "./api-error-message";
+import { sendApiRequest, type ApiFailure } from "./api-request";
 
 export type FormField = {
   name: string;
@@ -35,10 +40,11 @@ type EntityFormProps = {
   submitLabel: string;
   /** Clears the inputs after success, for forms that create records. */
   resetOnSuccess?: boolean;
+  /** Toast text after success. */
+  successMessage?: string;
 };
 
-const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_STYLE;
 
 function readField(field: FormField, data: FormData): unknown {
   const raw = data.get(field.name);
@@ -73,12 +79,12 @@ export function EntityForm({
   hidden,
   submitLabel,
   resetOnSuccess,
+  successMessage = "Saved.",
 }: EntityFormProps) {
   const router = useRouter();
+  const toast = useToast();
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
+  const [error, setError] = useState<ApiFailure | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,12 +95,12 @@ export function EntityForm({
     );
 
     setPending(true);
-    setMessage(null);
+    setError(null);
     const result = await sendApiRequest(method, url, { ...body, ...hidden });
     setPending(false);
 
     if (result.ok) {
-      setMessage({ ok: true, text: "Saved." });
+      toast.success(successMessage);
       if (resetOnSuccess) {
         form.reset();
       }
@@ -102,7 +108,7 @@ export function EntityForm({
     } else if (result.status === 401) {
       router.push("/login");
     } else {
-      setMessage({ ok: false, text: result.message });
+      setError(result);
     }
   }
 
@@ -115,12 +121,12 @@ export function EntityForm({
               type="checkbox"
               name={field.name}
               defaultChecked={field.defaultValue === true}
-              className="size-5"
+              className="size-5 accent-brand-700"
             />
             {field.label}
           </label>
         ) : (
-          <label key={field.name} className="grid gap-1 text-sm font-medium">
+          <label key={field.name} className="grid gap-1 text-sm font-medium text-neutral-800">
             {field.label}
             {field.type === "select" ? (
               <select
@@ -166,21 +172,10 @@ export function EntityForm({
         ),
       )}
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="min-h-11 rounded bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-50"
-        >
-          {pending ? "Saving..." : submitLabel}
-        </button>
-        {message && (
-          <p
-            role={message.ok ? "status" : "alert"}
-            className={message.ok ? "text-green-800" : "text-red-700"}
-          >
-            {message.text}
-          </p>
-        )}
+        <Button type="submit" variant="primary" pending={pending} pendingLabel="Saving...">
+          {submitLabel}
+        </Button>
+        <ApiErrorMessage error={error} />
       </div>
     </form>
   );

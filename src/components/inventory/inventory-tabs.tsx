@@ -27,7 +27,7 @@ export function InventoryTabs({
           href={tab.href}
           aria-current={tab.href === current ? "page" : undefined}
           className={`inline-flex min-h-11 items-center rounded border px-3 text-sm font-medium ${
-            tab.href === current ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-400"
+            tab.href === current ? "border-brand-700 bg-brand-700 text-white" : "border-neutral-400"
           }`}
         >
           {tab.label}

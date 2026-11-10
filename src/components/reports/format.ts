@@ -1,3 +1,4 @@
+import { formatMoney } from "@/components/format/money";
 import type { ColumnKind, ReportCell } from "@/modules/reporting/types";
 
 function trimQuantity(value: string): string {
@@ -17,7 +18,7 @@ export function formatCell(kind: ColumnKind, value: ReportCell): string {
 
   switch (kind) {
     case "money":
-      return text.startsWith("-") ? `-$${text.slice(1)}` : `$${text}`;
+      return formatMoney(text);
     case "cost":
       return text.startsWith("-") ? `-$${trimCost(text.slice(1))}` : `$${trimCost(text)}`;
     case "quantity":

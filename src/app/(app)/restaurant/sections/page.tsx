@@ -8,6 +8,7 @@ import { actorHolds } from "@/modules/restaurant/services/access";
 import { listServerCandidates } from "@/modules/restaurant/services/floor-service";
 import { listSections } from "@/modules/restaurant/services/section-service";
 import { listTablesForConfiguration } from "@/modules/restaurant/services/table-service";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function SectionsPage() {
   const { location, actor } = await requirePageActor("restaurant.sections.manage");
@@ -42,7 +43,7 @@ export default async function SectionsPage() {
       <h1 className="mb-1 text-2xl font-semibold">Sections</h1>
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
-      <section className="mb-8 rounded border border-neutral-200 p-4">
+      <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 font-semibold">Add a section</h2>
         <EntityForm
           method="POST"
@@ -58,7 +59,7 @@ export default async function SectionsPage() {
       </section>
 
       {sections.length === 0 ? (
-        <p className="text-neutral-600">No sections yet.</p>
+        <EmptyState title="No sections yet." />
       ) : (
         <ul className="grid gap-4">
           {sections.map((section) => {
@@ -82,7 +83,7 @@ export default async function SectionsPage() {
               <li
                 key={section.id}
                 aria-label={`Section ${section.code}`}
-                className="grid gap-4 rounded border border-neutral-200 p-4"
+                className="grid gap-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
               >
                 <h2 className="font-semibold">
                   {section.name} ({section.code})
@@ -124,6 +125,7 @@ export default async function SectionsPage() {
                           url={`/api/restaurant/section-assignments/${section.currentAssignment.id}/end`}
                           body={{ expectedVersion: section.currentAssignment.version }}
                           label="End assignment"
+                          confirm={{ title: "End this section assignment?" }}
                         />
                       </div>
                     ) : (

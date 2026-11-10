@@ -40,7 +40,7 @@ export function AvailabilityPanel({
             {recurring.map((record) => (
               <li
                 key={record.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
               >
                 <span>
                   {DAYS_OF_WEEK[record.dayOfWeek]}, {shortTime(record.startTime)} to{" "}
@@ -55,6 +55,7 @@ export function AvailabilityPanel({
                   url={`${baseUrl}/availability/${record.id}`}
                   body={{ expectedVersion: record.version }}
                   label="Remove"
+                  confirm={{ title: "Remove this availability?", confirmLabel: "Remove availability" }}
                 />
               </li>
             ))}
@@ -92,7 +93,7 @@ export function AvailabilityPanel({
             {exceptions.map((record) => (
               <li
                 key={record.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
               >
                 <span>
                   {record.exceptionDate},{" "}
@@ -106,6 +107,7 @@ export function AvailabilityPanel({
                   url={`${baseUrl}/availability-exceptions/${record.id}`}
                   body={{ expectedVersion: record.version }}
                   label="Remove"
+                  confirm={{ title: "Remove this availability?", confirmLabel: "Remove availability" }}
                 />
               </li>
             ))}

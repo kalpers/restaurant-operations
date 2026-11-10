@@ -22,7 +22,7 @@ export function HostTabs({ active, abilities }: HostTabsProps) {
           aria-current={tab.key === active ? "page" : undefined}
           className={`flex min-h-11 items-center rounded border px-4 text-sm font-medium ${
             tab.key === active
-              ? "border-neutral-900 bg-neutral-900 text-white"
+              ? "border-brand-700 bg-brand-700 text-white"
               : "border-neutral-400"
           }`}
         >

@@ -1277,6 +1277,14 @@ Do not create separate desktop/tablet/mobile codebases.
 
 Operational controls should be touch friendly.
 
+**UI rules (Phase 15).** Light theme only.
+- *Tokens:* colors, the font and focus rings are defined once in `src/app/globals.css`. Use the token names (`brand`, `success`, `warning`, `danger`, `info`) rather than raw palette colors.
+- *Primitives:* build screens from `src/components/ui/` (Button, Field/Input/Select, Card, Badge, Table, Dialog, ConfirmDialog, Toast, EmptyState, Skeleton, Breadcrumbs). Don't copy class strings between files.
+- *Statuses:* show them through `StatusBadge` with the labels in `src/components/format/status-labels.ts`. Never show raw enum values, and never convey a status by color alone.
+- *Money:* display it with `formatMoney` from `src/components/format/money.ts`, which only rearranges the decimal string.
+- *Confirmation:* every action that cancels, removes, deactivates, disables, archives, voids or publishes asks first, through `ActionButton`'s `confirm` or a Dialog.
+- *Feedback:* success shows a toast. Errors stay beside the control and show the request ID, and a version conflict offers Reload.
+
 ## 31. Testing Strategy
 
 ### Unit tests
@@ -1735,6 +1743,37 @@ Phase 14 added a read-only Gantt view of one day's schedule at the current Locat
 
 **E2E in CI.** In CI, Playwright runs against `next start` on the build the workflow already makes, not `next dev`. Local runs keep `next dev`; `npm run build` then `CI=1 npm run test:e2e` reproduces CI mode. When the E2E step fails, CI uploads `test-results/`, kept for 7 days. The timeline sets `data-ready="true"` once hydrated, and its tests wait for that before clicking.
 
+### Phase 15 UI Look and Feel
+
+Phase 15 changed presentation only. It added no table, column, permission, migration, API field or domain rule. Plan: `docs/Phase-15-UI-Look-and-Feel.md`. Report: `docs/Phase-15-Completion-Report.md`.
+
+**Foundation.**
+- *Tokens and font:* design tokens are in a `@theme` block in `src/app/globals.css`. Inter is loaded through `next/font`, which self-hosts it at build time.
+- *Primitives:* shared, hand-rolled Tailwind components live in `src/components/ui/`. The only UI dependency added is `lucide-react` for icons, and `@axe-core/playwright` was added for tests.
+- *Dialogs:* built on the native `<dialog>` with `showModal()`. Escape closes them and focus returns to the opener. The safe choice is focused first, through `data-autofocus`.
+
+**Shell.**
+- *Navigation:* `navigation.ts` groups the existing permission-filtered links into Insights, Service, Back of house, People and Admin, and drops empty groups. There is one `<nav aria-label="Main">`: a sidebar from `lg` up, an off-canvas drawer with a Menu button below it. The current page is marked `aria-current="page"`.
+- *Header:* it shows the single realtime connection badge, which reads the existing per-tab SSE connection and opens no new one, plus the location switcher, alerts and Log out. Detail pages show breadcrumbs.
+- *Width:* Floor, Kitchen, Bar, Expo and the timeline use the full width.
+
+**Feedback.**
+- *Confirmations:* `ActionButton` takes `confirm` and shows a toast on success. Every destructive one-click action asks first, as does Publish. The void item, void order, remove discount and cancel seating flows moved from disclosures into dialogs, with the same fields and payloads.
+- *Errors:* the client error helpers read `code` and `requestId` from the error envelope. `CONCURRENCY_CONFLICT` offers Reload.
+- *Route states:* there are friendly `error.tsx` and `not-found.tsx` pages. There is no route-level `loading.tsx`. With Next 16 a route `loading.tsx` left two copies of the page in the DOM after a query change or a `router.refresh()`. Loading placeholders stay inside pages as Suspense fallbacks, such as the dashboard figures, and `Skeleton`/`PageSkeleton` are available for those.
+- *Empty states:* page-level empty lists use `EmptyState`.
+
+**Screens.**
+- *Kitchen, Bar, Expo:* tickets show the server's `ageBand` (Phase 10 rule, warning at 10 minutes and late at 20) as border, header color and a text label. They don't compute it again. An optional new-ticket chime is off by default and stored per browser in `localStorage`.
+- *Order workspace:* the check stays in view, with an unsent count and a large Send button. A browser-only menu search filters the items already loaded, and `/` focuses it.
+- *Settlement:* the server's remaining balance is shown in large type. Exact cash and exact card buttons only fill the form.
+- *Dashboard:* each figure is compared with the previous business date, by calling the same read-only `buildDashboard` a second time. Money is compared with exact decimal subtraction.
+- *Audit viewer:* shows a field-by-field before and after table from the data the API already returns, readable action labels, and short copyable IDs linking to the record's page.
+
+**Accessibility.**
+- *Axe:* `tests/e2e/accessibility.spec.ts` runs axe (WCAG 2.1 A/AA) on Login, Dashboard, Floor, Order, Kitchen, Settlement, Timeline, Audit, Reservations and Employees. It fails on serious or critical issues.
+- *Shell:* `tests/e2e/ui-shell.spec.ts` covers grouped navigation, the phone drawer, confirmations, toasts, not-found and the menu search. Specs use `tests/helpers/e2e-ui.ts` (`openNavLink`, `confirmDialog`, `expectToast`).
+
 ## 34. AWS POC Deployment Target
 
 The POC must be deployable to AWS while keeping application code cloud-provider independent.
@@ -1900,13 +1939,19 @@ Deliver a read-only, day-by-day Gantt view of the schedule at the current Locati
 
 Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved from Phases 14 and 15 to 15 and 16. Completion reports written before then that mention "Phase 14" for AWS work mean Phase 15.
 
-### Phase 15: AWS POC Deployment
+### Phase 15: UI Look and Feel
+
+Deliver a consistent, accessible presentation layer without changing behavior: design tokens and shared UI primitives in `src/components/ui/`, grouped permission-filtered navigation with a phone drawer, confirmation before destructive actions, toasts, route-level loading/error/not-found states, empty states, human status labels, a readable audit viewer, upgraded Floor, Kitchen/Bar/Expo, Order, Settlement, Dashboard and Login screens, and an automated accessibility check. Light theme only. No migration, permission, API or domain rule change. Plan: `docs/Phase-15-UI-Look-and-Feel.md`.
+
+Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved from Phases 15 and 16 to 16 and 17. Documents written before then that mention "Phase 15" for AWS work mean Phase 16.
+
+### Phase 16: AWS POC Deployment
 
 Deliver EC2-hosted Next.js, RDS PostgreSQL, secure configuration, migrations, POC seed data, cost alerts, basic logging/backups, and connectivity validation.
 
-### Phase 16: AWS POC Acceptance Test
+### Phase 17: AWS POC Acceptance Test
 
-Repeat the major E2E workflow, including the schedule timeline, against AWS from desktop, tablet, and phone-sized clients.
+Repeat the major E2E workflow, including the schedule timeline and the Phase 15 UI, against AWS from desktop, tablet, and phone-sized clients.
 
 ## 37. Copilot Phase Protocol
 

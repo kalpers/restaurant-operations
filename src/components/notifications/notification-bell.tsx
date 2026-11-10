@@ -1,7 +1,8 @@
 "use client";
 
+import { Bell } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { callOrderApi } from "@/components/orders/order-api";
 import { useRealtime } from "@/components/realtime/realtime-provider";
@@ -31,6 +32,35 @@ export function NotificationBell() {
   const { subscribe } = useRealtime();
   const [listing, setListing] = useState<Listing>({ unreadCount: 0, notifications: [] });
   const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+
+  // Escape or a click outside closes the panel.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    const onPointer = (event: PointerEvent) => {
+      if (!container.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,27 +100,29 @@ export function NotificationBell() {
   }
 
   return (
-    <div className="relative">
+    <div ref={container} className="relative">
       <button
+        ref={button}
         type="button"
         aria-expanded={open}
-        aria-label={`Notifications, ${listing.unreadCount} unread`}
+        aria-label={`Alerts, ${listing.unreadCount} unread`}
         data-testid="notification-bell"
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-11 items-center gap-2 rounded border border-neutral-300 px-3 text-sm font-medium"
+        className="flex min-h-11 items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium shadow-sm hover:bg-neutral-50"
       >
+        <Bell aria-hidden className="size-4" />
         Alerts
         {listing.unreadCount > 0 && (
           <span
             data-testid="notification-count"
-            className="rounded-full bg-red-700 px-2 text-xs font-bold text-white"
+            className="rounded-full bg-danger-700 px-2 text-xs font-bold text-white"
           >
             {listing.unreadCount}
           </span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded border border-neutral-300 bg-white p-3 shadow-lg">
+        <div className="absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-neutral-200 bg-surface p-3 shadow-xl">
           <div className="mb-2 flex items-center justify-between">
             <p className="font-semibold">Notifications</p>
             {listing.unreadCount > 0 && (
@@ -106,7 +138,7 @@ export function NotificationBell() {
               {listing.notifications.map((notice) => (
                 <li
                   key={notice.id}
-                  className={`rounded border p-2 text-sm ${notice.readAt ? "border-neutral-200" : "border-neutral-900"}`}
+                  className={`rounded-md border p-2 text-sm ${notice.readAt ? "border-neutral-200" : "border-brand-500 bg-brand-50"}`}
                 >
                   <p className="font-semibold">{notice.title}</p>
                   <p>{notice.body}</p>

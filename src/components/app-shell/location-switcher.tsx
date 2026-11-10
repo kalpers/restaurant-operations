@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { sendApiRequest } from "@/components/forms/api-request";
+import { useToast } from "@/components/ui/toast";
 
 type LocationSwitcherProps = {
   currentLocationId: string;
@@ -14,6 +15,7 @@ export function LocationSwitcher({
   locations,
 }: LocationSwitcherProps) {
   const router = useRouter();
+  const toast = useToast();
 
   async function handleChange(locationId: string) {
     const result = await sendApiRequest("PUT", "/api/session/location", {
@@ -22,16 +24,18 @@ export function LocationSwitcher({
 
     if (result.ok) {
       router.refresh();
+    } else {
+      toast.error(result.message);
     }
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm">
+    <label className="flex items-center gap-2 text-sm font-medium">
       Location
       <select
         value={currentLocationId}
         onChange={(event) => void handleChange(event.target.value)}
-        className="min-h-11 rounded border border-neutral-300 bg-white px-2"
+        className="min-h-11 rounded-md border border-neutral-300 bg-white px-2 shadow-sm"
       >
         {locations.map((location) => (
           <option key={location.id} value={location.id}>

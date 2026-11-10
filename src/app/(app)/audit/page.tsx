@@ -1,5 +1,12 @@
+import { FileClock } from "lucide-react";
 import Link from "next/link";
 
+import { AuditChanges, CopyId } from "@/components/audit/audit-changes";
+import { actionLabel, entityHref, entityLabel, shortId } from "@/components/audit/audit-format";
+import { humanizeCode } from "@/components/format/status-labels";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Table, TableFrame, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { getDatabase } from "@/db";
 import { AUDIT_CATEGORIES } from "@/db/schema/auditing";
 import {
@@ -12,8 +19,9 @@ import {
 import { requirePageActor } from "@/modules/auth/guards";
 import { AppError } from "@/shared/errors/app-error";
 import { addDays } from "@/shared/time/zoned-time";
+import { INPUT_BASE } from "@/components/ui/field";
 
-const INPUT_CLASS = "min-h-11 rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_BASE;
 
 function formatTime(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -23,51 +31,42 @@ function formatTime(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
-function Payload({ label, value }: { label: string; value: unknown }) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  return (
-    <div>
-      <dt className="font-medium">{label}</dt>
-      <dd>
-        <pre className="whitespace-pre-wrap break-all text-xs">{JSON.stringify(value, null, 2)}</pre>
-      </dd>
-    </div>
-  );
-}
-
 function EventRow({ event, timeZone }: { event: AuditEventView; timeZone: string }) {
   const hasPayload = event.before !== null || event.after !== null || event.details !== null;
+  const href = entityHref(event.entityType, event.entityId);
 
   return (
-    <tr aria-label={`Audit ${event.action}`} className="border-b border-neutral-100 align-top">
-      <td className="whitespace-nowrap py-2 pr-3">{formatTime(event.occurredAt, timeZone)}</td>
-      <td className="py-2 pr-3">{event.actorType === "SYSTEM" ? "System" : (event.actorName ?? "Unknown user")}</td>
-      <td className="py-2 pr-3">
-        <span className="font-medium">{event.action}</span>
-        <span className="block text-xs text-neutral-600">{event.category}</span>
-      </td>
-      <td className="py-2 pr-3">
-        {event.entityType}
-        {event.entityId && <span className="block break-all text-xs text-neutral-600">{event.entityId}</span>}
-      </td>
-      <td className="py-2">
-        {hasPayload ? (
-          <details>
-            <summary className="min-h-11 cursor-pointer py-2">Show</summary>
-            <dl className="mt-2 grid gap-2">
-              <Payload label="Before" value={event.before} />
-              <Payload label="After" value={event.after} />
-              <Payload label="Details" value={event.details} />
-            </dl>
-          </details>
+    <Tr aria-label={`Audit ${event.action}`}>
+      <Td className="whitespace-nowrap">{formatTime(event.occurredAt, timeZone)}</Td>
+      <Td>{event.actorType === "SYSTEM" ? "System" : (event.actorName ?? "Unknown user")}</Td>
+      <Td>
+        <span className="font-medium">{actionLabel(event.action)}</span>
+        <span className="block text-xs text-neutral-600">
+          {humanizeCode(event.category)} · <code>{event.action}</code>
+        </span>
+      </Td>
+      <Td>
+        {href ? (
+          <Link href={href} className="font-medium text-brand-800 underline-offset-2 hover:underline">
+            {entityLabel(event.entityType)}
+          </Link>
         ) : (
-          <span className="text-neutral-500">None</span>
+          entityLabel(event.entityType)
         )}
-      </td>
-    </tr>
+        {event.entityId && (
+          <span className="block">
+            <CopyId id={event.entityId} label={shortId(event.entityId)} />
+          </span>
+        )}
+      </Td>
+      <Td className="min-w-64">
+        {hasPayload ? (
+          <AuditChanges before={event.before} after={event.after} details={event.details} />
+        ) : (
+          <span className="text-neutral-600">None</span>
+        )}
+      </Td>
+    </Tr>
   );
 }
 
@@ -135,7 +134,7 @@ export default async function AuditPage({
             <option value="">All categories</option>
             {AUDIT_CATEGORIES.map((category) => (
               <option key={category} value={category}>
-                {category}
+                {humanizeCode(category)}
               </option>
             ))}
           </select>
@@ -146,44 +145,48 @@ export default async function AuditPage({
             <option value="">All actions</option>
             {Object.keys(AUDIT_ACTIONS).map((action) => (
               <option key={action} value={action}>
-                {action}
+                {actionLabel(action)}
               </option>
             ))}
           </select>
         </label>
-        <button type="submit" className="min-h-11 rounded border border-neutral-400 px-4 font-medium">
+        <Button type="submit" variant="primary">
           Filter
-        </button>
+        </Button>
       </form>
 
       {error && (
-        <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-red-800">
+        <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
           {error}
         </p>
       )}
 
-      {page && page.events.length === 0 && <p className="text-neutral-600">No audit events match.</p>}
+      {page && page.events.length === 0 && (
+        <EmptyState icon={FileClock} title="No audit events match">
+          Widen the date range or clear the category and action filters.
+        </EmptyState>
+      )}
 
       {page && page.events.length > 0 && (
         <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-neutral-300">
-                  <th className="py-2 pr-3">When</th>
-                  <th className="py-2 pr-3">Who</th>
-                  <th className="py-2 pr-3">Action</th>
-                  <th className="py-2 pr-3">Record</th>
-                  <th className="py-2">Changes</th>
+          <TableFrame>
+            <Table>
+              <THead>
+                <tr>
+                  <Th>When</Th>
+                  <Th>Who</Th>
+                  <Th>Action</Th>
+                  <Th>Record</Th>
+                  <Th>Changes</Th>
                 </tr>
-              </thead>
-              <tbody>
+              </THead>
+              <TBody>
                 {page.events.map((event) => (
                   <EventRow key={event.sequence} event={event} timeZone={page.timeZone} />
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TBody>
+            </Table>
+          </TableFrame>
           {page.nextBefore && (
             <Link
               href={`/audit?${olderQuery.toString()}`}

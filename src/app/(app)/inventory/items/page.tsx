@@ -21,7 +21,7 @@ export default async function InventoryItemsPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
       <InventoryTabs current="/inventory/items" permissions={location.permissions} />
 
-      <section aria-label="Add an inventory item" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Add an inventory item" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 font-semibold">Add an item</h2>
         <p className="mb-3 text-sm text-neutral-600">
           The stock unit must match the measurement type, and it can&apos;t change once the item has
@@ -46,7 +46,7 @@ export default async function InventoryItemsPage() {
         {items.map((item) => (
           <li
             key={item.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
           >
             <span>
               <span className="font-medium">{item.name}</span>{" "}
@@ -57,7 +57,7 @@ export default async function InventoryItemsPage() {
             </span>
             <Link
               href={`/inventory/items/${item.id}`}
-              className="inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+              className="inline-flex min-h-11 items-center rounded-md border border-neutral-300 px-3 text-sm font-medium"
             >
               Configure {item.name}
             </Link>

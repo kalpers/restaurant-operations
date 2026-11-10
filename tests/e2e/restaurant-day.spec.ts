@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
+import { confirmDialog } from "../helpers/e2e-ui";
+
 import {
   createDayMenu,
   createDayTable,
@@ -93,6 +95,7 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
 
   await managerPage.goto(`/scheduling/${periodId}`);
   await managerPage.getByRole("button", { name: "Publish" }).click();
+  await confirmDialog(managerPage, "Publish");
   await expect(managerPage.getByTestId("period-status")).toHaveText("Published");
   expect(await periodStatus(periodId)).toBe("PUBLISHED");
 
@@ -207,7 +210,7 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   await tender.getByRole("button", { name: "Record card (external terminal)" }).click();
   await expect(serverPage.getByLabel("Remaining")).toHaveText("$0.00");
   await serverPage.getByRole("button", { name: "Complete settlement and close order" }).click();
-  await expect(serverPage.getByTestId("order-status")).toHaveText("CLOSED");
+  await expect(serverPage.getByTestId("order-status")).toHaveText("Closed");
 
   // 7. Closing the check doesn't free the table: the guests leave, then it's cleaned.
   await hostPage.goto("/restaurant/floor");

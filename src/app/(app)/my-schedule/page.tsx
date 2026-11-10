@@ -17,6 +17,7 @@ import { listOwnSwaps } from "@/modules/scheduling/services/swap-service";
 import { listOwnTimeOff } from "@/modules/scheduling/services/time-off-service";
 import { TIME_OFF_TYPES } from "@/modules/scheduling/types";
 import { localDateOf, localTimeOf } from "@/shared/time/zoned-time";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function MySchedulePage() {
   const { actor } = await requirePageActor("schedule.view");
@@ -65,14 +66,14 @@ export default async function MySchedulePage() {
           My shifts
         </h2>
         {shifts.length === 0 ? (
-          <p className="text-neutral-600">No published shifts coming up.</p>
+          <EmptyState title="No published shifts coming up." />
         ) : (
           <ul className="grid gap-3">
             {shifts.map((shift) => (
               <li
                 key={shift.assignmentId}
                 data-testid="my-shift"
-                className="rounded border border-neutral-200 p-3"
+                className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
               >
                 <p className="font-medium">
                   {shift.shiftDate} · {shiftTimes(shift, timeZone)}
@@ -137,7 +138,7 @@ export default async function MySchedulePage() {
           </h2>
           <ul className="grid gap-3">
             {swaps.map((swap) => (
-              <li key={swap.id} className="rounded border border-neutral-200 p-3">
+              <li key={swap.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
                 <p className="font-medium">
                   {swap.shiftDate} · {swap.positionName} · {humanize(swap.status)}
                 </p>
@@ -161,6 +162,7 @@ export default async function MySchedulePage() {
                         url={`/api/scheduling/swaps/${swap.id}/cancel`}
                         body={{ expectedVersion: swap.version }}
                         label="Withdraw"
+                        confirm={{ title: "Withdraw this swap request?", confirmLabel: "Withdraw request" }}
                       />
                     )}
                 </div>
@@ -175,7 +177,7 @@ export default async function MySchedulePage() {
           <h2 id="my-time-off-heading" className="mb-3 text-lg font-semibold">
             Time off
           </h2>
-          <div className="mb-4 rounded border border-neutral-200 p-4">
+          <div className="mb-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <p className="mb-3 text-sm text-neutral-600">
               Leave the times blank for whole days.
             </p>
@@ -202,7 +204,7 @@ export default async function MySchedulePage() {
                 <li
                   key={request.id}
                   data-testid="my-time-off"
-                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
                 >
                   <span>
                     {instant(request.startAt)} to {instant(request.endAt)}
@@ -217,6 +219,7 @@ export default async function MySchedulePage() {
                       url={`/api/scheduling/time-off/${request.id}/cancel`}
                       body={{ expectedVersion: request.version }}
                       label="Cancel"
+                      confirm={{ title: "Cancel this time-off request?", confirmLabel: "Cancel request" }}
                     />
                   )}
                 </li>

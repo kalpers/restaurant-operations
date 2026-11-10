@@ -21,8 +21,10 @@ import {
 } from "@/modules/reporting/types";
 import { reportAreaParamsSchema, reportFiltersSchema } from "@/modules/reporting/validators/report-filters";
 import { AppError } from "@/shared/errors/app-error";
+import { INPUT_BASE } from "@/components/ui/field";
+import { Breadcrumbs } from "@/components/ui/page-header";
 
-const INPUT_CLASS = "min-h-11 rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_BASE;
 
 const ORDER_TYPE_FILTER: readonly ReportArea[] = ["sales", "menu", "orders", "fulfillment"];
 const EMPLOYEE_FILTER: readonly ReportArea[] = ["orders", "labor"];
@@ -133,6 +135,7 @@ export default async function ReportPage({
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: REPORT_AREA_TITLE[area] }]} />
       <h1 className="mb-1 text-2xl font-semibold">{REPORT_AREA_TITLE[area]}</h1>
       <p className="mb-4 text-neutral-600">
         {location.locationName} · business dates {filterQuery.from} to {filterQuery.to}
@@ -205,13 +208,13 @@ export default async function ReportPage({
             </select>
           </label>
         )}
-        <button type="submit" className="min-h-11 rounded border border-neutral-400 px-4 font-medium">
+        <button type="submit" className="min-h-11 rounded-md border border-neutral-300 px-4 font-medium">
           Run report
         </button>
         {exportHref && report && (
           <a
             href={exportHref()}
-            className="inline-flex min-h-11 items-center rounded border border-neutral-900 bg-neutral-900 px-4 font-medium text-white"
+            className="inline-flex min-h-11 items-center rounded-md border border-brand-700 bg-brand-700 px-4 font-medium text-white shadow-sm hover:bg-brand-800"
           >
             Export all as CSV
           </a>
@@ -219,7 +222,7 @@ export default async function ReportPage({
       </form>
 
       {error && (
-        <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-red-800">
+        <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
           {error}
         </p>
       )}

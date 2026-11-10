@@ -106,6 +106,20 @@ export const AUDIT_SCOPE: E2eScope = {
   tablePrefix: "AUD-",
 };
 
+/** Phase 15 accessibility spec. Each spec has its own scope: cleanup runs per spec file. */
+export const UI_SCOPE: E2eScope = {
+  emailDomain: "ui-e2e.example.test",
+  rolePrefix: "UI_E2E_",
+  tablePrefix: "UI-",
+};
+
+/** Phase 15 app-shell spec. */
+export const SHELL_SCOPE: E2eScope = {
+  emailDomain: "shell-e2e.example.test",
+  rolePrefix: "SHELL_E2E_",
+  tablePrefix: "SHL-",
+};
+
 export const CODE_PREFIX = "E2EO_";
 
 export type OrdersAccount = { id: string; email: string; password: string };

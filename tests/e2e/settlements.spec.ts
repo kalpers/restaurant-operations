@@ -42,7 +42,7 @@ function tenderForm(page: Page) {
 }
 
 async function expectClosed(page: Page, orderId: string) {
-  await expect(page.getByTestId("order-status")).toHaveText("CLOSED");
+  await expect(page.getByTestId("order-status")).toHaveText("Closed");
   await expect(page.getByRole("region", { name: "Completed settlement" })).toBeVisible();
   expect(await orderStatus(orderId)).toBe("CLOSED");
 }

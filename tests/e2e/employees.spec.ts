@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { expectToast } from "../helpers/e2e-ui";
+
 import {
   createEmployeeRecord,
   createPermissionAccount,
@@ -81,7 +83,7 @@ test.describe("employee management", () => {
     await other.goto(`/employees/${id}`);
     await other.getByLabel("Preferred name").first().fill("First");
     await other.getByRole("button", { name: "Save details" }).click();
-    await expect(other.getByText("Saved.").first()).toBeVisible();
+    await expectToast(other, "Saved.");
 
     await page.getByLabel("Preferred name").first().fill("Second");
     await page.getByRole("button", { name: "Save details" }).click();

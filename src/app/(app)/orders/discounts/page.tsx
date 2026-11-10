@@ -62,7 +62,7 @@ export default async function DiscountsPage() {
         {definitions.length === 0 && <p className="text-neutral-600">No discounts yet.</p>}
         <ul className="grid gap-4">
           {definitions.map((definition) => (
-            <li key={definition.id} aria-label={`Discount ${definition.name}`} className="rounded border border-neutral-300 p-4">
+            <li key={definition.id} aria-label={`Discount ${definition.name}`} className="rounded-md border border-neutral-300 p-4">
               <p className="font-medium">
                 {definition.name} · {definition.scope === "ITEM" ? "item" : "order"} ·{" "}
                 {definition.discountType === "PERCENTAGE" ? `${definition.value}%` : formatMoney(definition.value)}

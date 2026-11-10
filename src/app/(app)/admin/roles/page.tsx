@@ -28,7 +28,7 @@ export default async function RolesPage() {
       <h1 className="mb-4 text-2xl font-semibold">Roles</h1>
 
       {canManage && (
-        <section className="mb-8 rounded border border-neutral-200 p-4">
+        <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">Add a role</h2>
           <EntityForm
             method="POST"
@@ -49,7 +49,7 @@ export default async function RolesPage() {
           const editable = canManage && role.code !== OWNER_ROLE_CODE;
 
           return (
-            <li key={role.id} className="rounded border border-neutral-200 p-4">
+            <li key={role.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
               <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-semibold">
                   {role.name} ({role.code})
@@ -88,6 +88,7 @@ export default async function RolesPage() {
                     url={`/api/admin/roles/${role.id}`}
                     body={{ active: !role.active, expectedVersion: role.version }}
                     label={role.active ? "Deactivate" : "Activate"}
+                    confirm={role.active ? { title: `Deactivate the ${role.name} role?`, body: "Users lose this role's permissions until it is activated again." } : undefined}
                   />
                 </div>
               )}

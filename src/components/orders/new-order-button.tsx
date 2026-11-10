@@ -47,19 +47,19 @@ export function NewOrderButton(
             value={customerName}
             maxLength={60}
             onChange={(event) => setCustomerName(event.target.value)}
-            className="min-h-11 rounded border border-neutral-400 px-3"
+            className="min-h-11 rounded-md border border-neutral-300 px-3"
           />
         </label>
       )}
       <button
         type="submit"
         disabled={pending}
-        className="min-h-11 rounded bg-neutral-900 px-4 font-medium text-white disabled:opacity-50"
+        className="min-h-11 rounded-md bg-brand-700 px-4 font-medium text-white shadow-sm hover:bg-brand-800 disabled:opacity-50"
       >
         {props.label}
       </button>
       {error && (
-        <p role="alert" className="w-full text-sm text-red-700">
+        <p role="alert" className="w-full text-sm text-danger-700">
           {error}
         </p>
       )}

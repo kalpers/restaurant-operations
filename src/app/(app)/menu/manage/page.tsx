@@ -42,7 +42,7 @@ export default async function ManageMenuPage() {
 
       <section aria-label="Categories" className="mb-10">
         <h2 className="mb-3 text-xl font-semibold">Categories</h2>
-        <div className="mb-4 rounded border border-neutral-200 p-4">
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h3 className="mb-3 font-semibold">Add a category</h3>
           <EntityForm
             method="POST"
@@ -57,7 +57,7 @@ export default async function ManageMenuPage() {
             <li
               key={category.id}
               aria-label={`Category ${category.code}`}
-              className="rounded border border-neutral-200 p-4"
+              className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
             >
               <h3 className="mb-3 font-semibold">
                 {category.code}
@@ -80,7 +80,7 @@ export default async function ManageMenuPage() {
 
       <section aria-label="Menus" className="mb-10">
         <h2 className="mb-3 text-xl font-semibold">Menus</h2>
-        <div className="mb-4 rounded border border-neutral-200 p-4">
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h3 className="mb-3 font-semibold">Add a menu</h3>
           <EntityForm
             method="POST"
@@ -99,7 +99,7 @@ export default async function ManageMenuPage() {
               <li
                 key={menu.id}
                 aria-label={`Menu ${menu.code}`}
-                className="rounded border border-neutral-200 p-4"
+                className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
               >
                 <h3 className="mb-1 font-semibold">
                   {menu.code}
@@ -112,6 +112,7 @@ export default async function ManageMenuPage() {
                     url={`/api/menu/menus/${menu.id}/locations`}
                     body={{ locationId: location.locationId, active: !offered }}
                     label={offered ? "Stop offering here" : "Offer here"}
+                    confirm={offered ? { title: `Stop offering ${menu.name} here?`, body: "Servers at this location can't order from it until it is offered again." } : undefined}
                   />
                 </p>
                 <EntityForm
@@ -132,7 +133,7 @@ export default async function ManageMenuPage() {
 
       <section aria-label="Menu items" className="mb-10">
         <h2 className="mb-3 text-xl font-semibold">Menu items</h2>
-        <div className="mb-4 rounded border border-neutral-200 p-4">
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h3 className="mb-3 font-semibold">Add a menu item</h3>
           <EntityForm
             method="POST"
@@ -150,7 +151,7 @@ export default async function ManageMenuPage() {
           />
         </div>
         {unplaced.length > 0 && (
-          <p className="mb-3 text-sm text-amber-800">
+          <p className="mb-3 text-sm text-warning-800">
             {unplaced.length} item{unplaced.length === 1 ? " is" : "s are"} not on any menu.
           </p>
         )}
@@ -158,7 +159,7 @@ export default async function ManageMenuPage() {
           {items.map((item) => (
             <li
               key={item.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
             >
               <span>
                 <span className="font-medium">{item.name}</span>{" "}
@@ -170,7 +171,7 @@ export default async function ManageMenuPage() {
               </span>
               <Link
                 href={`/menu/items/${item.id}`}
-                className="inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+                className="inline-flex min-h-11 items-center rounded-md border border-neutral-300 px-3 text-sm font-medium"
               >
                 Edit {item.name}
               </Link>

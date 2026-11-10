@@ -21,7 +21,7 @@ export function ReportTabs({
           href={`/reports/${area}${query}`}
           aria-current={area === current ? "page" : undefined}
           className={`inline-flex min-h-11 items-center rounded border px-3 text-sm font-medium ${
-            area === current ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-400"
+            area === current ? "border-brand-700 bg-brand-700 text-white" : "border-neutral-400"
           }`}
         >
           {REPORT_AREA_TITLE[area]}

@@ -5,6 +5,7 @@ import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { listItems } from "@/modules/menu/services/catalog-service";
 import { listRecipes } from "@/modules/recipes/services/recipe-service";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function RecipesPage() {
   const { location, actor } = await requirePageActor("recipes.view");
@@ -21,7 +22,7 @@ export default async function RecipesPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
       {canEdit && (
-        <section aria-label="Add a recipe" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Add a recipe" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">Add a recipe</h2>
           <EntityForm
             method="POST"
@@ -50,13 +51,13 @@ export default async function RecipesPage() {
       )}
 
       {recipes.length === 0 ? (
-        <p className="text-neutral-600">No recipes yet.</p>
+        <EmptyState title="No recipes yet." />
       ) : (
         <ul className="grid gap-2">
           {recipes.map((recipe) => (
             <li
               key={recipe.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
             >
               <span>
                 <span className="font-medium">{recipe.name}</span>{" "}
@@ -68,7 +69,7 @@ export default async function RecipesPage() {
               </span>
               <Link
                 href={`/recipes/${recipe.id}`}
-                className="inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+                className="inline-flex min-h-11 items-center rounded-md border border-neutral-300 px-3 text-sm font-medium"
               >
                 Open {recipe.name}
               </Link>

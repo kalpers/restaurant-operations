@@ -72,12 +72,12 @@ export function RolePermissionsForm({
         <button
           type="submit"
           disabled={pending}
-          className="min-h-11 rounded bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand-700 px-4 py-2 font-medium text-white shadow-sm hover:bg-brand-800 disabled:opacity-50"
         >
           {pending ? "Saving..." : "Save permissions"}
         </button>
         {error && (
-          <p role="alert" className="text-red-700">
+          <p role="alert" className="text-danger-700">
             {error}
           </p>
         )}

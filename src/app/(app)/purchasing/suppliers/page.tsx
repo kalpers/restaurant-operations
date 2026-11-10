@@ -29,7 +29,7 @@ export default async function SuppliersPage() {
       <h1 className="mb-1 text-2xl font-semibold">Suppliers</h1>
       <p className="mb-6 text-neutral-600">{location.locationName}</p>
 
-      <section aria-label="Add a supplier" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Add a supplier" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 font-semibold">Add a supplier</h2>
         <EntityForm
           method="POST"
@@ -45,7 +45,7 @@ export default async function SuppliersPage() {
           <li
             key={supplier.id}
             aria-label={`Supplier ${supplier.code}`}
-            className="rounded border border-neutral-200 p-4"
+            className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
           >
             <h2 className="mb-3 text-xl font-semibold">
               {supplier.name} <span className="font-normal text-neutral-600">{supplier.code}{supplier.active ? "" : " · Inactive"}</span>

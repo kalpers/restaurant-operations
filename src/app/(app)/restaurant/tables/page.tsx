@@ -3,6 +3,7 @@ import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { listAreas } from "@/modules/organization/services/organization-service";
 import { listTablesForConfiguration } from "@/modules/restaurant/services/table-service";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function TablesPage() {
   const { location, actor } = await requirePageActor("restaurant.tables.manage");
@@ -34,7 +35,7 @@ export default async function TablesPage() {
       <h1 className="mb-1 text-2xl font-semibold">Tables</h1>
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
-      <section className="mb-8 rounded border border-neutral-200 p-4">
+      <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 font-semibold">Add a table</h2>
         <EntityForm
           method="POST"
@@ -46,14 +47,14 @@ export default async function TablesPage() {
       </section>
 
       {tables.length === 0 ? (
-        <p className="text-neutral-600">No tables yet.</p>
+        <EmptyState title="No tables yet." />
       ) : (
         <ul className="grid gap-4">
           {tables.map((table) => (
             <li
               key={table.id}
               aria-label={`Table ${table.tableNumber}`}
-              className="rounded border border-neutral-200 p-4"
+              className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
             >
               <h2 className="mb-3 font-semibold">
                 {table.tableNumber}

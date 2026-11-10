@@ -57,7 +57,7 @@ test.describe("audit trail", () => {
 
     await expect(completed.first()).toBeVisible();
     await completed.first().getByText("Show").click();
-    await expect(completed.first()).toContainText('"status": "COMPLETED"');
+    await expect(completed.first().getByRole("row", { name: /^status/ })).toContainText("COMPLETED");
 
     // The owner's own sign-in is an organization-level event.
     await page.getByLabel("Action").selectOption("auth.signed-in");
@@ -71,7 +71,8 @@ test.describe("audit trail", () => {
 
     await expect(failed).toHaveCount(1);
     await failed.getByText("Show").click();
-    await expect(failed).toContainText('"reason": "BAD_PASSWORD"');
+    await expect(failed).toContainText("reason");
+    await expect(failed).toContainText("BAD_PASSWORD");
   });
 
   test("a manager without audit.view has no audit menu, page or API", async ({ page }) => {

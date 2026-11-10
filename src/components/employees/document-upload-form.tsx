@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { sendFormData } from "@/components/forms/api-request";
 
 import { humanize } from "./format";
+import { INPUT_STYLE } from "@/components/ui/field";
 
 type DocumentUploadFormProps = {
   url: string;
@@ -14,8 +15,7 @@ type DocumentUploadFormProps = {
   allowSensitive: boolean;
 };
 
-const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_STYLE;
 
 /** Files go to the server only: there is no public URL for an uploaded document. */
 export function DocumentUploadForm({
@@ -103,14 +103,14 @@ export function DocumentUploadForm({
         <button
           type="submit"
           disabled={pending}
-          className="min-h-11 rounded bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand-700 px-4 py-2 font-medium text-white shadow-sm hover:bg-brand-800 disabled:opacity-50"
         >
           {pending ? "Uploading..." : "Upload document"}
         </button>
         {message && (
           <p
             role={message.ok ? "status" : "alert"}
-            className={message.ok ? "text-green-800" : "text-red-700"}
+            className={message.ok ? "text-success-800" : "text-danger-700"}
           >
             {message.text}
           </p>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { sendApiRequest } from "@/components/forms/api-request";
+import { INPUT_STYLE } from "@/components/ui/field";
 
 type ReceivableLine = {
   id: string;
@@ -13,8 +14,7 @@ type ReceivableLine = {
   unitPrice: string;
 };
 
-const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_STYLE;
 
 /**
  * Receives one shipment against an order. Blank lines aren't received. The cost defaults to
@@ -66,7 +66,7 @@ export function ReceiveForm({ orderId, lines }: { orderId: string; lines: Receiv
   return (
     <form onSubmit={handleSubmit} aria-label="Receive shipment" className="grid gap-4">
       {lines.map((line) => (
-        <fieldset key={line.id} className="grid gap-3 rounded border border-neutral-200 p-3 sm:grid-cols-2">
+        <fieldset key={line.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3 sm:grid-cols-2">
           <legend className="px-1 text-sm font-medium">
             {line.itemName}: {line.remainingQuantity} {line.unitCode} still on order
           </legend>
@@ -88,12 +88,12 @@ export function ReceiveForm({ orderId, lines }: { orderId: string; lines: Receiv
         <button
           type="submit"
           disabled={pending}
-          className="min-h-11 rounded bg-neutral-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand-700 px-4 py-2 font-medium text-white shadow-sm hover:bg-brand-800 disabled:opacity-50"
         >
           {pending ? "Receiving..." : "Receive shipment"}
         </button>
         {message && (
-          <p role={message.ok ? "status" : "alert"} className={message.ok ? "text-green-800" : "text-red-700"}>
+          <p role={message.ok ? "status" : "alert"} className={message.ok ? "text-success-800" : "text-danger-700"}>
             {message.text}
           </p>
         )}

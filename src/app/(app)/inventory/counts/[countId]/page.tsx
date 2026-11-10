@@ -1,15 +1,16 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
-import { COUNT_STATUS_LABELS, formatQuantity } from "@/components/inventory/format";
+import { formatQuantity } from "@/components/inventory/format";
 import { getDatabase } from "@/db";
 import { requirePageActorWithAny } from "@/modules/auth/guards";
 import { actorHolds } from "@/modules/inventory/services/access";
 import { getCount } from "@/modules/inventory/services/count-service";
 import { NotFoundError } from "@/shared/errors/app-error";
+import { Breadcrumbs } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/format/status-badge";
 
 export default async function CountPage({ params }: { params: Promise<{ countId: string }> }) {
   const { actor } = await requirePageActorWithAny(["inventory.count", "inventory.count.approve"]);
@@ -31,14 +32,10 @@ export default async function CountPage({ params }: { params: Promise<{ countId:
 
   return (
     <>
-      <p className="mb-2">
-        <Link href="/inventory/counts" className="text-sm underline">
-          Back to counts
-        </Link>
-      </p>
+      <Breadcrumbs items={[{ label: "Inventory counts", href: "/inventory/counts" }, { label: count.name }]} />
       <h1 className="mb-1 text-2xl font-semibold">{count.name}</h1>
       <p className="mb-4 text-neutral-600" aria-label="Count status">
-        {COUNT_STATUS_LABELS[count.status] ?? count.status}
+        <StatusBadge domain="inventoryCount" status={count.status} />
         {count.activityAcknowledgedAt && " · Later stock activity acknowledged at approval"}
       </p>
 
@@ -47,7 +44,7 @@ export default async function CountPage({ params }: { params: Promise<{ countId:
           <li
             key={line.id}
             aria-label={`Count line ${line.itemName}`}
-            className="rounded border border-neutral-200 p-4"
+            className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
           >
             <p className="font-medium">{line.itemName}</p>
             <p className="text-sm">
@@ -56,7 +53,7 @@ export default async function CountPage({ params }: { params: Promise<{ countId:
                 ` · counted ${formatQuantity(line.countedQuantity)} · variance ${formatQuantity(line.varianceQuantity)}`}
             </p>
             {line.activitySinceSnapshot && (
-              <p className="text-sm text-amber-800">Stock has moved since this line was captured.</p>
+              <p className="text-sm text-warning-800">Stock has moved since this line was captured.</p>
             )}
             {editable && (
               <div className="mt-3">
@@ -95,12 +92,13 @@ export default async function CountPage({ params }: { params: Promise<{ countId:
             url={`/api/inventory/counts/${count.id}/cancel`}
             body={{ expectedVersion: count.version }}
             label="Cancel count"
+            confirm={{ title: "Cancel this count?", body: "No inventory adjustments are made, and the count can't be resumed.", cancelLabel: "Keep counting" }}
           />
         )}
       </div>
 
       {count.status === "SUBMITTED" && actorHolds(actor, "inventory.count.approve") && (
-        <section aria-label="Approve count" className="mt-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Approve count" className="mt-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-1 text-xl font-semibold">Approve</h2>
           <p className="mb-3 text-sm text-neutral-600">
             Each variance is posted against current stock as a count adjustment. Stock isn&apos;t
@@ -125,6 +123,7 @@ export default async function CountPage({ params }: { params: Promise<{ countId:
               url={`/api/inventory/counts/${count.id}/return`}
               body={{ expectedVersion: count.version }}
               label="Return for correction"
+              confirm={{ title: "Return this count for correction?", body: "The counter can change the quantities and submit it again.", tone: "primary" }}
             />
           </div>
         </section>

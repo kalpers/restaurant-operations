@@ -68,7 +68,7 @@ export function SectionTablesForm({
         </div>
       </fieldset>
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-danger-700">
           {error}
         </p>
       )}
@@ -77,7 +77,7 @@ export function SectionTablesForm({
           type="button"
           onClick={save}
           disabled={pending}
-          className="min-h-11 rounded border border-neutral-400 px-3 py-1 text-sm font-medium disabled:opacity-50"
+          className="min-h-11 rounded-md border border-neutral-300 px-3 py-1 text-sm font-medium disabled:opacity-50"
         >
           Save tables
         </button>

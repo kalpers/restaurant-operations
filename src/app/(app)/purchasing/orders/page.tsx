@@ -1,12 +1,14 @@
 import Link from "next/link";
 
 import { EntityForm } from "@/components/forms/entity-form";
-import { formatCost, PO_STATUS_LABELS } from "@/components/inventory/format";
+import { formatCost } from "@/components/inventory/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { actorHolds } from "@/modules/inventory/services/access";
 import { listPurchaseOrders } from "@/modules/inventory/services/purchase-order-service";
 import { listSuppliers } from "@/modules/inventory/services/supplier-service";
+import { StatusBadge } from "@/components/format/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function PurchaseOrdersPage() {
   const { location, actor } = await requirePageActor("purchasing.view");
@@ -25,7 +27,7 @@ export default async function PurchaseOrdersPage() {
       </p>
 
       {actorHolds(actor, "purchasing.manage") && (
-        <section aria-label="New purchase order" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="New purchase order" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">New purchase order</h2>
           <EntityForm
             method="POST"
@@ -51,24 +53,24 @@ export default async function PurchaseOrdersPage() {
       )}
 
       {orders.length === 0 ? (
-        <p className="text-neutral-600">No purchase orders yet.</p>
+        <EmptyState title="No purchase orders yet." />
       ) : (
         <ul className="grid gap-2">
           {orders.map((order) => (
             <li
               key={order.id}
               aria-label={`Purchase order ${order.poNumber}`}
-              className="flex flex-wrap items-center justify-between gap-2 rounded border border-neutral-200 p-3"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
             >
               <span>
                 <span className="font-medium">{order.poNumber}</span>{" "}
                 <span className="text-neutral-600">
-                  {order.supplierName} · {PO_STATUS_LABELS[order.status] ?? order.status} · {formatCost(order.total)}
+                  {order.supplierName} · <StatusBadge domain="purchaseOrder" status={order.status} /> · {formatCost(order.total)}
                 </span>
               </span>
               <Link
                 href={`/purchasing/orders/${order.id}`}
-                className="inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+                className="inline-flex min-h-11 items-center rounded-md border border-neutral-300 px-3 text-sm font-medium"
               >
                 Open {order.poNumber}
               </Link>

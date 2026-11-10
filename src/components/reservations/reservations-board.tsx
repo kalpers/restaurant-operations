@@ -19,6 +19,8 @@ import {
   useSubmit,
   type HostTableOption,
 } from "./shared";
+import { StatusBadge } from "@/components/format/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export type ReservationAbilities = {
   manage: boolean;
@@ -39,24 +41,14 @@ type ReservationsBoardProps = {
   abilities: ReservationAbilities;
 };
 
-const STATUS_LABELS: Record<ReservationView["status"], string> = {
-  PENDING: "Pending",
-  CONFIRMED: "Confirmed",
-  CHECKED_IN: "Checked in",
-  SEATED: "Seated",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-  NO_SHOW: "No-show",
-};
-
 const STATUS_STYLES: Record<ReservationView["status"], string> = {
-  PENDING: "border-amber-500 bg-amber-50",
+  PENDING: "border-warning-500 bg-warning-50",
   CONFIRMED: "border-neutral-400 bg-white",
   CHECKED_IN: "border-emerald-500 bg-emerald-50",
   SEATED: "border-blue-500 bg-blue-50",
   COMPLETED: "border-neutral-300 bg-neutral-100",
   CANCELLED: "border-neutral-300 bg-neutral-100",
-  NO_SHOW: "border-red-400 bg-red-50",
+  NO_SHOW: "border-red-400 bg-danger-50",
 };
 
 const ACTIVE: readonly ReservationView["status"][] = [
@@ -189,7 +181,7 @@ function ReservationForm({
     <form
       onSubmit={handleSubmit}
       aria-label={mode.type === "create" ? "New reservation" : "Edit reservation"}
-      className="mb-4 grid gap-3 rounded border border-neutral-300 p-4"
+      className="mb-4 grid gap-3 rounded-md border border-neutral-300 p-4"
     >
       <h2 className="font-semibold">
         {mode.type === "create" ? "New reservation" : "Edit reservation"}
@@ -294,21 +286,21 @@ function PlanPanel({
   }
 
   return (
-    <div className="mt-3 grid gap-3 rounded border border-neutral-300 p-3" aria-label="Plan tables">
+    <div className="mt-3 grid gap-3 rounded-md border border-neutral-300 p-3" aria-label="Plan tables">
       <TablePicker legend="Planned tables" tables={tables} chosen={chosen} onToggle={toggle} />
       {preview && !preview.sufficient && (
-        <p role="alert" className="text-sm text-amber-900">
+        <p role="alert" className="text-sm text-warning-900">
           These tables seat {preview.capacity}, fewer than the party of {reservation.partySize}.
         </p>
       )}
       {preview?.conflicts.map((conflict) => (
-        <p key={`${conflict.reservationId}-${conflict.tableId}`} role="alert" className="text-sm text-amber-900">
+        <p key={`${conflict.reservationId}-${conflict.tableId}`} role="alert" className="text-sm text-warning-900">
           Table {conflict.tableNumber} conflicts with {conflict.guestName}&apos;s party of{" "}
           {conflict.partySize} at {formatTime(conflict.reservationAt, timeZone)}.
         </p>
       ))}
       {preview && preview.sufficient && preview.conflicts.length === 0 && chosen.length > 0 && (
-        <p role="status" className="text-sm text-emerald-800">
+        <p role="status" className="text-sm text-success-800">
           No planning conflicts.
         </p>
       )}
@@ -392,7 +384,7 @@ function SeatPanel({
     <form
       onSubmit={handleSubmit}
       aria-label="Seat reservation"
-      className="mt-3 grid gap-3 rounded border border-neutral-300 p-3"
+      className="mt-3 grid gap-3 rounded-md border border-neutral-300 p-3"
     >
       <p className="text-sm">
         Seat {reservation.guestName}, party of {reservation.partySize}. Tables can differ from
@@ -433,7 +425,7 @@ function SeatPanel({
         onlyAvailable
       />
       {heldForOthers.length > 0 && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">
             {heldForOthers.map((table) => table.tableNumber).join(", ")}{" "}
             {heldForOthers.length === 1 ? "is" : "are"} held for another reservation.
@@ -453,7 +445,7 @@ function SeatPanel({
         </div>
       )}
       {chosen.length > 0 && reservation.partySize > capacity && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">
             This party of {reservation.partySize} is over the capacity of {capacity}.
           </p>
@@ -497,7 +489,7 @@ function CancelPanel({
   return (
     <form
       aria-label="Cancel reservation"
-      className="mt-3 grid gap-3 rounded border border-neutral-300 p-3"
+      className="mt-3 grid gap-3 rounded-md border border-neutral-300 p-3"
       onSubmit={async (event) => {
         event.preventDefault();
 
@@ -584,7 +576,7 @@ function ReservationCard({
             )}
           </p>
         </div>
-        <span className="text-sm font-semibold">{STATUS_LABELS[reservation.status]}</span>
+        <StatusBadge domain="reservation" status={reservation.status} className="text-sm" />
       </div>
       {reservation.specialRequests && (
         <p className="mt-1 text-sm">Request: {reservation.specialRequests}</p>
@@ -744,7 +736,7 @@ export function ReservationsBoard({
         </p>
       )}
       {days.length === 0 && (
-        <p className="text-neutral-600">No reservations for these days.</p>
+        <EmptyState title="No reservations for these days." />
       )}
       {days.map((day) => {
         const first = visible.find((reservation) => reservation.businessDate === day)!;

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { confirmDialog } from "../helpers/e2e-ui";
+
 import { createMenuE2e, type MenuAccount } from "../helpers/e2e-menu";
 
 const { createPermissionAccount, createRoleAccount, removeMenuE2eData, uniqueCode } = createMenuE2e("RECIPES");
@@ -72,6 +74,7 @@ test.describe("recipe administration", () => {
 
     // Retire the current revision.
     await second.getByRole("button", { name: "Retire revision" }).click();
+    await confirmDialog(page, "Retire revision");
     await expect(second).toContainText("Revision 2 · Retired");
   });
 

@@ -1,1 +1,68 @@
 @import "tailwindcss";
+
+/*
+ * Design tokens (Phase 15). Components use these names (bg-brand-700, text-danger-700)
+ * instead of raw palette colors. Light theme only. Every tone pairs a light fill (50/100)
+ * with a dark text shade (700/800) that meets WCAG AA contrast on that fill and on white.
+ */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: var(--color-teal-50);
+  --color-brand-100: var(--color-teal-100);
+  --color-brand-200: var(--color-teal-200);
+  --color-brand-500: var(--color-teal-500);
+  --color-brand-600: var(--color-teal-600);
+  --color-brand-700: var(--color-teal-700);
+  --color-brand-800: var(--color-teal-800);
+  --color-brand-900: var(--color-teal-900);
+
+  --color-success-50: var(--color-emerald-50);
+  --color-success-100: var(--color-emerald-100);
+  --color-success-300: var(--color-emerald-300);
+  --color-success-500: var(--color-emerald-500);
+  --color-success-700: var(--color-emerald-700);
+  --color-success-800: var(--color-emerald-800);
+
+  --color-warning-50: var(--color-amber-50);
+  --color-warning-100: var(--color-amber-100);
+  --color-warning-300: var(--color-amber-300);
+  --color-warning-500: var(--color-amber-500);
+  --color-warning-700: var(--color-amber-700);
+  --color-warning-800: var(--color-amber-800);
+  --color-warning-900: var(--color-amber-900);
+
+  --color-danger-50: var(--color-red-50);
+  --color-danger-100: var(--color-red-100);
+  --color-danger-300: var(--color-red-300);
+  --color-danger-500: var(--color-red-500);
+  --color-danger-600: var(--color-red-600);
+  --color-danger-700: var(--color-red-700);
+  --color-danger-800: var(--color-red-800);
+
+  --color-info-50: var(--color-sky-50);
+  --color-info-100: var(--color-sky-100);
+  --color-info-300: var(--color-sky-300);
+  --color-info-500: var(--color-sky-500);
+  --color-info-700: var(--color-sky-700);
+  --color-info-800: var(--color-sky-800);
+
+  --color-surface: var(--color-white);
+  --color-canvas: var(--color-neutral-50);
+}
+
+@layer base {
+  /* One visible focus ring for every interactive element, keyboard only. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background: rgb(23 23 23 / 0.45);
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}

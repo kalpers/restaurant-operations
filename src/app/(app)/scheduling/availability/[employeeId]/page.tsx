@@ -6,6 +6,7 @@ import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { getAvailability } from "@/modules/scheduling/services/availability-service";
 import { NotFoundError } from "@/shared/errors/app-error";
+import { Breadcrumbs } from "@/components/ui/page-header";
 
 export default async function EmployeeAvailabilityPage({
   params,
@@ -33,6 +34,7 @@ export default async function EmployeeAvailabilityPage({
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Availability", href: "/scheduling/availability" }, { label: "Employee availability" }]} />
       <h1 className="mb-4 text-2xl font-semibold">Employee availability</h1>
       <AvailabilityPanel
         data={data}

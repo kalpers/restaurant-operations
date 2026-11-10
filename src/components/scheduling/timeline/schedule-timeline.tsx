@@ -28,6 +28,7 @@ import {
   POSITION_PALETTE,
   SWATCH_PALETTE,
 } from "./timeline-format";
+import { buttonClass } from "@/components/ui/button";
 
 export type TimelineView = "employee" | "position";
 
@@ -45,8 +46,7 @@ const noSubscription = () => () => {};
 const HOUR_WIDTH = 56;
 const NAME_WIDTH = 168;
 
-const BUTTON_CLASS =
-  "inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium hover:bg-neutral-100";
+const BUTTON_CLASS = buttonClass("secondary");
 
 /** The URL for a state, leaving defaults out so links stay short. */
 function timelineHref(state: TimelineState): string {
@@ -294,13 +294,13 @@ export function ScheduleTimeline({
                 go({ date: event.target.value, selected: null });
               }
             }}
-            className="min-h-11 rounded border border-neutral-300 bg-white px-3 text-base"
+            className="min-h-11 rounded-md border border-neutral-300 bg-white px-3 text-base"
           />
         </label>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-4">
-        <div className="inline-flex rounded border border-neutral-400" role="group" aria-label="Group by">
+        <div className="inline-flex rounded-md border border-neutral-300" role="group" aria-label="Group by">
           {(["employee", "position"] as const).map((option) => (
             <Link
               key={option}
@@ -347,7 +347,7 @@ export function ScheduleTimeline({
         </p>
       ) : (
         <div
-          className="overflow-x-auto rounded border border-neutral-200"
+          className="overflow-x-auto rounded-lg border border-neutral-200 bg-surface shadow-sm"
           data-testid="timeline-frame"
         >
           <div style={{ minWidth: NAME_WIDTH + trackWidth }} className="relative">
@@ -518,7 +518,7 @@ export function ScheduleTimeline({
               <div
                 aria-hidden="true"
                 data-testid="timeline-now"
-                className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-red-600"
+                className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-danger-600"
                 style={{
                   left: `calc(${NAME_WIDTH}px + (100% - ${NAME_WIDTH}px) * ${nowLeft / 100})`,
                 }}

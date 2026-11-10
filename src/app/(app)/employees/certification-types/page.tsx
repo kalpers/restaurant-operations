@@ -11,7 +11,7 @@ export default async function CertificationTypesPage() {
     <>
       <h1 className="mb-4 text-2xl font-semibold">Certification types</h1>
 
-      <section className="mb-8 rounded border border-neutral-200 p-4">
+      <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 font-semibold">Add a certification type</h2>
         <EntityForm
           method="POST"
@@ -30,7 +30,7 @@ export default async function CertificationTypesPage() {
 
       <ul className="grid gap-4">
         {types.map((type) => (
-          <li key={type.id} className="rounded border border-neutral-200 p-4">
+          <li key={type.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <p className="mb-3 font-medium">{type.code}</p>
             <EntityForm
               method="PATCH"

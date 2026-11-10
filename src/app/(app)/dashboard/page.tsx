@@ -5,8 +5,9 @@ import { DashboardOverview } from "@/components/reports/dashboard-overview";
 import { requirePageUser, resolveCurrentLocation } from "@/modules/auth/guards";
 import { requirePermission } from "@/modules/auth/services/permission-service";
 import { dashboardQuerySchema } from "@/modules/reporting/validators/report-filters";
+import { INPUT_BASE } from "@/components/ui/field";
 
-const INPUT_CLASS = "min-h-11 rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_BASE;
 
 /**
  * The operational overview. With `reports.view` it shows one business date's headline
@@ -31,11 +32,11 @@ export default async function DashboardPage({
       <h1 className="mb-4 text-2xl font-semibold">Dashboard</h1>
       {location ? (
         <dl className="mb-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded border border-neutral-200 p-4">
+          <div className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <dt className="text-sm text-neutral-600">Location</dt>
             <dd className="text-lg font-medium">{location.locationName}</dd>
           </div>
-          <div className="rounded border border-neutral-200 p-4">
+          <div className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <dt className="text-sm text-neutral-600">Your roles here</dt>
             <dd className="text-lg font-medium">{location.roles.map((role) => role.name).join(", ")}</dd>
           </div>
@@ -62,7 +63,7 @@ export default async function DashboardPage({
                   className={INPUT_CLASS}
                 />
               </label>
-              <button type="submit" className="min-h-11 rounded border border-neutral-400 px-4 font-medium">
+              <button type="submit" className="min-h-11 rounded-md border border-neutral-300 px-4 font-medium">
                 Show
               </button>
               <Link href="/reports" className="inline-flex min-h-11 items-center font-medium underline">
@@ -80,7 +81,7 @@ export default async function DashboardPage({
               />
             </Suspense>
           ) : (
-            <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-red-800">
+            <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
               Choose a valid business date.
             </p>
           )}

@@ -37,7 +37,7 @@ export default async function StaffingAndRulesPage() {
             it. An end at or before the start runs past midnight.
           </p>
 
-          <div className="mb-6 rounded border border-neutral-200 p-4">
+          <div className="mb-6 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <EntityForm
               method="POST"
               url="/api/scheduling/templates"
@@ -55,7 +55,7 @@ export default async function StaffingAndRulesPage() {
               <li
                 key={template.id}
                 data-testid="staffing-template"
-                className="rounded border border-neutral-200 p-4"
+                className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
               >
                 <h3 className="mb-2 font-medium">
                   {template.name}
@@ -85,6 +85,7 @@ export default async function StaffingAndRulesPage() {
                           method="DELETE"
                           url={`/api/scheduling/templates/${template.id}/requirements/${requirement.id}`}
                           label="Remove"
+                          confirm={{ title: "Remove this staffing requirement?", confirmLabel: "Remove requirement" }}
                         />
                       </li>
                     ))}
@@ -144,6 +145,14 @@ export default async function StaffingAndRulesPage() {
                     expectedVersion: template.version,
                   }}
                   label={template.active ? "Deactivate" : "Reactivate"}
+                  confirm={
+                    template.active
+                      ? {
+                          title: `Deactivate ${template.name}?`,
+                          body: "Schedule generation stops using it. Existing schedules aren't changed.",
+                        }
+                      : undefined
+                  }
                 />
               </li>
             ))}

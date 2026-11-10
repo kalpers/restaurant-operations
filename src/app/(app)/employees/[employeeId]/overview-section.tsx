@@ -99,7 +99,7 @@ async function AssignmentsPanel({ actor, auth, employee }: OverviewProps) {
         <h2 className="mb-3 text-lg font-semibold">Locations</h2>
         <ul className="mb-4 grid gap-3">
           {employee.locations.map((assignment) => (
-            <li key={assignment.id} className="rounded border border-neutral-200 p-3">
+            <li key={assignment.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
               <p className="font-medium">
                 {assignment.locationName}
                 {assignment.primaryLocation && " (primary)"}
@@ -153,7 +153,7 @@ async function AssignmentsPanel({ actor, auth, employee }: OverviewProps) {
         </p>
         <ul className="mb-4 grid gap-3">
           {employee.positions.map((assignment) => (
-            <li key={assignment.id} className="rounded border border-neutral-200 p-3">
+            <li key={assignment.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
               <p className="font-medium">
                 {assignment.positionName}
                 {assignment.primaryPosition && " (primary)"}
@@ -304,6 +304,7 @@ async function UserLinkPanel({ actor, employeeId, employee }: OverviewProps) {
               url={`/api/employees/${employeeId}/user-link`}
               body={hidden}
               label="Unlink user"
+              confirm={{ title: "Unlink this user account?", body: "The employee record stays. The login is no longer linked to it." }}
             />
           )}
         </div>

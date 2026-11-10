@@ -38,7 +38,7 @@ export default async function UsersPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
       {canManage && (
-        <section className="mb-8 rounded border border-neutral-200 p-4">
+        <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">Add a user</h2>
           <EntityForm
             method="POST"
@@ -56,10 +56,10 @@ export default async function UsersPage() {
 
       <ul className="grid gap-4">
         {users.map((user) => (
-          <li key={user.id} className="rounded border border-neutral-200 p-4">
+          <li key={user.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="font-medium break-all">{user.email}</p>
-              <p className={user.active ? "text-green-800" : "text-red-700"}>
+              <p className={user.active ? "text-success-800" : "text-danger-700"}>
                 {user.active ? "Active" : "Disabled"}
               </p>
             </div>
@@ -72,6 +72,7 @@ export default async function UsersPage() {
                       method="DELETE"
                       url={`/api/admin/users/${user.id}/roles/${role.id}`}
                       label={`Remove ${role.name}`}
+                      confirm={{ title: `Remove the ${role.name} role?`, body: "This user loses the role's permissions at this location.", confirmLabel: "Remove role" }}
                     />
                   )}
                 </li>
@@ -88,6 +89,7 @@ export default async function UsersPage() {
                     url={`/api/admin/users/${user.id}`}
                     body={{ active: !user.active, expectedVersion: user.version }}
                     label={user.active ? "Disable" : "Enable"}
+                    confirm={user.active ? { title: "Disable this user?", body: "They can't sign in until the account is enabled again.", confirmLabel: "Disable user" } : undefined}
                   />
                 )}
                 <EntityForm

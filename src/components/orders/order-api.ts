@@ -1,6 +1,8 @@
 export type OrderApiResult<Data> =
   | { ok: true; data: Data }
-  | { ok: false; status: number; code: string; message: string; details?: unknown };
+  | { ok: false; status: number; code: string; message: string; details?: unknown; requestId?: string };
+
+type ErrorBody = { code?: string; message?: string; details?: unknown; requestId?: string };
 
 /** Calls an order Route Handler and returns its JSON, or the structured error. */
 export async function callOrderApi<Data = unknown>(
@@ -17,14 +19,14 @@ export async function callOrderApi<Data = unknown>(
     });
     const payload = (await response.json().catch(() => null)) as
       | (Data & { error?: undefined })
-      | { error?: { code?: string; message?: string; details?: unknown } }
+      | { error?: ErrorBody }
       | null;
 
     if (response.ok) {
       return { ok: true, data: payload as Data };
     }
 
-    const error = (payload as { error?: { code?: string; message?: string; details?: unknown } } | null)?.error;
+    const error = (payload as { error?: ErrorBody } | null)?.error;
 
     return {
       ok: false,
@@ -32,6 +34,7 @@ export async function callOrderApi<Data = unknown>(
       code: error?.code ?? "ERROR",
       message: error?.message ?? "Something went wrong.",
       details: error?.details,
+      requestId: error?.requestId,
     };
   } catch {
     return {
@@ -48,11 +51,7 @@ export function newIdempotencyKey(): string {
   return `send-${crypto.randomUUID()}`;
 }
 
-export function formatMoney(value: string): string {
-  const negative = value.startsWith("-");
-
-  return `${negative ? "-" : ""}$${negative ? value.slice(1) : value}`;
-}
+export { formatMoney } from "@/components/format/money";
 
 export const ORDER_TYPE_LABELS: Record<string, string> = {
   DINE_IN: "Dine-in",

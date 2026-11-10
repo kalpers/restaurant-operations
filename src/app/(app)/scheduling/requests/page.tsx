@@ -9,6 +9,7 @@ import { loadLocationContext } from "@/modules/scheduling/services/scheduling-in
 import { listSwapsForReview } from "@/modules/scheduling/services/swap-service";
 import { listTimeOffForReview } from "@/modules/scheduling/services/time-off-service";
 import { localDateOf, localTimeOf } from "@/shared/time/zoned-time";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function SchedulingRequestsPage() {
   const { actor } = await requirePageActorWithAny([
@@ -35,14 +36,14 @@ export default async function SchedulingRequestsPage() {
         <section className="mb-8">
           <h2 className="mb-3 text-lg font-semibold">Time off</h2>
           {timeOff.length === 0 ? (
-            <p className="text-neutral-600">No time-off requests.</p>
+            <EmptyState title="No time-off requests." />
           ) : (
             <ul className="grid gap-3">
               {timeOff.map((request) => (
                 <li
                   key={request.id}
                   data-testid="time-off-request"
-                  className="rounded border border-neutral-200 p-3"
+                  className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
                 >
                   <p className="font-medium">
                     {request.employeeName}: {humanize(request.requestType)} ·{" "}
@@ -56,7 +57,7 @@ export default async function SchedulingRequestsPage() {
                   )}
 
                   {request.conflicts.length > 0 && (
-                    <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">
+                    <div className="mt-2 rounded border border-amber-300 bg-warning-50 p-2 text-sm text-warning-900">
                       <p className="font-medium">
                         Can&apos;t be approved until these are resolved:
                       </p>
@@ -84,6 +85,7 @@ export default async function SchedulingRequestsPage() {
                         url={`/api/scheduling/time-off/${request.id}/deny`}
                         body={{ managerNote: null, expectedVersion: request.version }}
                         label="Deny"
+                        confirm={{ title: "Deny this time-off request?", confirmLabel: "Deny request" }}
                       />
                     </div>
                   )}
@@ -98,14 +100,14 @@ export default async function SchedulingRequestsPage() {
         <section>
           <h2 className="mb-3 text-lg font-semibold">Shift swaps</h2>
           {swaps.length === 0 ? (
-            <p className="text-neutral-600">No swap requests.</p>
+            <EmptyState title="No swap requests." />
           ) : (
             <ul className="grid gap-3">
               {swaps.map((swap) => (
                 <li
                   key={swap.id}
                   data-testid="swap-request"
-                  className="rounded border border-neutral-200 p-3"
+                  className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
                 >
                   <p className="font-medium">
                     {swap.shiftDate} · {swap.positionName} · {humanize(swap.status)}
@@ -164,6 +166,7 @@ export default async function SchedulingRequestsPage() {
                         url={`/api/scheduling/swaps/${swap.id}/deny`}
                         body={{ expectedVersion: swap.version }}
                         label="Deny swap"
+                        confirm={{ title: "Deny this swap?" }}
                       />
                     </div>
                   )}

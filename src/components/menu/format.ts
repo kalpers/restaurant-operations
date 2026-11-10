@@ -1,7 +1,4 @@
-/** Money stays a decimal string: it is only given a symbol, never turned into a number. */
-export function formatMoney(value: string): string {
-  return value.startsWith("-") ? `-$${value.slice(1)}` : `$${value}`;
-}
+export { formatMoney } from "@/components/format/money";
 
 export function formatInstant(value: Date | null): string {
   return value ? `${value.toISOString().replace("T", " ").slice(0, 16)} UTC` : "open-ended";

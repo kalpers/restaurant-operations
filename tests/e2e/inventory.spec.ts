@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { expectToast } from "../helpers/e2e-ui";
+
 import {
   createPermissionAccount,
   createRoleAccount,
@@ -148,7 +150,7 @@ test.describe("waste and authorization", () => {
     await waste.locator('select[name="unitOfMeasureId"]').selectOption({ label: "LB" });
     await waste.locator('select[name="reasonCode"]').selectOption("SPOILAGE");
     await waste.getByRole("button", { name: "Record waste" }).click();
-    await expect(waste.getByRole("status")).toContainText("Saved.");
+    await expectToast(page, "Saved.");
 
     await page.goto("/inventory");
     await expect(stockRow(page, name)).toContainText("48 OZ_WEIGHT");

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
@@ -13,6 +12,7 @@ import { listItems } from "@/modules/menu/services/catalog-service";
 import { getRecipeDetail } from "@/modules/recipes/services/recipe-service";
 import { listUnits } from "@/modules/recipes/services/unit-service";
 import { NotFoundError } from "@/shared/errors/app-error";
+import { Breadcrumbs } from "@/components/ui/page-header";
 
 const STATUS_LABELS = { DRAFT: "Draft", PUBLISHED: "Published", RETIRED: "Retired" } as const;
 
@@ -59,11 +59,7 @@ export default async function RecipeDetailPage({
 
   return (
     <>
-      <p className="mb-2">
-        <Link href="/recipes" className="text-sm underline">
-          Back to recipes
-        </Link>
-      </p>
+      <Breadcrumbs items={[{ label: "Recipes", href: "/recipes" }, { label: recipe.name }]} />
       <h1 className="mb-1 text-2xl font-semibold">{recipe.name}</h1>
       <p className="mb-2 text-neutral-600">
         {recipe.code} · {location.locationName}
@@ -75,7 +71,7 @@ export default async function RecipeDetailPage({
       </p>
 
       {canEdit && (
-        <section aria-label="Recipe details" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Recipe details" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Details</h2>
           <EntityForm
             method="PATCH"
@@ -109,7 +105,7 @@ export default async function RecipeDetailPage({
             <li
               key={revision.id}
               aria-label={`Revision ${revision.revisionNumber}`}
-              className="rounded border border-neutral-200 p-4"
+              className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
             >
               <h3 className="mb-1 font-semibold">
                 Revision {revision.revisionNumber} · {STATUS_LABELS[revision.status]}
@@ -154,6 +150,7 @@ export default async function RecipeDetailPage({
                             url={`/api/recipes/${recipe.id}/revisions/${revision.id}/ingredients/${ingredient.id}`}
                             body={{ expectedVersion: revision.version }}
                             label={`Remove ${ingredient.inventoryItemName}`}
+                            confirm={{ title: `Remove ${ingredient.inventoryItemName}?`, body: "Only this draft revision changes.", confirmLabel: "Remove ingredient" }}
                           />
                         </div>
                       )}
@@ -163,7 +160,7 @@ export default async function RecipeDetailPage({
               )}
 
               {canEdit && revision.status === "DRAFT" && (
-                <div className="mt-3 grid gap-3 rounded border border-neutral-200 p-3">
+                <div className="mt-3 grid gap-3 rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
                   <h4 className="text-sm font-semibold">Add an ingredient</h4>
                   <EntityForm
                     method="POST"
@@ -213,7 +210,7 @@ export default async function RecipeDetailPage({
                     hidden={{ expectedVersion: revision.version }}
                     fields={draftFields(revision)}
                   />
-                  <div className="rounded border border-neutral-200 p-3">
+                  <div className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
                     <h4 className="mb-2 text-sm font-semibold">Publish this revision</h4>
                     <EntityForm
                       method="POST"
@@ -229,6 +226,7 @@ export default async function RecipeDetailPage({
                     method="DELETE"
                     url={`/api/recipes/${recipe.id}/revisions/${revision.id}`}
                     label="Discard draft"
+                    confirm={{ title: "Discard this draft revision?", body: "The draft and its ingredients are deleted. Published revisions aren't affected." }}
                   />
                 </div>
               )}
@@ -239,6 +237,7 @@ export default async function RecipeDetailPage({
                     url={`/api/recipes/${recipe.id}/revisions/${revision.id}/retire`}
                     body={{ expectedVersion: revision.version }}
                     label="Retire revision"
+                    confirm={{ title: "Retire this revision?", body: "It stops applying to new orders. Orders already sent keep their recipe snapshot." }}
                   />
                 </div>
               )}
@@ -248,7 +247,7 @@ export default async function RecipeDetailPage({
       </section>
 
       {canEdit && (
-        <section aria-label="New revision" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="New revision" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">New revision</h2>
           <EntityForm
             method="POST"

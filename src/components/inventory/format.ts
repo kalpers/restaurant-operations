@@ -10,21 +10,6 @@ export const TRANSACTION_LABELS: Record<string, string> = {
   TRANSFER_IN: "Transferred in",
 };
 
-export const PO_STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Draft",
-  SUBMITTED: "Submitted",
-  PARTIALLY_RECEIVED: "Partially received",
-  RECEIVED: "Received",
-  CANCELLED: "Cancelled",
-};
-
-export const COUNT_STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Draft",
-  SUBMITTED: "Submitted",
-  APPROVED: "Approved",
-  CANCELLED: "Cancelled",
-};
-
 export const WASTE_REASON_OPTIONS = [
   { value: "SPOILAGE", label: "Spoilage" },
   { value: "BREAKAGE", label: "Breakage" },

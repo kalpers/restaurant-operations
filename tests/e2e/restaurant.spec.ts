@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { confirmDialog, expectToast, openNavLink } from "../helpers/e2e-ui";
+
 import {
   allSessionIdsAt,
   createE2eTable,
@@ -31,7 +33,7 @@ const card = (page: Page, tableNumber: string) =>
   page.getByRole("listitem", { name: `Table ${tableNumber}`, exact: true });
 
 async function openFloor(page: Page) {
-  await mainNavigation(page).getByRole("link", { name: "Floor", exact: true }).click();
+  await openNavLink(page, "Floor");
   await expect(page.getByRole("heading", { name: "Floor", exact: true })).toBeVisible();
 }
 
@@ -248,6 +250,7 @@ test.describe("manager controls", () => {
     await card(managerPage, table.tableNumber)
       .getByRole("button", { name: "Take out of service" })
       .click();
+    await confirmDialog(managerPage, "Take out of service");
     await expect(card(managerPage, table.tableNumber)).toContainText("Out of service");
 
     await openFloor(hostPage);
@@ -410,7 +413,7 @@ test.describe("manager controls", () => {
 
     await row.getByLabel("Capacity", { exact: true }).fill("6");
     await row.getByRole("button", { name: "Save table" }).click();
-    await expect(row.getByText("Saved.")).toBeVisible();
+    await expectToast(page, "Saved.");
 
     await mainNavigation(page).getByRole("link", { name: "Sections", exact: true }).click();
     await page.getByLabel("Code").fill(code);
@@ -442,6 +445,7 @@ test.describe("manager controls", () => {
       .getByRole("listitem", { name: `Section ${code}`, exact: true })
       .getByRole("button", { name: "End assignment" })
       .click();
+    await confirmDialog(page, "End assignment");
     await expect(
       page
         .getByRole("listitem", { name: `Section ${code}`, exact: true })

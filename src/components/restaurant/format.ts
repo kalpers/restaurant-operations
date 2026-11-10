@@ -1,13 +1,5 @@
 import type { TableAvailability } from "@/modules/restaurant/types";
 
-export const AVAILABILITY_LABELS: Record<TableAvailability, string> = {
-  AVAILABLE: "Available",
-  OCCUPIED: "Occupied",
-  DIRTY: "Dirty",
-  OUT_OF_SERVICE: "Out of service",
-  INACTIVE: "Inactive",
-};
-
 /** Distinct by border and fill, and the label always says it in words too. */
 export const AVAILABILITY_STYLES: Record<TableAvailability, string> = {
   AVAILABLE: "border-emerald-500 bg-emerald-50",

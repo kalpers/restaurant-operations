@@ -19,8 +19,9 @@ Everyone else with `schedule.view` sees only published and archived schedules, a
 
 The phase adds no table, column, migration, permission or dependency, and it writes nothing.
 
+- **CI passed.** Committed as `2b09fe9`; GitHub Actions completed successfully, including the first real run of E2E under `next start`.
+
 **Not yet confirmed:**
-- **CI:** nothing has been pushed, and this environment can't read GitHub Actions.
 - **Migration-upgrade tests:** an existing integration test file times out intermittently on this machine. It isn't caused by this phase (see Validation results and Remaining issues, item 1).
 
 ## Environment
@@ -264,8 +265,8 @@ The owner's CI runs after Phase 13 and Phase 14 reported failing and flaky E2E t
 
 1. **Your decision: the migration-upgrade test timeouts.** These tests replay the full chain and sit close to Vitest's 5-second default. Giving that `describe` an explicit timeout (for example 30 s, as other long tests do) would remove the intermittent failure. I haven't changed it, because the file is outside this phase. Say if you want it.
 2. **Carried over:** the outbox log line at E2E start, and the optional E2E cleanups noted in Phase 13.
-3. **Confirm in CI.** CI's switch to `next start` and the artifact upload have run only locally in CI mode. The next GitHub Actions run is their first real test.
+3. **Confirm in CI.** Resolved: GitHub Actions passed on `2b09fe9` with E2E under `next start`. The failure-file upload step hasn't been exercised yet, since nothing failed.
 
 ## Next-phase readiness
 
-**Phase 15 (AWS POC Deployment) readiness: READY,** subject to review of this report, a decision on Remaining issues item 1, and a green CI run after push. Phase 16's acceptance test should include the timeline on desktop, tablet and phone.
+**Phase 15 (AWS POC Deployment) readiness: READY,** subject to review of this report, and a decision on Remaining issues item 1. CI is green on `2b09fe9`. Phase 16's acceptance test should include the timeline on desktop, tablet and phone.

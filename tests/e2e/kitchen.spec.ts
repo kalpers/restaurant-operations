@@ -58,10 +58,10 @@ test.describe("kitchen and bar", () => {
     await expect(kitchenCard).not.toContainText(menu.soda.name);
 
     await kitchenCard.getByRole("button", { name: "Start" }).click();
-    await expect(kitchenCard.getByTestId("item-status")).toHaveText("PREPARING");
+    await expect(kitchenCard.getByTestId("item-status")).toHaveText("Preparing");
     await expect(kitchenCard.getByRole("button", { name: "Ready" })).toBeVisible();
     await kitchenCard.getByRole("button", { name: "Ready" }).click();
-    await expect(kitchenCard.getByTestId("ticket-status")).toHaveText("READY");
+    await expect(kitchenCard.getByTestId("ticket-status")).toHaveText("Ready");
     await kitchenCard.getByRole("button", { name: "Bump" }).click();
     await expect(kitchenCard).toHaveCount(0);
     await expect(cookPage.getByTestId("recently-completed")).toContainText(`#${sent.orderNumber}`);
@@ -112,7 +112,7 @@ test.describe("kitchen and bar", () => {
 
     const sentBurger = page.getByRole("listitem", { name: `Sent ${menu.burger.name}` });
 
-    await expect(sentBurger.getByTestId("fulfillment-status")).toContainText("NEW");
+    await expect(sentBurger.getByTestId("fulfillment-status")).toContainText("New");
     await sentBurger.getByText("Void item").click();
 
     const voidForm = page.getByRole("form", { name: `Void ${menu.burger.name}` });
@@ -125,7 +125,7 @@ test.describe("kitchen and bar", () => {
     const voided = page.getByRole("listitem", { name: `Voided ${menu.burger.name}` });
 
     await expect(voided).toContainText("not prepared");
-    await expect(voided.getByTestId("fulfillment-status")).toContainText("CANCELLED");
+    await expect(voided.getByTestId("fulfillment-status")).toContainText("Cancelled");
 
     await page.goto("/kitchen");
     await expect(card(page, sent.orderNumber)).toHaveCount(0);

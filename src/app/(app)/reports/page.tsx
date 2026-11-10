@@ -34,7 +34,7 @@ export default async function ReportsPage() {
             <li key={area}>
               <Link
                 href={`/reports/${area}`}
-                className="block h-full rounded border border-neutral-200 p-4 hover:border-neutral-500"
+                className="block h-full rounded-lg border border-neutral-200 bg-surface shadow-sm p-4 hover:border-neutral-500"
               >
                 <span className="text-lg font-medium">{REPORT_AREA_TITLE[area]}</span>
                 <span className="mt-1 block text-sm text-neutral-600">{DESCRIPTIONS[area]}</span>

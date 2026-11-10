@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { confirmDialog } from "../helpers/e2e-ui";
+
 import {
   assignAt,
   createAccount,
@@ -424,6 +426,7 @@ test.describe("administration", () => {
     const row = page.getByRole("listitem").filter({ hasText: server.email });
 
     await row.getByRole("button", { name: "Disable" }).click();
+    await confirmDialog(page, "Disable user");
     await expect(row.getByText("Disabled")).toBeVisible();
     await expect(row.getByRole("button", { name: "Enable" })).toBeVisible();
   });

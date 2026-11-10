@@ -8,6 +8,7 @@ import { actorHolds } from "@/modules/employees/services/access";
 import { listEmployees } from "@/modules/employees/services/employee-service";
 import { listPositions } from "@/modules/employees/services/reference-service";
 import { EMPLOYMENT_TYPES } from "@/modules/employees/types";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function EmployeesPage() {
   const { location, actor } = await requirePageActor("employees.view");
@@ -29,7 +30,7 @@ export default async function EmployeesPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
       {canCreate && (
-        <section className="mb-8 rounded border border-neutral-200 p-4">
+        <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">Add an employee</h2>
           <p className="mb-3 text-sm text-neutral-600">
             This creates an employment record only. It doesn&apos;t create a login
@@ -71,11 +72,11 @@ export default async function EmployeesPage() {
       )}
 
       {employees.length === 0 ? (
-        <p className="text-neutral-600">No employees at this location yet.</p>
+        <EmptyState title="No employees at this location yet." />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-surface shadow-sm">
           <table className="w-full min-w-max border-collapse text-left text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-neutral-100 text-neutral-800">
               <tr className="border-b border-neutral-300">
                 <th className="px-2 py-2 font-semibold">Number</th>
                 <th className="px-2 py-2 font-semibold">Name</th>
@@ -87,7 +88,7 @@ export default async function EmployeesPage() {
                 <th className="px-2 py-2 font-semibold">Type</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&>tr:nth-child(even)]:bg-neutral-50">
               {employees.map((employee) => (
                 <tr key={employee.id} className="border-b border-neutral-200">
                   <td className="px-2 py-2">{employee.employeeNumber}</td>

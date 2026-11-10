@@ -25,6 +25,7 @@ import { listPriceHistory } from "@/modules/menu/services/pricing-service";
 import { actorHolds } from "@/modules/menu/services/access";
 import { listRecipes } from "@/modules/recipes/services/recipe-service";
 import { NotFoundError } from "@/shared/errors/app-error";
+import { Breadcrumbs } from "@/components/ui/page-header";
 
 export default async function MenuItemEditorPage({
   params,
@@ -76,17 +77,13 @@ export default async function MenuItemEditorPage({
 
   return (
     <>
-      <p className="mb-2">
-        <Link href="/menu/manage" className="text-sm underline">
-          Back to menu management
-        </Link>
-      </p>
+      <Breadcrumbs items={[{ label: "Manage menu", href: "/menu/manage" }, { label: item.name }]} />
       <h1 className="mb-1 text-2xl font-semibold">{item.name}</h1>
       <p className="mb-6 text-neutral-600">
         {item.code} · {location.locationName}
       </p>
 
-      <section aria-label="Details" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Details" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 text-xl font-semibold">Details</h2>
         <EntityForm
           method="PATCH"
@@ -106,13 +103,13 @@ export default async function MenuItemEditorPage({
       </section>
 
       {canSeePricing && (
-        <section aria-label="Pricing" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Pricing" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Pricing</h2>
           {prices.length === 0 ? (
-            <p className="mb-3 text-amber-800">No price yet: this item can&apos;t be sold.</p>
+            <p className="mb-3 text-warning-800">No price yet: this item can&apos;t be sold.</p>
           ) : (
             <table className="mb-4 w-full text-left text-sm">
-              <thead>
+              <thead className="sticky top-0 bg-neutral-100 text-neutral-800">
                 <tr>
                   <th className="py-1 pr-3">Price</th>
                   <th className="py-1 pr-3">Scope</th>
@@ -120,7 +117,7 @@ export default async function MenuItemEditorPage({
                   <th className="py-1">Until</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="[&>tr:nth-child(even)]:bg-neutral-50">
                 {prices.map((price) => (
                   <tr key={price.id} className={price.current ? "font-semibold" : undefined}>
                     <td className="py-1 pr-3">
@@ -166,14 +163,14 @@ export default async function MenuItemEditorPage({
         </section>
       )}
 
-      <section aria-label="Placements" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Placements" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 text-xl font-semibold">On menus</h2>
         {placements.length === 0 ? (
-          <p className="mb-3 text-amber-800">This item is not on any menu.</p>
+          <p className="mb-3 text-warning-800">This item is not on any menu.</p>
         ) : (
           <ul className="mb-4 grid gap-3">
             {placements.map((placement) => (
-              <li key={placement.id} className="rounded border border-neutral-200 p-3">
+              <li key={placement.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
                 <p className="mb-2 font-medium">
                   {nameOf.get(placement.menuId) ?? "Menu"} · {nameOf.get(placement.menuCategoryId) ?? "Category"}
                   {placement.active ? "" : " · Hidden"}
@@ -207,7 +204,7 @@ export default async function MenuItemEditorPage({
         />
       </section>
 
-      <section aria-label="Modifier groups" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Modifier groups" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 text-xl font-semibold">Modifier groups</h2>
         {attachments.length === 0 && <p className="mb-3 text-neutral-600">No modifier groups.</p>}
         <ul className="mb-4 grid gap-3">
@@ -218,7 +215,7 @@ export default async function MenuItemEditorPage({
               <li
                 key={attachment.id}
                 aria-label={`Modifier group ${attachment.group.name}`}
-                className="rounded border border-neutral-200 p-3"
+                className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
               >
                 <p className="font-medium">
                   {attachment.group.name}{" "}
@@ -280,7 +277,7 @@ export default async function MenuItemEditorPage({
         />
       </section>
 
-      <section aria-label="Preparation routing" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Preparation routing" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 text-xl font-semibold">Preparation routing</h2>
         <RoutingForm
           menuItemId={item.id}
@@ -290,7 +287,7 @@ export default async function MenuItemEditorPage({
       </section>
 
       {recipe && (
-        <section aria-label="Recipe" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Recipe" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Recipe</h2>
           <p>
             <Link href={`/recipes/${recipe.id}`} className="underline">

@@ -79,7 +79,7 @@ export function TimelineDetailsPanel({
           ref={closeButton}
           type="button"
           onClick={onClose}
-          className="min-h-11 min-w-11 rounded border border-neutral-400 px-3 text-sm font-medium hover:bg-neutral-100"
+          className="min-h-11 min-w-11 rounded-md border border-neutral-300 px-3 text-sm font-medium hover:bg-neutral-100"
         >
           Close
         </button>
@@ -131,7 +131,7 @@ export function TimelineDetailsPanel({
 
       {reviewer && reviewer.violations.length > 0 && (
         <div
-          className="mt-3 rounded border border-red-300 bg-red-50 p-2 text-sm text-red-900"
+          className="mt-3 rounded border border-danger-300 bg-danger-50 p-2 text-sm text-danger-800"
           data-testid="panel-violations"
         >
           <p className="font-medium">Needs attention</p>

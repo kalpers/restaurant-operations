@@ -18,6 +18,7 @@ import {
   useSubmit,
   type HostTableOption,
 } from "./shared";
+import { StatusBadge } from "@/components/format/status-badge";
 
 export type WaitlistAbilities = {
   manage: boolean;
@@ -36,15 +37,6 @@ type WaitlistBoardProps = {
   timeZone: string;
   nowIso: string;
   abilities: WaitlistAbilities;
-};
-
-const STATUS_LABELS: Record<WaitlistView["status"], string> = {
-  WAITING: "Waiting",
-  NOTIFIED: "Notified",
-  TABLE_ASSIGNED: "Table chosen",
-  SEATED: "Seated",
-  CANCELLED: "Cancelled",
-  LEFT: "Left",
 };
 
 function useRefresh(): void {
@@ -133,7 +125,7 @@ function AddForm({
     <form
       onSubmit={handleSubmit}
       aria-label="Add walk-in"
-      className="mb-6 grid gap-3 rounded border border-neutral-300 p-4"
+      className="mb-6 grid gap-3 rounded-md border border-neutral-300 p-4"
     >
       <h2 className="font-semibold">Add walk-in</h2>
       <label className="grid gap-1 text-sm font-medium">
@@ -269,7 +261,7 @@ function SeatPanel({
   return (
     <form
       aria-label="Seat waitlist party"
-      className="mt-3 grid gap-3 rounded border border-neutral-300 p-3"
+      className="mt-3 grid gap-3 rounded-md border border-neutral-300 p-3"
       onSubmit={async (event) => {
         event.preventDefault();
 
@@ -305,7 +297,7 @@ function SeatPanel({
         onlyAvailable
       />
       {heldChosen && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">A chosen table is held for a reservation.</p>
           {abilities.overrideHold ? (
             <label className="grid gap-1 text-sm font-medium">
@@ -322,7 +314,7 @@ function SeatPanel({
         </div>
       )}
       {chosen.length > 0 && entry.partySize > capacity && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">
             This party of {entry.partySize} is over the capacity of {capacity}.
           </p>
@@ -453,7 +445,7 @@ function EntryCard({
             {waited} min
           </p>
         </div>
-        <span className="text-sm font-semibold">{STATUS_LABELS[entry.status]}</span>
+        <StatusBadge domain="waitlist" status={entry.status} className="text-sm" />
       </div>
       <p className="text-sm">
         Quoted wait: {entry.quotedWaitMinutes === null ? "none" : `${entry.quotedWaitMinutes} min`}

@@ -1,15 +1,15 @@
 "use client";
 
+import { LogOut } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { signOutToLogin } from "@/modules/auth/client";
 
 export function SignOutButton() {
   return (
-    <button
-      type="button"
-      onClick={() => void signOutToLogin()}
-      className="min-h-11 rounded border border-neutral-400 px-3 py-1 text-sm font-medium"
-    >
+    <Button variant="ghost" onClick={() => void signOutToLogin()}>
+      <LogOut aria-hidden className="size-4" />
       Log out
-    </button>
+    </Button>
   );
 }

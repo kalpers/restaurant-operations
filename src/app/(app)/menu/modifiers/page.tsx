@@ -71,7 +71,7 @@ export default async function ModifiersPage() {
 
       <section aria-label="Modifier groups" className="mb-10">
         <h2 className="mb-3 text-xl font-semibold">Modifier groups</h2>
-        <div className="mb-4 rounded border border-neutral-200 p-4">
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h3 className="mb-3 font-semibold">Add a group</h3>
           <EntityForm
             method="POST"
@@ -86,7 +86,7 @@ export default async function ModifiersPage() {
             <li
               key={group.id}
               aria-label={`Modifier group ${group.code}`}
-              className="rounded border border-neutral-200 p-4"
+              className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
             >
               <h3 className="mb-1 font-semibold">
                 {group.name}{" "}
@@ -140,7 +140,7 @@ export default async function ModifiersPage() {
 
       <section aria-label="Modifiers" className="mb-10">
         <h2 className="mb-3 text-xl font-semibold">Modifiers</h2>
-        <div className="mb-4 rounded border border-neutral-200 p-4">
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h3 className="mb-3 font-semibold">Add a modifier</h3>
           <EntityForm
             method="POST"
@@ -155,7 +155,7 @@ export default async function ModifiersPage() {
             <li
               key={modifier.id}
               aria-label={`Modifier ${modifier.code}`}
-              className="rounded border border-neutral-200 p-4"
+              className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
             >
               <h3 className="mb-3 font-semibold">
                 {modifier.name}{" "}
@@ -189,6 +189,7 @@ export default async function ModifiersPage() {
                       method="DELETE"
                       url={`/api/menu/modifiers/${modifier.id}/effects/${effect.id}`}
                       label="Remove effect"
+                      confirm={{ title: "Remove this effect?", body: "Orders already sent keep their snapshot of it." }}
                     />
                   </li>
                 ))}

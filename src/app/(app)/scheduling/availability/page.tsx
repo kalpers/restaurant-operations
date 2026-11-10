@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { listColleagues } from "@/modules/scheduling/services/my-schedule-service";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function EmployeeAvailabilityListPage() {
   const { location, actor } = await requirePageActor(
@@ -19,14 +20,14 @@ export default async function EmployeeAvailabilityListPage() {
       </p>
 
       {employees.length === 0 ? (
-        <p className="text-neutral-600">No employees at this location yet.</p>
+        <EmptyState title="No employees at this location yet." />
       ) : (
         <ul className="grid gap-2">
           {employees.map((employee) => (
             <li key={employee.id}>
               <Link
                 href={`/scheduling/availability/${employee.id}`}
-                className="flex min-h-11 items-center rounded border border-neutral-200 px-3 font-medium underline"
+                className="flex min-h-11 items-center rounded-lg border border-neutral-200 bg-surface shadow-sm px-3 font-medium underline"
               >
                 {employee.displayName}
               </Link>

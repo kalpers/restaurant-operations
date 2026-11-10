@@ -1,6 +1,16 @@
-export type ApiRequestResult =
-  | { ok: true }
-  | { ok: false; status: number; message: string };
+export type ApiFailure = {
+  ok: false;
+  status: number;
+  /** The error envelope's code, "NETWORK" when the server couldn't be reached. */
+  code: string;
+  message: string;
+  requestId?: string;
+};
+
+export type ApiRequestResult = { ok: true } | ApiFailure;
+
+export const NETWORK_FAILURE_MESSAGE =
+  "Couldn't reach the server. Check your connection and try again.";
 
 /** Calls a Route Handler. Errors come back as text for the form to display. */
 export function sendApiRequest(
@@ -24,28 +34,32 @@ export function sendFormData(
   return send(url, { method: "POST", body });
 }
 
+/** Reads `{ error: { code, message, requestId } }` from a failed response. */
+export async function readFailure(response: Response): Promise<ApiFailure> {
+  const payload = (await response.json().catch(() => null)) as {
+    error?: { code?: string; message?: string; requestId?: string };
+  } | null;
+
+  return {
+    ok: false,
+    status: response.status,
+    code: payload?.error?.code ?? "ERROR",
+    message: payload?.error?.message ?? "Something went wrong.",
+    requestId: payload?.error?.requestId,
+  };
+}
+
 async function send(url: string, init: RequestInit): Promise<ApiRequestResult> {
   try {
     const response = await fetch(url, init);
 
-    if (response.ok) {
-      return { ok: true };
-    }
-
-    const payload = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
-    } | null;
-
-    return {
-      ok: false,
-      status: response.status,
-      message: payload?.error?.message ?? "Something went wrong.",
-    };
+    return response.ok ? { ok: true } : await readFailure(response);
   } catch {
-    return {
-      ok: false,
-      status: 0,
-      message: "Couldn't reach the server. Check your connection and try again.",
-    };
+    return { ok: false, status: 0, code: "NETWORK", message: NETWORK_FAILURE_MESSAGE };
   }
+}
+
+/** True when the record changed under the user and a reload shows the latest. */
+export function isStaleConflict(failure: Pick<ApiFailure, "code">): boolean {
+  return failure.code === "CONCURRENCY_CONFLICT";
 }

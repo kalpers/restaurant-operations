@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
@@ -9,6 +8,7 @@ import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { getItemConfiguration, listUnitChoices } from "@/modules/inventory/services/item-service";
 import { NotFoundError } from "@/shared/errors/app-error";
+import { Breadcrumbs } from "@/components/ui/page-header";
 
 export default async function InventoryItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   const { location, actor } = await requirePageActor("inventory.configure");
@@ -35,17 +35,13 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <p className="mb-2">
-        <Link href="/inventory/items" className="text-sm underline">
-          Back to inventory items
-        </Link>
-      </p>
+      <Breadcrumbs items={[{ label: "Inventory items", href: "/inventory/items" }, { label: item.name }]} />
       <h1 className="mb-1 text-2xl font-semibold">{item.name}</h1>
       <p className="mb-6 text-neutral-600">
         {item.code} · stocked in {base}
       </p>
 
-      <section aria-label="Item details" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Item details" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 text-xl font-semibold">Details</h2>
         <EntityForm
           method="PATCH"
@@ -62,7 +58,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
         />
       </section>
 
-      <section aria-label="Stock levels here" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Stock levels here" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-1 text-xl font-semibold">Stock levels at {location.locationName}</h2>
         <p className="mb-3 text-sm text-neutral-600">
           In {base}. Stock is low at or below the reorder level; suggestions refill to the target.
@@ -83,7 +79,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
         />
       </section>
 
-      <section aria-label="Packaging conversions" className="mb-8 rounded border border-neutral-200 p-4">
+      <section aria-label="Packaging conversions" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-1 text-xl font-semibold">Packaging conversions</h2>
         <p className="mb-3 text-sm text-neutral-600">
           For this item only, such as 1 CASE = 12 BOTTLE. Generic conversions (LB to OZ_WEIGHT)
@@ -99,6 +95,7 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
                   url={`/api/inventory/items/${item.id}/conversions/${conversion.id}/deactivate`}
                   body={{ expectedVersion: conversion.version }}
                   label="Deactivate"
+                  confirm={{ title: "Deactivate this conversion?", body: "New entries stop using it. Recorded history keeps the conversion it used.", confirmLabel: "Deactivate conversion" }}
                 />
               ) : (
                 <span className="text-neutral-500">Inactive</span>

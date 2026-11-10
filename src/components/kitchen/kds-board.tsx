@@ -1,11 +1,19 @@
 "use client";
 
+import { ChefHat } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import { ApiErrorMessage } from "@/components/forms/api-error-message";
+import { StatusBadge } from "@/components/format/status-badge";
 import { callOrderApi, ORDER_TYPE_LABELS } from "@/components/orders/order-api";
-import { ConnectionBadge, useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import { useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/components/ui/cn";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { QueueItem, QueueTicket } from "@/modules/kitchen/queries/kitchen-queries";
+
+import { AGE_BORDER, AGE_HEADER, AGE_LABEL, elapsed, SoundToggle, useAge, useNewTicketSound } from "./ticket-age";
 
 // A Kitchen or Bar display. It shows what the server returns and sends one explicit action
 // per button: Start (NEW -> PREPARING), Ready (PREPARING -> READY) and Bump (READY ->
@@ -19,21 +27,8 @@ const QUEUE_EVENTS = [
   "kitchen.ticket-ready",
 ];
 
-const STATUS_STYLE: Record<string, string> = {
-  NEW: "bg-sky-100 text-sky-900",
-  PREPARING: "bg-amber-100 text-amber-900",
-  READY: "bg-green-100 text-green-900",
-  COMPLETED: "bg-neutral-200 text-neutral-800",
-  CANCELLED: "bg-red-100 text-red-900 line-through",
-};
-
-const AGE_STYLE: Record<string, string> = {
-  normal: "border-neutral-300",
-  warning: "border-amber-500 border-2",
-  late: "border-red-600 border-4",
-};
-
 const ACTION_LABEL = { start: "Start", ready: "Ready", complete: "Bump" } as const;
+const ACTION_VARIANT = { start: "primary", ready: "primary", complete: "secondary" } as const;
 
 export type KdsFilters = { stationId?: string; status?: string; orderType?: string };
 
@@ -47,32 +42,10 @@ type Props = {
   filters: KdsFilters;
 };
 
-function elapsed(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-
-  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-/**
- * Seconds since submission: the server's age at render plus a local tick. Cards remount on
- * every refresh (keyed by server time), so the count never drifts far from the server.
- */
-function useAge(serverAgeSeconds: number) {
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => setTick((value) => value + 1), 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  return serverAgeSeconds + tick;
-}
-
 function ItemRow({ item }: { item: QueueItem }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code: string; message: string; requestId?: string } | null>(null);
   const action = item.actions.start ? "start" : item.actions.ready ? "ready" : item.actions.complete ? "complete" : null;
 
   async function act(name: "start" | "ready" | "complete") {
@@ -92,96 +65,95 @@ function ItemRow({ item }: { item: QueueItem }) {
         return;
       }
 
-      setError(result.message);
+      setError(result);
     }
 
     router.refresh();
   }
 
   return (
-    <li className="flex flex-col gap-2 border-t border-neutral-200 py-2 first:border-t-0" data-testid="ticket-item">
+    <li className="flex flex-col gap-2 border-t border-neutral-200 py-3 first:border-t-0" data-testid="ticket-item">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-lg font-semibold">
+          <p className="text-xl font-bold">
             {item.quantity}× {item.name}
             {item.attemptNumber > 1 && (
-              <span className="ml-2 rounded bg-purple-100 px-2 text-xs font-bold text-purple-900">
+              <span className="ml-2 rounded bg-purple-100 px-2 align-middle text-xs font-bold text-purple-900">
                 Remake {item.attemptNumber - 1}
               </span>
             )}
           </p>
           {item.modifiers.length > 0 && (
-            <ul className="text-sm">
+            <ul className="text-base">
               {item.modifiers.map((modifier, index) => (
                 <li key={`${modifier.code}-${index}`}>• {modifier.name}</li>
               ))}
             </ul>
           )}
-          {item.instructions && <p className="text-sm font-medium italic">{item.instructions}</p>}
-          {item.cancelReason && <p className="text-xs text-red-800">{item.cancelReason}</p>}
+          {item.instructions && (
+            <p className="mt-1 rounded bg-warning-50 px-2 py-1 text-base font-semibold text-warning-900 italic">
+              {item.instructions}
+            </p>
+          )}
+          {item.cancelReason && <p className="text-sm text-danger-800">{item.cancelReason}</p>}
         </div>
-        <span
+        <StatusBadge
+          domain="fulfillment"
+          status={item.status}
           data-testid="item-status"
-          className={`shrink-0 rounded px-2 py-1 text-xs font-bold ${STATUS_STYLE[item.status] ?? ""}`}
-        >
-          {item.status}
-        </span>
+          className={cn("shrink-0 text-sm", item.status === "CANCELLED" && "line-through")}
+        />
       </div>
       {action && (
-        <button
-          type="button"
-          disabled={pending}
+        <Button
+          variant={ACTION_VARIANT[action]}
+          size="lg"
+          pending={pending}
           onClick={() => act(action)}
-          className="min-h-12 rounded bg-neutral-900 px-4 text-base font-semibold text-white disabled:opacity-50"
+          className="w-full"
         >
           {ACTION_LABEL[action]}
-        </button>
+        </Button>
       )}
-      {error && (
-        <p role="alert" className="text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      <ApiErrorMessage error={error} />
     </li>
   );
 }
 
 function TicketCard({ ticket }: { ticket: QueueTicket }) {
   const age = useAge(ticket.ageSeconds);
+  const ageLabel = AGE_LABEL[ticket.ageBand];
 
   return (
     <article
       data-testid="ticket-card"
       data-order-number={ticket.orderNumber}
+      data-age-band={ticket.ageBand}
       aria-label={`Order ${ticket.orderNumber} at ${ticket.stationName}`}
-      className={`flex flex-col rounded-lg bg-white p-3 shadow-sm ${AGE_STYLE[ticket.ageBand] ?? ""}`}
+      className={cn("flex flex-col overflow-hidden rounded-lg border-2 bg-white shadow-sm", AGE_BORDER[ticket.ageBand])}
     >
-      <header className="mb-2 flex items-start justify-between gap-2">
+      <header className={cn("flex items-start justify-between gap-2 px-3 py-2", AGE_HEADER[ticket.ageBand])}>
         <div>
-          <p className="text-xl font-bold">#{ticket.orderNumber}</p>
-          <p className="text-sm">
+          <p className="text-2xl font-bold">#{ticket.orderNumber}</p>
+          <p className="text-base font-medium">
             {ORDER_TYPE_LABELS[ticket.orderType] ?? ticket.orderType}
             {ticket.tableLabel && ` · ${ticket.tableLabel}`}
             {ticket.pickupLabel && ` · ${ticket.pickupLabel}`}
           </p>
-          <p className="text-xs text-neutral-600">
+          <p className="text-sm opacity-90">
             {ticket.stationName} · Round {ticket.batchNumber}
             {ticket.serverName && ` · ${ticket.serverName}`}
           </p>
         </div>
-        <div className="text-right">
-          <p className="font-mono text-lg font-semibold" aria-label="Elapsed">
+        <div className="grid justify-items-end gap-1 text-right">
+          <p className="font-mono text-2xl font-bold" aria-label="Elapsed">
             {elapsed(age)}
           </p>
-          <span
-            data-testid="ticket-status"
-            className={`rounded px-2 py-1 text-xs font-bold ${STATUS_STYLE[ticket.status] ?? ""}`}
-          >
-            {ticket.status}
-          </span>
+          {ageLabel && <p className="text-xs font-bold uppercase">{ageLabel}</p>}
+          <StatusBadge domain="fulfillment" status={ticket.status} data-testid="ticket-status" className="text-sm" />
         </div>
       </header>
-      <ul>
+      <ul className="px-3">
         {ticket.items.map((item) => (
           <ItemRow key={item.id} item={item} />
         ))}
@@ -191,8 +163,9 @@ function TicketCard({ ticket }: { ticket: QueueTicket }) {
 }
 
 export function KdsBoard({ title, path, active, recentlyCompleted, serverTime, stations, filters }: Props) {
-  const status = useRealtimeRefresh(QUEUE_EVENTS);
+  useRealtimeRefresh(QUEUE_EVENTS);
   const router = useRouter();
+  const sound = useNewTicketSound(active.map((ticket) => ticket.id));
 
   function applyFilter(name: keyof KdsFilters, value: string) {
     const next = new URLSearchParams();
@@ -207,16 +180,19 @@ export function KdsBoard({ title, path, active, recentlyCompleted, serverTime, s
     router.push(next.size > 0 ? `${path}?${next.toString()}` : path);
   }
 
-  const select = "min-h-11 rounded border border-neutral-400 bg-white px-2 text-sm";
+  const select = "min-h-11 rounded-md border border-neutral-300 bg-white px-2 text-sm shadow-sm";
 
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        <ConnectionBadge status={status} />
+        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-neutral-700">{active.length} open</span>
+          <SoundToggle enabled={sound.enabled} onToggle={sound.toggle} />
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Filters">
-        <label className="flex items-center gap-2 text-sm">
+      <div className="flex flex-wrap gap-3" role="group" aria-label="Filters">
+        <label className="flex items-center gap-2 text-sm font-medium">
           Station
           <select className={select} value={filters.stationId ?? ""} onChange={(event) => applyFilter("stationId", event.target.value)}>
             <option value="">All</option>
@@ -227,7 +203,7 @@ export function KdsBoard({ title, path, active, recentlyCompleted, serverTime, s
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm font-medium">
           Status
           <select className={select} value={filters.status ?? ""} onChange={(event) => applyFilter("status", event.target.value)}>
             <option value="">Active</option>
@@ -236,7 +212,7 @@ export function KdsBoard({ title, path, active, recentlyCompleted, serverTime, s
             <option value="READY">Ready</option>
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm font-medium">
           Order type
           <select className={select} value={filters.orderType ?? ""} onChange={(event) => applyFilter("orderType", event.target.value)}>
             <option value="">All</option>
@@ -247,18 +223,18 @@ export function KdsBoard({ title, path, active, recentlyCompleted, serverTime, s
         </label>
       </div>
       {active.length === 0 ? (
-        <p className="rounded border border-dashed border-neutral-400 p-6 text-center text-neutral-600">
-          Nothing to prepare.
-        </p>
+        <EmptyState icon={ChefHat} title="Nothing to prepare">
+          New tickets appear here as soon as a server sends them.
+        </EmptyState>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="active-queue">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" data-testid="active-queue">
           {active.map((ticket) => (
             <TicketCard key={`${ticket.id}-${serverTime}`} ticket={ticket} />
           ))}
         </div>
       )}
       {recentlyCompleted.length > 0 && (
-        <details className="rounded border border-neutral-300 p-3" data-testid="recently-completed">
+        <details className="rounded-lg border border-neutral-200 bg-surface p-3" data-testid="recently-completed">
           <summary className="min-h-11 cursor-pointer font-medium">
             Recently completed ({recentlyCompleted.length})
           </summary>

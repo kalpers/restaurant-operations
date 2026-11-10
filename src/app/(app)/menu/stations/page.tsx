@@ -26,7 +26,7 @@ export default async function PrepStationsPage() {
       <h1 className="mb-1 text-2xl font-semibold">Prep stations</h1>
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
-      <section className="mb-8 rounded border border-neutral-200 p-4">
+      <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-3 font-semibold">Add a station</h2>
         <EntityForm
           method="POST"
@@ -42,7 +42,7 @@ export default async function PrepStationsPage() {
           <li
             key={station.id}
             aria-label={`Station ${station.code}`}
-            className="rounded border border-neutral-200 p-4"
+            className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
           >
             <h2 className="mb-3 font-semibold">
               {station.code}

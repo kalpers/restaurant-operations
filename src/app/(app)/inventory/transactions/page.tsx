@@ -6,8 +6,10 @@ import { listTransactions } from "@/modules/inventory/queries/stock-queries";
 import { canSeeCost } from "@/modules/inventory/services/access";
 import { listItems } from "@/modules/inventory/services/item-service";
 import { transactionFilterSchema } from "@/modules/inventory/validators/inventory-validators";
+import { INPUT_BASE } from "@/components/ui/field";
+import { EmptyState } from "@/components/ui/empty-state";
 
-const INPUT_CLASS = "min-h-11 rounded border border-neutral-300 bg-white px-3 py-2 text-base";
+const INPUT_CLASS = INPUT_BASE;
 
 /** The ledger: read-only, newest first. Nothing here can be edited or deleted. */
 export default async function TransactionsPage({
@@ -67,44 +69,44 @@ export default async function TransactionsPage({
           To business date
           <input type="date" name="toBusinessDate" defaultValue={filter.toBusinessDate} className={INPUT_CLASS} />
         </label>
-        <button type="submit" className="min-h-11 rounded border border-neutral-400 px-4 font-medium">
+        <button type="submit" className="min-h-11 rounded-md border border-neutral-300 px-4 font-medium">
           Filter
         </button>
       </form>
 
       {rows.length === 0 ? (
-        <p className="text-neutral-600">No transactions match.</p>
+        <EmptyState title="No transactions match." />
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-surface shadow-sm">
           <table className="w-full text-left text-sm">
-            <thead>
+            <thead className="sticky top-0 bg-neutral-100 text-neutral-800">
               <tr className="border-b border-neutral-300">
-                <th className="py-2 pr-3">Business date</th>
-                <th className="py-2 pr-3">Item</th>
-                <th className="py-2 pr-3">Type</th>
-                <th className="py-2 pr-3">Entered</th>
-                <th className="py-2 pr-3">Change (stock unit)</th>
-                <th className="py-2 pr-3">After</th>
-                <th className="py-2 pr-3">Reason</th>
+                <th className="px-3 py-2">Business date</th>
+                <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Entered</th>
+                <th className="px-3 py-2">Change (stock unit)</th>
+                <th className="px-3 py-2">After</th>
+                <th className="px-3 py-2">Reason</th>
                 {showCost && <th className="py-2">Cost</th>}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&>tr:nth-child(even)]:bg-neutral-50">
               {rows.map((row) => (
                 <tr
                   key={row.id}
                   aria-label={`Transaction ${TRANSACTION_LABELS[row.transactionType]} ${row.itemName}`}
                   className="border-b border-neutral-100"
                 >
-                  <td className="py-2 pr-3">{row.businessDate}</td>
-                  <td className="py-2 pr-3">{row.itemName}</td>
-                  <td className="py-2 pr-3">{TRANSACTION_LABELS[row.transactionType] ?? row.transactionType}</td>
-                  <td className="py-2 pr-3">
+                  <td className="px-3 py-2">{row.businessDate}</td>
+                  <td className="px-3 py-2">{row.itemName}</td>
+                  <td className="px-3 py-2">{TRANSACTION_LABELS[row.transactionType] ?? row.transactionType}</td>
+                  <td className="px-3 py-2">
                     {formatQuantity(row.quantity)} {row.unitCode}
                   </td>
-                  <td className="py-2 pr-3">{formatQuantity(row.baseQuantityDelta)}</td>
-                  <td className="py-2 pr-3">{formatQuantity(row.quantityAfter)}</td>
-                  <td className="py-2 pr-3">{row.reasonCode ?? ""}</td>
+                  <td className="px-3 py-2">{formatQuantity(row.baseQuantityDelta)}</td>
+                  <td className="px-3 py-2">{formatQuantity(row.quantityAfter)}</td>
+                  <td className="px-3 py-2">{row.reasonCode ?? ""}</td>
                   {showCost && <td className="py-2">{formatCost(row.totalCost)}</td>}
                 </tr>
               ))}

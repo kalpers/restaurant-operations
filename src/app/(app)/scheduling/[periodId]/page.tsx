@@ -27,6 +27,9 @@ import { HARD_CONSTRAINT_MESSAGES } from "@/modules/scheduling/rules/eligibility
 import { NotFoundError } from "@/shared/errors/app-error";
 
 import { CoverageSection, type CoverageData } from "./coverage-section";
+import { Breadcrumbs } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/format/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 type Detail = Awaited<ReturnType<typeof getPeriodDetail>>;
 type ShiftView = Detail["shifts"][number];
@@ -150,10 +153,11 @@ export default async function PeriodPage({
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Scheduling", href: "/scheduling" }, { label: period.name }]} />
       <h1 className="mb-1 text-2xl font-semibold">{period.name}</h1>
       <p className="mb-4 text-neutral-600">
         {period.startDate} to {period.endDate} ·{" "}
-        <span data-testid="period-status">{humanize(period.status)}</span>
+        <StatusBadge domain="schedulePeriod" status={period.status} data-testid="period-status" />
       </p>
 
       {(canGenerate || canPublish || canArchive) && (
@@ -180,6 +184,7 @@ export default async function PeriodPage({
               url={`/api/scheduling/periods/${period.id}/publish`}
               body={{ expectedVersion: period.version }}
               label="Publish"
+              confirm={{ title: "Publish this schedule?", body: "Staff can see it right away. After publishing, assignments change only through shift swaps.", tone: "primary" }}
             />
           )}
           {canArchive && (
@@ -188,6 +193,7 @@ export default async function PeriodPage({
               url={`/api/scheduling/periods/${period.id}/archive`}
               body={{ expectedVersion: period.version }}
               label="Archive"
+              confirm={{ title: "Archive this schedule period?", body: "It becomes read-only history.", confirmLabel: "Archive period" }}
             />
           )}
         </div>
@@ -196,7 +202,7 @@ export default async function PeriodPage({
       {coverage && <CoverageSection coverage={coverage} />}
 
       {canEdit && options && (
-        <section className="mb-8 grid gap-6 rounded border border-neutral-200 p-4">
+        <section className="mb-8 grid gap-6 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <div>
             <h2 className="mb-3 font-semibold">Add a shift</h2>
             <EntityForm
@@ -247,7 +253,7 @@ export default async function PeriodPage({
 
       <h2 className="mb-3 text-lg font-semibold">Shifts</h2>
       {shifts.length === 0 ? (
-        <p className="text-neutral-600">No shifts yet.</p>
+        <EmptyState title="No shifts yet." />
       ) : (
         <ul className="grid gap-3">
           {shifts.map((shift) => {
@@ -258,7 +264,7 @@ export default async function PeriodPage({
               <li
                 key={shift.id}
                 data-testid="shift"
-                className="rounded border border-neutral-200 p-3"
+                className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium">
@@ -277,7 +283,7 @@ export default async function PeriodPage({
                   </p>
                   <p
                     className={
-                      open > 0 ? "text-sm font-medium text-amber-800" : "text-sm text-neutral-600"
+                      open > 0 ? "text-sm font-medium text-warning-800" : "text-sm text-neutral-600"
                     }
                   >
                     {open > 0
@@ -287,7 +293,7 @@ export default async function PeriodPage({
                 </div>
 
                 {reason && (
-                  <p className="mt-1 text-sm text-amber-800">
+                  <p className="mt-1 text-sm text-warning-800">
                     Still open: {reason.summary}
                   </p>
                 )}
@@ -307,6 +313,7 @@ export default async function PeriodPage({
                               url={`/api/scheduling/assignments/${assignment.id}`}
                               body={{ expectedPeriodVersion: period.version }}
                               label="Remove"
+                              confirm={{ title: "Remove this assignment?", body: "The slot becomes open.", confirmLabel: "Remove assignment" }}
                             />
                           )}
                         </span>
@@ -370,6 +377,7 @@ export default async function PeriodPage({
                         expectedPeriodVersion: period.version,
                       }}
                       label="Cancel shift"
+                      confirm={{ title: "Cancel this shift?", body: "Its assignments are removed.", cancelLabel: "Keep shift" }}
                     />
                   </div>
                 )}

@@ -17,7 +17,7 @@ function CoverageTable({
     <div className="overflow-x-auto">
       <h3 className="mb-1 font-medium">{title}</h3>
       <table className="w-full border-collapse text-left text-sm">
-        <thead>
+        <thead className="sticky top-0 bg-neutral-100 text-neutral-800">
           <tr className="border-b border-neutral-300">
             <th className="px-2 py-1 font-semibold">{title.replace("By ", "")}</th>
             <th className="px-2 py-1 font-semibold">Needed</th>
@@ -25,7 +25,7 @@ function CoverageTable({
             <th className="px-2 py-1 font-semibold">Open</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="[&>tr:nth-child(even)]:bg-neutral-50">
           {lines.map((line) => (
             <tr key={line.key} className="border-b border-neutral-200">
               <td className="px-2 py-1">{line.label}</td>
@@ -44,7 +44,7 @@ export function CoverageSection({ coverage }: { coverage: CoverageData }) {
   return (
     <section
       aria-labelledby="coverage-heading"
-      className="mb-8 rounded border border-neutral-200 p-4"
+      className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4"
     >
       <h2 id="coverage-heading" className="mb-2 font-semibold">
         Coverage
@@ -54,9 +54,9 @@ export function CoverageSection({ coverage }: { coverage: CoverageData }) {
       </p>
 
       {coverage.hardViolations.length > 0 && (
-        <div className="mb-3 rounded border border-red-300 bg-red-50 p-3">
-          <h3 className="mb-1 font-medium text-red-800">Must be fixed</h3>
-          <ul className="grid gap-1 text-sm text-red-800">
+        <div className="mb-3 rounded border border-danger-300 bg-danger-50 p-3">
+          <h3 className="mb-1 font-medium text-danger-800">Must be fixed</h3>
+          <ul className="grid gap-1 text-sm text-danger-800">
             {coverage.hardViolations.map((violation) => (
               <li key={violation.assignmentId}>
                 {violation.employeeName}, {violation.shiftDate},{" "}
@@ -68,9 +68,9 @@ export function CoverageSection({ coverage }: { coverage: CoverageData }) {
       )}
 
       {coverage.warnings.length > 0 && (
-        <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-3">
-          <h3 className="mb-1 font-medium text-amber-900">Warnings</h3>
-          <ul className="grid gap-1 text-sm text-amber-900">
+        <div className="mb-3 rounded border border-amber-300 bg-warning-50 p-3">
+          <h3 className="mb-1 font-medium text-warning-900">Warnings</h3>
+          <ul className="grid gap-1 text-sm text-warning-900">
             {coverage.warnings.map((warning, index) => (
               <li key={`${warning.code}-${warning.shiftId ?? ""}-${index}`}>
                 {warning.message}

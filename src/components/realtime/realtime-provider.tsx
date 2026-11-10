@@ -133,21 +133,28 @@ export function useRealtimeRefresh(eventTypes: readonly string[], fallbackMs = 3
   return status;
 }
 
-export function ConnectionBadge({ status }: { status: ConnectionStatus }) {
+/**
+ * The tab's one connection status, shown once in the app shell header. It reads the
+ * provider's existing stream and never opens a connection of its own.
+ */
+export function ConnectionBadge() {
+  const { status } = useRealtime();
   const label = status === "live" ? "Live" : status === "connecting" ? "Connecting…" : "Reconnecting…";
   const tone =
     status === "live"
-      ? "border-green-700 text-green-800"
-      : "border-amber-600 text-amber-800";
+      ? "border-success-300 bg-success-50 text-success-800"
+      : "border-warning-300 bg-warning-50 text-warning-900";
+  const dot = status === "live" ? "bg-success-500" : "animate-pulse bg-warning-500";
 
   return (
     <span
       role="status"
       aria-live="polite"
-      data-testid="connection-status"
-      className={`inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-semibold ${tone}`}
+      title="Connection to live updates"
+      className={`inline-flex min-h-8 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${tone}`}
     >
-      {label}
+      <span aria-hidden className={`size-2 rounded-full ${dot}`} />
+      <span data-testid="connection-status">{label}</span>
     </span>
   );
 }

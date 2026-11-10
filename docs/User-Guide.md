@@ -6,7 +6,15 @@ This guide walks restaurant staff and managers through the workflows currently a
 
 Sign in at the application URL provided by your administrator using your restaurant account. The navigation is permission-filtered: if a page or action described here is missing, ask an administrator to check your account's location access and permissions.
 
-The Overview page is currently a placeholder. Use the navigation to open the operational workspace you need. The Phase 13 validation seed creates test records, but it does **not** create a demo login account.
+The **Dashboard** shows your location and roles. With report access it also shows one business date's headline figures, each compared with the previous business date. The Phase 13 validation seed creates test records, but it does **not** create a demo login account.
+
+### Finding your way around
+
+- **Navigation.** The menu on the left is grouped into **Insights**, **Service**, **Back of house**, **People** and **Admin**. You only see the links your permissions allow, and the page you are on is highlighted. On a phone or narrow tablet, tap **Menu** at the top left to open it; it closes when you choose a page or press Escape.
+- **Live updates.** The badge at the top right says **Live** while the screen receives updates, or **Reconnecting…** if the connection dropped. Screens also refresh on a timer, so nothing is lost while reconnecting.
+- **Confirmations.** Anything that cancels, removes, deactivates, disables, archives, voids or publishes asks first. The safe choice (for example **Keep it**) is selected, so pressing Enter or Escape backs out.
+- **Messages.** A short message at the bottom of the screen confirms a save (**Saved.**). Errors stay next to the form or button that failed. If someone else changed the same record first, the message offers **Reload**. Errors also show a **Request ID**, which an administrator can use to find the problem in the logs.
+- **Statuses** are shown as colored labels with words, such as **Preparing** or **Out of service**. The word always carries the meaning; the color only helps you scan.
 
 ## A Service-Day Walkthrough
 
@@ -32,13 +40,15 @@ The active table session represents the seated party. Orders are associated with
 
 1. Open **Orders**.
 2. For dine-in or bar service, open **Open Order**, select the service type and active table session, then open the order. For takeout, choose **Open Takeout**; it does not need a table session.
-3. Select a menu category and item. Choose the required modifiers, enter quantity, and add any kitchen instructions.
+3. Select a menu category and item, or type in **Search the menu** (press **/** to jump there). Choose the required modifiers, enter quantity, and add any kitchen instructions.
 4. Review the price preview and choose **Add Draft Item**. Repeat for more items.
 5. Review the draft list. Use **Edit** to change a draft item or **Remove** to remove it before sending.
 
 Draft items are not sent to the kitchen or bar and do not consume inventory. When the guest's current round is ready, choose **Submit _N_ Items**. Submission records the item and price snapshots, posts applicable inventory consumption, and creates fulfillment tickets. Add later rounds as new drafts and submit them separately.
 
-Submitted items are historical records. Voiding one requires a disposition and reason. Choose **Unprepared** only when it was not prepared; prepared or discarded food remains consumed.
+The check on the right stays in view while you scroll the menu. It shows how many items are not sent yet and the running total of what has been sent.
+
+Submitted items are historical records. To void one, choose **Void item** on it: a window asks for a reason and whether it was prepared, and for a final confirmation. Choose **Not prepared** only when it was not prepared; prepared or discarded food remains consumed.
 
 ### 4. Prepare and fulfill submitted items
 
@@ -49,12 +59,14 @@ Submitted items are historical records. Voiding one requires a disposition and r
 
 Modifier preparation notes and special instructions are shown with the ticket. The status for an individual station may differ from the overall item status while other stations are still working.
 
+Each ticket shows how long it has waited. Its border and header turn amber after 10 minutes and red, marked **Late**, after 20. **New-ticket sound** plays a short chime when a new ticket arrives; it is off until you turn it on, and the choice is remembered on that device only.
+
 ### 5. Record settlement and close the check
 
 1. From the selected order, choose **Settlement**.
 2. Choose **Open Settlement** if one is not already open.
 3. Record each tender using the permitted tender type. For cash, enter the amount applied, tip, and cash received. Split payments can be recorded as multiple tenders.
-4. Confirm the remaining balance and tips. Submit or remove any draft items before completing.
+4. Confirm the remaining balance, shown in large type, and tips. **Cash – exact** and **Card – exact** fill in the remaining amount for you. Submit or remove any draft items before completing.
 5. When the balance is fully settled, choose **Complete Settlement and close Order**.
 
 Settlement is record-keeping only. The app does not charge or authorize cards; any card transaction must be processed in an external system first. You may record safe external references when permitted, but never enter a full card number, security code, PIN, or bank details. Tax calculation is not currently included, and the displayed order obligation is pre-tax.
@@ -107,14 +119,12 @@ Open **Reporting**, choose an available report, and set the date range. Which re
 
 **Why is a closed check's table still occupied?** The table session has its own lifecycle. Complete the session after guests leave, then clean the table.
 
-**Where is the audit history?** Audit viewing is not currently available in the application, even though the broader system architecture describes an audit capability.
+**Where is the audit history?** Users with audit access open **Audit** under **Insights**. Choose **Show** on an event to see each recorded field before and after the change, with changed fields highlighted.
 
 ## Current Scope Notes
 
-- The Overview page is a placeholder; use the individual workspaces.
 - The application records settlement details but does not process payments.
 - Tax calculation is deferred; settlement amounts shown are pre-tax.
-- The audit workspace and audit verification are not implemented.
 - Full offline operation is not supported. If a request fails, check the displayed error and current record state before retrying a consequential action.
 
 For system architecture and implementation requirements, see the [project README](../README.md).

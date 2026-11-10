@@ -1,21 +1,25 @@
 "use client";
 
+import { Ban, BedDouble, CircleCheck, Clock, Sparkles, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { ActionButton } from "@/components/forms/action-button";
-import { sendApiRequest } from "@/components/forms/api-request";
+import { ApiErrorMessage } from "@/components/forms/api-error-message";
+import { sendApiRequest, type ApiFailure } from "@/components/forms/api-request";
+import { StatusBadge } from "@/components/format/status-badge";
+import { Button, buttonClass } from "@/components/ui/button";
+import { cn } from "@/components/ui/cn";
+import { Dialog } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { INPUT_STYLE } from "@/components/ui/field";
+import type { TableAvailability } from "@/modules/restaurant/types";
 import type { TableHoldIndicator } from "@/modules/reservations/services/hold-service";
 import type { FloorSession, FloorTable } from "@/modules/restaurant/services/floor-service";
 import type { ServerCandidate } from "@/modules/restaurant/services/server-eligibility-service";
 
-import {
-  AVAILABILITY_LABELS,
-  AVAILABILITY_STYLES,
-  elapsedLabel,
-  WARNING_LABELS,
-} from "./format";
+import { AVAILABILITY_STYLES, elapsedLabel, WARNING_LABELS } from "./format";
 
 export type FloorAbilities = {
   seat: boolean;
@@ -43,12 +47,17 @@ type FloorBoardProps = {
   now: Date;
 };
 
-const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-base";
-const BUTTON_CLASS =
-  "min-h-11 rounded border border-neutral-400 px-3 py-1 text-sm font-medium disabled:opacity-50";
-const PRIMARY_CLASS =
-  "min-h-11 rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
+const INPUT_CLASS = INPUT_STYLE;
+const BUTTON_CLASS = buttonClass("secondary");
+
+/** Each state has its own icon as well as its color and label. */
+const AVAILABILITY_ICONS: Record<TableAvailability, LucideIcon> = {
+  AVAILABLE: CircleCheck,
+  OCCUPIED: Users,
+  DIRTY: Sparkles,
+  OUT_OF_SERVICE: Ban,
+  INACTIVE: BedDouble,
+};
 
 /** The floor has no realtime yet, so it re-reads on a short interval while open. */
 function useFloorRefresh(): void {
@@ -64,7 +73,7 @@ function useFloorRefresh(): void {
 function useSubmit() {
   const router = useRouter();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiFailure | null>(null);
 
   async function submit(method: string, url: string, body: unknown): Promise<boolean> {
     setPending(true);
@@ -83,7 +92,7 @@ function useSubmit() {
     if (result.status === 401) {
       router.push("/login");
     } else {
-      setError(result.message);
+      setError(result);
     }
 
     return false;
@@ -100,12 +109,8 @@ function formatClock(iso: string, timeZone: string): string {
   }).format(new Date(iso));
 }
 
-function ErrorText({ error }: { error: string | null }) {
-  return error ? (
-    <p role="alert" className="text-sm text-red-700">
-      {error}
-    </p>
-  ) : null;
+function ErrorText({ error }: { error: ApiFailure | null }) {
+  return <ApiErrorMessage error={error} className="flex" />;
 }
 
 function ServerSelect({
@@ -205,14 +210,14 @@ function SeatPartyPanel({
     <form
       onSubmit={handleSubmit}
       aria-label="Seat a party"
-      className="mb-6 grid gap-3 rounded border border-neutral-300 p-4"
+      className="mb-6 grid gap-3 rounded-lg border-2 border-brand-600 bg-surface p-4 shadow-sm"
     >
       <h2 className="font-semibold">
         Seat at {selected.map((table) => table.tableNumber).join(" + ")}
       </h2>
       <p className="text-sm text-neutral-700">Seats {capacity}</p>
       {areaIds.size > 1 && (
-        <p role="alert" className="text-sm text-amber-800">
+        <p role="alert" className="text-sm text-warning-900">
           Tables in one session must be in the same area.
         </p>
       )}
@@ -240,7 +245,7 @@ function SeatPartyPanel({
         />
       )}
       {overCapacity && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded-md border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">
             This party of {party} is over the capacity of {capacity}.
           </p>
@@ -259,7 +264,7 @@ function SeatPartyPanel({
         </div>
       )}
       {heldTables.length > 0 && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded-md border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">
             {heldTables.map((table) => table.tableNumber).join(", ")}{" "}
             {heldTables.length === 1 ? "is" : "are"} on a reservation hold.
@@ -279,7 +284,7 @@ function SeatPartyPanel({
         </div>
       )}
       {needsScheduleOverride && (
-        <div className="grid gap-2 rounded border border-amber-500 bg-amber-50 p-3">
+        <div className="grid gap-2 rounded-md border border-warning-500 bg-warning-50 p-3">
           <p className="text-sm font-medium">
             {chosen.displayName} isn&apos;t on a published shift right now.
           </p>
@@ -299,9 +304,9 @@ function SeatPartyPanel({
       )}
       <ErrorText error={error} />
       <div>
-        <button type="submit" disabled={pending} className={PRIMARY_CLASS}>
+        <Button type="submit" variant="primary" size="lg" pending={pending}>
           Seat party
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -361,6 +366,7 @@ function SessionActions({
   const [server, setServer] = useState("");
   const [scheduleReason, setScheduleReason] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   const available = tables.filter((table) => table.availability === "AVAILABLE");
   const sameArea = available.filter((table) => table.area.id === area.id);
   const areaCandidates = candidates[area.id] ?? [];
@@ -535,42 +541,50 @@ function SessionActions({
         </details>
       )}
       {abilities.cancel && (
-        <details>
-          <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium">
+        <div>
+          <Button variant="ghost" className="px-2 text-danger-700" onClick={() => setCancelling(true)}>
             Cancel seating
-          </summary>
-          <div className="grid gap-2 pt-2">
-            <p className="text-sm text-neutral-700">
-              Only for a mistake, before the table was used. A used table should be
-              completed, so it gets cleaned.
-            </p>
-            <label className="grid gap-1 text-sm font-medium">
-              Reason
-              <input
-                value={cancelReason}
-                onChange={(event) => setCancelReason(event.target.value)}
-                className={INPUT_CLASS}
-              />
-            </label>
-            <div>
-              <button
-                type="button"
-                disabled={pending || !cancelReason.trim()}
-                className={BUTTON_CLASS}
-                onClick={() =>
-                  submit("POST", `${base}/cancel`, {
-                    ...version,
-                    reason: cancelReason.trim(),
-                  })
-                }
-              >
-                Cancel this seating
-              </button>
+          </Button>
+          <Dialog
+            open={cancelling}
+            onClose={() => setCancelling(false)}
+            title="Cancel this seating?"
+            description="Only for a mistake, before the table was used. A used table should be completed, so it gets cleaned."
+          >
+            <div className="grid gap-3">
+              <label className="grid gap-1 text-sm font-medium">
+                Reason
+                <input
+                  value={cancelReason}
+                  onChange={(event) => setCancelReason(event.target.value)}
+                  className={INPUT_CLASS}
+                />
+              </label>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button onClick={() => setCancelling(false)}>Keep seating</Button>
+                <Button
+                  variant="danger"
+                  disabled={pending || !cancelReason.trim()}
+                  onClick={async () => {
+                    const done = await submit("POST", `${base}/cancel`, {
+                      ...version,
+                      reason: cancelReason.trim(),
+                    });
+
+                    if (done) {
+                      setCancelling(false);
+                    }
+                  }}
+                >
+                  Cancel this seating
+                </Button>
+              </div>
+              {cancelling && <ErrorText error={error} />}
             </div>
-          </div>
-        </details>
+          </Dialog>
+        </div>
       )}
-      <ErrorText error={error} />
+      {!cancelling && <ErrorText error={error} />}
     </div>
   );
 }
@@ -599,27 +613,36 @@ function TableCard({
   const url = `/api/restaurant/tables/${table.id}`;
   const version = { expectedVersion: table.version };
   const { session } = table;
+  const Icon = AVAILABILITY_ICONS[table.availability];
 
   return (
     <li
       aria-label={`Table ${table.tableNumber}`}
-      className={`rounded border-2 p-3 ${AVAILABILITY_STYLES[table.availability]}`}
+      className={cn(
+        "rounded-lg border-2 p-4 shadow-sm",
+        AVAILABILITY_STYLES[table.availability],
+        selected && "ring-4 ring-brand-500",
+      )}
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-lg font-semibold">{table.tableNumber}</h3>
-        <span className="text-sm font-semibold">
-          {AVAILABILITY_LABELS[table.availability]}
-        </span>
+        <h3 className="flex items-center gap-2 text-2xl font-bold">
+          <Icon aria-hidden className="size-6" />
+          {table.tableNumber}
+        </h3>
+        <StatusBadge domain="tableAvailability" status={table.availability} className="text-sm" />
       </div>
       {table.name && <p className="text-sm">{table.name}</p>}
-      <p className="text-sm">
+      <p className="text-sm text-neutral-800">
         Seats {table.capacity}
         {table.section ? ` · ${table.section}` : ""}
       </p>
       {session && (
         <div className="mt-2 text-sm">
+          <p className="flex items-center gap-2 text-base font-semibold">
+            <Clock aria-hidden className="size-4" />
+            Seated {elapsedLabel(session.seatedAt, now)}
+          </p>
           <p>Party of {session.partySize}</p>
-          <p>Seated {elapsedLabel(session.seatedAt, now)}</p>
           <p>Server: {session.serverName ?? "None"}</p>
           {session.tables.length > 1 && (
             <p>
@@ -629,7 +652,7 @@ function TableCard({
           {abilities.orders && (
             <Link
               href={`/orders?session=${session.id}&type=${table.area.type === "BAR" ? "BAR" : "DINE_IN"}`}
-              className="mt-2 inline-flex min-h-11 items-center rounded border border-neutral-400 px-3 text-sm font-medium"
+              className={buttonClass("primary", "md", "mt-2")}
             >
               Orders
             </Link>
@@ -637,7 +660,7 @@ function TableCard({
         </div>
       )}
       {hold && table.availability !== "OCCUPIED" && (
-        <p role="status" className="mt-1 text-sm font-medium text-purple-900">
+        <p role="status" className="mt-2 rounded-md bg-white/70 px-2 py-1 text-sm font-medium text-purple-900">
           {hold.active ? "Reservation hold" : "Reserved soon"} · reserved at{" "}
           {formatClock(hold.reservationAt, timeZone)}
           {hold.active ? "" : ` · hold begins ${formatClock(hold.holdStartsAt, timeZone)}`}
@@ -645,17 +668,17 @@ function TableCard({
         </p>
       )}
       {table.warnings.map((warning) => (
-        <p key={warning} role="status" className="mt-1 text-sm font-medium text-amber-900">
+        <p key={warning} role="status" className="mt-1 text-sm font-medium text-warning-900">
           {WARNING_LABELS[warning] ?? warning}
         </p>
       ))}
       {table.availability === "AVAILABLE" && abilities.seat && (
-        <label className="mt-2 flex min-h-11 items-center gap-2 text-sm font-medium">
+        <label className="mt-3 flex min-h-12 cursor-pointer items-center gap-3 rounded-md border border-success-300 bg-white px-3 text-sm font-medium">
           <input
             type="checkbox"
             checked={selected}
             onChange={onToggle}
-            className="size-5"
+            className="size-5 accent-brand-700"
           />
           Select {table.tableNumber}
         </label>
@@ -678,6 +701,7 @@ function TableCard({
               url={`${url}/condition`}
               body={{ ...version, condition: "OUT_OF_SERVICE", reason: null }}
               label="Take out of service"
+              confirm={{ title: "Take this table out of service?", body: "It can't be seated until it is returned to service." }}
             />
           </div>
         )}
@@ -745,7 +769,11 @@ export function FloorBoard({
   );
 
   if (visible.length === 0) {
-    return <p className="text-neutral-600">No tables have been set up yet.</p>;
+    return (
+      <EmptyState title="No tables have been set up yet">
+        Tables are added under Admin → Tables by someone who manages them.
+      </EmptyState>
+    );
   }
 
   return (
@@ -762,7 +790,7 @@ export function FloorBoard({
       {areas.map((area) => (
         <section key={area.id} className="mb-8">
           <h2 className="mb-3 text-lg font-semibold">{area.name}</h2>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {visible
               .filter((table) => table.area.id === area.id)
               .map((table) => (

@@ -15,7 +15,7 @@ export default async function AreasPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
       <ul className="grid gap-6">
         {areas.map((area) => (
-          <li key={area.id} className="rounded border border-neutral-200 p-4">
+          <li key={area.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
             <h2 className="mb-3 font-semibold">
               {area.name} ({area.code})
             </h2>

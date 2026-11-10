@@ -19,6 +19,7 @@ import {
 } from "./hr-sections";
 import { OverviewSection } from "./overview-section";
 import { PersonalSection } from "./personal-section";
+import { Breadcrumbs } from "@/components/ui/page-header";
 
 /** Usability only: each section's service enforces its own permission on the server. */
 const TABS: readonly {
@@ -71,11 +72,7 @@ export default async function EmployeeDetailPage({
 
   return (
     <>
-      <p className="mb-2 text-sm">
-        <Link href="/employees" className="underline">
-          All employees
-        </Link>
-      </p>
+      <Breadcrumbs items={[{ label: "Employees", href: "/employees" }, { label: `${employee.firstName} ${employee.lastName}` }]} />
       <h1 className="mb-1 text-2xl font-semibold">
         {employee.firstName} {employee.lastName}
       </h1>

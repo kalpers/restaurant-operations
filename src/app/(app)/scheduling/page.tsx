@@ -1,11 +1,12 @@
 import Link from "next/link";
 
-import { humanize } from "@/components/employees/format";
 import { EntityForm } from "@/components/forms/entity-form";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { actorHolds } from "@/modules/scheduling/services/access";
 import { listPeriods } from "@/modules/scheduling/services/schedule-service";
+import { StatusBadge } from "@/components/format/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function SchedulingPage() {
   const { location, actor } = await requirePageActor("schedule.view");
@@ -17,7 +18,7 @@ export default async function SchedulingPage() {
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
 
       {actorHolds(actor, "schedule.edit") && (
-        <section className="mb-8 rounded border border-neutral-200 p-4">
+        <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">Create a schedule period</h2>
           <EntityForm
             method="POST"
@@ -34,11 +35,11 @@ export default async function SchedulingPage() {
       )}
 
       {periods.length === 0 ? (
-        <p className="text-neutral-600">No schedule periods yet.</p>
+        <EmptyState title="No schedule periods yet." />
       ) : (
         <ul className="grid gap-2">
           {periods.map((period) => (
-            <li key={period.id} className="rounded border border-neutral-200 p-3">
+            <li key={period.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
               <Link
                 href={`/scheduling/${period.id}`}
                 className="font-medium underline"
@@ -46,7 +47,7 @@ export default async function SchedulingPage() {
                 {period.name}
               </Link>
               <span className="block text-sm text-neutral-600">
-                {period.startDate} to {period.endDate} · {humanize(period.status)}
+                {period.startDate} to {period.endDate} · <StatusBadge domain="schedulePeriod" status={period.status} />
               </span>
             </li>
           ))}

@@ -25,7 +25,7 @@ import {
 
 type SectionProps = { actor: Actor; employeeId: string };
 
-const CARD = "rounded border border-neutral-200 p-3";
+const CARD = "rounded-lg border border-neutral-200 bg-surface shadow-sm p-3";
 
 export async function CompensationSection({
   actor,

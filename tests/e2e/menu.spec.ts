@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { expectToast } from "../helpers/e2e-ui";
+
 import { createMenuE2e, type MenuAccount } from "../helpers/e2e-menu";
 
 const { createGroupFixture, createPermissionAccount, createRoleAccount, removeMenuE2eData, uniqueCode } = createMenuE2e("MENU");
@@ -140,7 +142,7 @@ test.describe("menu administration", () => {
 
     await details.getByLabel("Available (can be sold now)").uncheck();
     await details.getByRole("button", { name: "Save item" }).click();
-    await expect(details.getByText("Saved.")).toBeVisible();
+    await expectToast(page, "Saved.");
 
     await page.goto("/menu");
     await expect(page.getByRole("listitem", { name: `Menu item ${itemName}` })).toHaveCount(0);

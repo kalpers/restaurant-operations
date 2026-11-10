@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
-import { formatCost, formatQuantity, PO_STATUS_LABELS } from "@/components/inventory/format";
+import { formatCost, formatQuantity } from "@/components/inventory/format";
 import { ReceiveForm } from "@/components/inventory/receive-form";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
@@ -13,6 +12,8 @@ import { getPurchaseOrder } from "@/modules/inventory/services/purchase-order-se
 import { listSupplierItems } from "@/modules/inventory/services/supplier-service";
 import { compareDecimals } from "@/shared/decimal/decimal";
 import { NotFoundError } from "@/shared/errors/app-error";
+import { Breadcrumbs } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/format/status-badge";
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { actor } = await requirePageActor("purchasing.view");
@@ -40,14 +41,10 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <p className="mb-2">
-        <Link href="/purchasing/orders" className="text-sm underline">
-          Back to purchase orders
-        </Link>
-      </p>
+      <Breadcrumbs items={[{ label: "Purchase orders", href: "/purchasing/orders" }, { label: order.poNumber }]} />
       <h1 className="mb-1 text-2xl font-semibold">{order.poNumber}</h1>
       <p className="mb-6 text-neutral-600" aria-label="Order status">
-        {order.supplierName} · {PO_STATUS_LABELS[order.status] ?? order.status} · total {formatCost(detail.total)}
+        {order.supplierName} · <StatusBadge domain="purchaseOrder" status={order.status} /> · total {formatCost(detail.total)}
       </p>
 
       <section aria-label="Order lines" className="mb-8">
@@ -55,7 +52,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
         {lines.length === 0 && <p className="mb-3 text-neutral-600">No lines yet.</p>}
         <ul className="grid gap-3">
           {lines.map((line) => (
-            <li key={line.id} aria-label={`Order line ${line.itemName}`} className="rounded border border-neutral-200 p-4">
+            <li key={line.id} aria-label={`Order line ${line.itemName}`} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
               <p className="font-medium">{line.itemName}</p>
               <p className="text-sm">
                 Ordered {formatQuantity(line.orderedQuantity)} {line.unitCode} at {formatCost(line.unitPrice)} ={" "}
@@ -79,6 +76,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
                     url={`/api/purchasing/orders/${order.id}/lines/${line.id}`}
                     body={{ expectedVersion: order.version }}
                     label={`Remove ${line.itemName}`}
+                    confirm={{ title: `Remove ${line.itemName} from this order?`, confirmLabel: "Remove line" }}
                   />
                 </div>
               )}
@@ -88,7 +86,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
       </section>
 
       {canManage && supplierItems.length > 0 && (
-        <section aria-label="Add a line" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Add a line" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 font-semibold">Add a line</h2>
           <EntityForm
             method="POST"
@@ -116,12 +114,12 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
           <ActionButton method="POST" url={`/api/purchasing/orders/${order.id}/submit`} body={{ expectedVersion: order.version }} label="Submit order" />
         )}
         {(draft || receivable) && actorHolds(actor, "purchasing.submit") && (
-          <ActionButton method="POST" url={`/api/purchasing/orders/${order.id}/cancel`} body={{ expectedVersion: order.version, reason: null }} label="Cancel order" />
+          <ActionButton method="POST" url={`/api/purchasing/orders/${order.id}/cancel`} body={{ expectedVersion: order.version, reason: null }} label="Cancel order" confirm={{ title: "Cancel this purchase order?", body: "Nothing more can be received against it.", cancelLabel: "Keep order", confirmLabel: "Cancel order" }} />
         )}
       </div>
 
       {receivable && actorHolds(actor, "inventory.receive") && (
-        <section aria-label="Receive" className="mb-8 rounded border border-neutral-200 p-4">
+        <section aria-label="Receive" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <h2 className="mb-3 text-xl font-semibold">Receive a shipment</h2>
           <ReceiveForm
             orderId={order.id}
@@ -143,7 +141,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
           <h2 className="mb-3 text-xl font-semibold">Receipts</h2>
           <ul className="grid gap-2 text-sm">
             {receipts.map((receipt) => (
-              <li key={receipt.id} className="rounded border border-neutral-200 p-3">
+              <li key={receipt.id} className="rounded-lg border border-neutral-200 bg-surface shadow-sm p-3">
                 {receipt.businessDate}
                 {receipt.supplierReference ? ` · ${receipt.supplierReference}` : ""}
                 <ul className="ml-4 list-disc">

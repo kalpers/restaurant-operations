@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { confirmDialog } from "../helpers/e2e-ui";
+
 import {
   addShift,
   approvedTimeOff,
@@ -114,6 +116,7 @@ test.describe("manager scheduling", () => {
     await expect(page.locator("body")).not.toContainText(/wage|salary/i);
 
     await generated.getByRole("button", { name: "Remove" }).click();
+    await confirmDialog(page, "Remove assignment");
     await expect(page.getByTestId("coverage-summary")).toContainText("2 open");
   });
 
@@ -163,6 +166,7 @@ test.describe("manager scheduling", () => {
     await signIn(page, owner);
     await page.goto(`/scheduling/${draft.id}`);
     await page.getByRole("button", { name: "Publish" }).click();
+    await confirmDialog(page, "Publish");
 
     await expect(page.getByTestId("period-status")).toHaveText("Published");
     await expect(page.getByRole("button", { name: "Generate Draft" })).toHaveCount(0);
