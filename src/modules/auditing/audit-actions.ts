@@ -162,6 +162,33 @@ export const AUDIT_ACTIONS = {
     fields: ["status", "shiftId", "reason"],
   },
 
+  // Time clock (Phase 18, category SCHEDULING by amendment 3). Self punches are not audited:
+  // the entry is the record.
+  "timeclock.manager-clock-in": {
+    category: "SCHEDULING",
+    entityType: "time_entry",
+    scope: "LOCATION",
+    fields: ["employeeNumber", "positionCode", "clockInAt"],
+  },
+  "timeclock.manager-clock-out": {
+    category: "SCHEDULING",
+    entityType: "time_entry",
+    scope: "LOCATION",
+    fields: ["employeeNumber", "clockOutAt"],
+  },
+  "timeclock.entry-adjusted": {
+    category: "SCHEDULING",
+    entityType: "time_entry",
+    scope: "LOCATION",
+    fields: ["employeeNumber", "businessDate", "changedFields", "reason"],
+  },
+  "timeclock.entry-voided": {
+    category: "SCHEDULING",
+    entityType: "time_entry",
+    scope: "LOCATION",
+    fields: ["employeeNumber", "businessDate", "reason"],
+  },
+
   // Orders
   "orders.items-sent": {
     category: "ORDERS",
@@ -381,6 +408,26 @@ export const AUDIT_ACTIONS = {
     entityType: "cash_drawer_session",
     scope: "LOCATION",
     fields: ["movementId", "amount", "reason"],
+  },
+
+  // Tip pools (Phase 18). Never per-employee amounts (policy D27).
+  "tips.rule-changed": {
+    category: "SETTLEMENTS",
+    entityType: "tip_pool_rule",
+    scope: "LOCATION",
+    fields: ["active", "positions"],
+  },
+  "tips.distribution-finalized": {
+    category: "SETTLEMENTS",
+    entityType: "tip_distribution",
+    scope: "LOCATION",
+    fields: ["businessDate", "poolTotal", "lineCount"],
+  },
+  "tips.distribution-voided": {
+    category: "SETTLEMENTS",
+    entityType: "tip_distribution",
+    scope: "LOCATION",
+    fields: ["businessDate", "poolTotal", "reason"],
   },
 
   // Reporting

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { requireTestDatabaseUrl } from "@/config/tooling-env";
 import type { Database } from "@/db";
-import { VALIDATION_SEED_KEY } from "@/db/demo/validation-fixture";
+import { VALIDATION_LABOR_SEED_KEY, VALIDATION_SEED_KEY } from "@/db/demo/validation-fixture";
 import { applyMigrations } from "@/db/maintenance/apply-migrations";
 import * as schema from "@/db/schema";
 import { seeds } from "@/db/seeds/registry";
@@ -16,6 +16,7 @@ import { normalizeEmail } from "@/modules/auth/email";
 
 import { assertLocalDevelopment } from "../../../scripts/local-seed-guard";
 import { seedValidationFixture } from "../../../scripts/validation-fixture";
+import { seedValidationLaborTips } from "../../../scripts/validation-labor";
 import { dropDatabase, recreateEmptyDatabase } from "../../helpers/prepare-test-database";
 
 const VALIDATION_DATABASE = "restaurant_ops_test_validation_seed";
@@ -41,6 +42,11 @@ const COUNTED = [
   "settlement_tenders",
   "audit_events",
   "seed_runs",
+  "time_entries",
+  "time_entry_adjustments",
+  "tip_pool_rules",
+  "tip_distributions",
+  "tip_distribution_lines",
 ] as const;
 
 /**
@@ -81,6 +87,8 @@ describe("Phase 13: opt-in validation seed", () => {
   let afterFirst: Record<string, number>;
   let second: Awaited<ReturnType<typeof seedValidationFixture>>;
   let afterSecond: Record<string, number>;
+  let laborFirst: Awaited<ReturnType<typeof seedValidationLaborTips>>;
+  let laborSecond: Awaited<ReturnType<typeof seedValidationLaborTips>>;
 
   beforeAll(async () => {
     const url = await recreateEmptyDatabase(requireTestDatabaseUrl(), VALIDATION_DATABASE);
@@ -92,8 +100,10 @@ describe("Phase 13: opt-in validation seed", () => {
     await bootstrapOwner(database, { email: "validation-owner@example.test", password: "correct horse battery staple" });
 
     first = await seedValidationFixture(database, await owner());
+    laborFirst = await seedValidationLaborTips(database, await owner());
     afterFirst = await counts();
     second = await seedValidationFixture(database, await owner());
+    laborSecond = await seedValidationLaborTips(database, await owner());
     afterSecond = await counts();
   }, 180_000);
 
@@ -106,6 +116,21 @@ describe("Phase 13: opt-in validation seed", () => {
     expect(first).toEqual({ skipped: false, employees: 4, schedule: true, dineIn: true, takeout: true, upcoming: true });
     expect(second).toEqual({ skipped: true });
     expect(afterSecond).toEqual(afterFirst);
+  });
+
+  it("adds the Phase 18 time entry, tip pool and distribution once", async () => {
+    expect(laborFirst).toEqual({ skipped: false, entry: true, pool: true, distribution: "finalized" });
+    expect(laborSecond).toEqual({ skipped: true });
+
+    const lines = await client<{ position: string; hours: string; status: string }[]>`
+      SELECT l.position_code_snapshot AS position, l.worked_hours::text AS hours, d.status
+      FROM tip_distribution_lines l JOIN tip_distributions d ON d.id = l.distribution_id`;
+
+    // Corrected to four hours ago until a minute ago: 3 h 59 min.
+    expect(lines).toEqual([{ position: "SERVER", hours: "3.9833", status: "FINALIZED" }]);
+    expect(
+      await database.select().from(schema.seedRuns).where(eq(schema.seedRuns.seedKey, VALIDATION_LABOR_SEED_KEY)),
+    ).toHaveLength(1);
   });
 
   it("records the fixture's seed key", async () => {

@@ -44,7 +44,10 @@ export type NavigationIcon =
   | "tables"
   | "sections"
   | "drawers"
-  | "taxes";
+  | "taxes"
+  | "my-time"
+  | "time-clock"
+  | "tips";
 
 export type NavigationItem = {
   href: string;
@@ -98,8 +101,11 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/purchasing/suppliers", label: "Suppliers", permission: "suppliers.manage", group: "back-of-house", icon: "suppliers" },
 
   { href: "/my-schedule", label: "My schedule", permission: "schedule.view", group: "people", icon: "my-schedule" },
+  { href: "/my-time", label: "My time", permission: "timeclock.punch", group: "people", icon: "my-time" },
   { href: "/scheduling", label: "Scheduling", permission: "schedule.view", group: "people", icon: "scheduling" },
   { href: "/scheduling/timeline", label: "Timeline", permission: "schedule.view", group: "people", icon: "timeline" },
+  { href: "/scheduling/time-clock", label: "Time clock", permission: "timeclock.view", group: "people", icon: "time-clock" },
+  { href: "/tips", label: "Tips", permission: "tips.manage", group: "people", icon: "tips" },
   { href: "/scheduling/requests", label: "Scheduling requests", permission: "schedule.time-off.approve", group: "people", icon: "requests" },
   { href: "/scheduling/availability", label: "Availability", permission: "schedule.availability.manage", group: "people", icon: "availability" },
   { href: "/scheduling/staffing", label: "Staffing & rules", permission: "schedule.templates.manage", group: "people", icon: "staffing" },

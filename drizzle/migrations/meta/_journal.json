@@ -246,6 +246,20 @@
       "when": 1794365205172,
       "tag": "0034_checks_closeout_fk_names",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794370531472,
+      "tag": "0035_labor_tips",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794370551782,
+      "tag": "0036_labor_tips_guards",
+      "breakpoints": true
     }
   ]
 }

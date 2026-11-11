@@ -181,6 +181,7 @@ describe("runSeeds", () => {
       "security.settlement-permissions",
       "security.system-permissions",
       "security.checks-closeout-permissions",
+      "security.labor-tips-permissions",
     ]);
   });
 });

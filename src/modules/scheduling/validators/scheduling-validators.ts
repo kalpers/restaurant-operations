@@ -213,6 +213,12 @@ export const rulesSchema = z.object({
   balanceClosingShifts: z.boolean(),
   preferTargetHours: z.boolean(),
   weekStartDay: z.coerce.number().pipe(day),
+  overtimeMultiplier: z
+    .string()
+    .trim()
+    .regex(/^\d(\.\d{1,2})?$/, "Enter a multiplier such as 1.50.")
+    .default("1.50"),
+  lateClockInGraceMinutes: z.coerce.number().int().min(0).max(120).default(5),
   expectedVersion: expectedVersion.nullable(),
 });
 

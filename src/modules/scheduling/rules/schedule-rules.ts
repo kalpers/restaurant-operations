@@ -38,6 +38,9 @@ export type SchedulingRuleRow = {
   balanceClosingShifts: boolean;
   preferTargetHours: boolean;
   weekStartDay: number;
+  /** Phase 18 time clock settings. Not used by scheduling decisions. */
+  overtimeMultiplier: string;
+  lateClockInGraceMinutes: number;
 };
 
 /** Used for a location that has no rules row yet. Matches the seeded defaults. */
@@ -55,6 +58,8 @@ export const DEFAULT_RULE_ROW: SchedulingRuleRow = {
   balanceClosingShifts: true,
   preferTargetHours: true,
   weekStartDay: 1,
+  overtimeMultiplier: "1.50",
+  lateClockInGraceMinutes: 5,
 };
 
 export function toRuleSet(row: SchedulingRuleRow): SchedulingRuleSet {

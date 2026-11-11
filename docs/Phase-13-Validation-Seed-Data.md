@@ -65,3 +65,12 @@ Once the fixture has been applied to a database, don't edit it in place. Add a n
 - the upcoming party is CONFIRMED on T02 with no session;
 - no table is left dirty and no session is left open;
 - the guard refuses a non-local database.
+
+## Phase 18 addition
+
+After the Phase 13 fixture, `db:seed:validation` also runs the Phase 18 step under its own seed key, `phase18.validation-labor-tips`, so a database seeded before Phase 18 gets it too (`scripts/validation-labor.ts`). Through the services, as the MAIN Owner, it:
+
+- gives the validation server one closed time entry today: a manager clock-in, corrected to start four hours ago and end a minute ago;
+- sets up a Server/Bartender tip pool at MAIN, if none exists;
+- finalizes today's tip distribution, unless open checks or someone on the clock block it. In that case it says so, and the operator finalizes on **Tips**.
+

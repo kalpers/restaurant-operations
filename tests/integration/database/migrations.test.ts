@@ -140,7 +140,14 @@ const EXPECTED_TABLES = [
   "public.table_sessions",
   "public.tax_categories",
   "public.tax_rates",
+  "public.time_entries",
+  "public.time_entry_adjustments",
+  "public.time_entry_breaks",
   "public.time_off_requests",
+  "public.tip_distribution_lines",
+  "public.tip_distributions",
+  "public.tip_pool_rule_positions",
+  "public.tip_pool_rules",
   "public.unit_conversions",
   "public.units_of_measure",
   "public.user_roles",
@@ -233,6 +240,7 @@ describe("reconstruction from checked-in migrations", () => {
       "recipe_versions_no_overlap",
       "schedule_periods_no_overlap",
       "tax_rates_no_overlap",
+      "time_entries_no_overlap",
     ]);
   });
 
@@ -443,6 +451,43 @@ describe("reconstruction from checked-in migrations", () => {
       { tgname: "kitchen_tickets_guard_trigger" },
       { tgname: "order_items_batch_order_guard_trigger" },
       { tgname: "order_refunds_guard_trigger" },
+    ]);
+  });
+
+  it("upgrades a Phase 17 database in place: time clock and tips start empty, overtime defaults apply", async () => {
+    // 0000-0034 are Phase 17 and earlier; 0035 and 0036 are Phase 18.
+    await upgradeFromMigrationIndex(34);
+
+    for (const table of [
+      "time_entries",
+      "time_entry_breaks",
+      "time_entry_adjustments",
+      "tip_pool_rules",
+      "tip_pool_rule_positions",
+      "tip_distributions",
+      "tip_distribution_lines",
+    ]) {
+      expect(await query(`SELECT * FROM ${table}`)).toEqual([]);
+    }
+
+    expect(
+      await query(
+        "SELECT column_name, column_default, is_nullable FROM information_schema.columns WHERE table_name = 'scheduling_rules' AND column_name IN ('overtime_multiplier', 'late_clock_in_grace_minutes') ORDER BY column_name",
+      ),
+    ).toEqual([
+      { column_name: "late_clock_in_grace_minutes", column_default: "5", is_nullable: "NO" },
+      { column_name: "overtime_multiplier", column_default: "1.50", is_nullable: "NO" },
+    ]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname IN ('time_entries_guard_trigger', 'time_entry_breaks_guard_trigger', 'time_entry_adjustments_append_only_trigger', 'tip_distributions_guard_trigger', 'tip_distribution_lines_append_only_trigger') ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "time_entries_guard_trigger" },
+      { tgname: "time_entry_adjustments_append_only_trigger" },
+      { tgname: "time_entry_breaks_guard_trigger" },
+      { tgname: "tip_distribution_lines_append_only_trigger" },
+      { tgname: "tip_distributions_guard_trigger" },
     ]);
   });
 

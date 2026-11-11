@@ -101,7 +101,26 @@ Select a bar (click, tap, or press Enter on it) to see its details: position, ar
 
 Everyone with access to schedules sees published schedules here. Managers who edit, generate or publish schedules also see drafts (dashed outline, marked **Draft**, with an **Include drafts** switch), grey **Time off** bands, and extra details: how the assignment was made, the "Why this assignment" explanation, shift notes, open swap requests, problems that need fixing, and the person's scheduled hours. They also get a link to the schedule, where changes are made. The timeline itself never changes anything. The day is the date a shift starts, so a shift that runs past midnight shows in full on the day it began.
 
-**My schedule** is the employee self-service area for availability and scheduling requests. **Scheduling requests** is for authorized reviewers to process requests. **Staffing & rules** is for users who manage staffing templates and scheduling rules.
+**My schedule** is the employee self-service area for availability and scheduling requests. **Scheduling requests** is for authorized reviewers to process requests. **Staffing & rules** is for users who manage staffing templates and scheduling rules, including the weekly overtime threshold, the overtime cost multiplier and the late clock-in grace.
+
+### Clocking in and out
+
+Open **My time** and choose **Clock in** at the start of your shift. If you hold more than one position here, choose the one you're working. **Start unpaid break** and **End break** record a break; unpaid break time isn't counted as worked. Choose **Clock out** when you leave; an open break ends at the same moment. The page shows this week's entries, your hours so far against the overtime threshold (**On track**, **Near overtime** or **In overtime**), and your finalized tip shares for the last 30 days. Your login must be linked to your employee record; if it isn't, a manager can clock you in instead.
+
+### Time clock (managers)
+
+Open **Time clock** to see who is on the clock now, with each person's hours this week and overtime state. Managers can:
+
+- **Clock someone in** who has no login, or **Clock out** anyone on the clock. Both are recorded in the audit trail.
+- Fix a **missed clock-out**. An entry still open from an earlier day counts no hours until it's closed. Open **Adjust or void**, enter the clock-out time and a reason, and save.
+- Correct any entry's times or position under **Adjust or void**. Blank fields stay as they are, and a reason is always required. The original punch times are kept with the correction.
+- **Void** an entry made by mistake. It stays on record but counts nowhere.
+
+Choose a date to see that day's entries; adjusted entries are marked **Adjusted**. Someone who is on the clock can't be terminated until they're clocked out.
+
+### Tips
+
+Open **Tips** (managers). Under **Tip pool**, switch pooling on and give points to each position that shares tips, for example Server 10 and Busser 5. Leave a position blank to leave it out. For a business date, the page shows the cash and card tips from closed checks and how they would be shared: hours worked × points. Choose **Finalize tips** once every check is closed and everyone is clocked out. The shares are then saved as they are, and that day's hours can't change. To redo a day, **Void distribution** with a reason, fix what's wrong, then finalize again. Tips are recorded here only; pay them out outside the app.
 
 ### Employees
 
@@ -120,6 +139,8 @@ Receiving goods changes on-hand inventory; creating a purchase order by itself d
 ### Reporting
 
 Open **Reporting**, choose an available report, and set the date range. Which reports and export actions appear depends on your permissions. Reports use the selected location and operational business dates; an early-morning clock time may belong to the previous restaurant business date.
+
+The **Labor** report shows scheduled labor first, then actual labor from the time clock: worked hours, regular and overtime hours, scheduled vs. actual by day (late, early out, unscheduled, no-show), overtime by work week, and time clock exceptions (missed clock-outs, corrections, voids). Labor cost appears only for people allowed to see compensation. The **Tips** report shows tips by date and tender, direct tips by server, and finalized tip shares.
 
 ### Your password and account security
 
@@ -160,6 +181,7 @@ Under **Admin → Taxes**, an owner or general manager adds tax categories (for 
 - The application records settlement details but does not process payments.
 - Tax is added on top of menu prices. Tax-inclusive prices, tax exemptions and compound taxes aren't supported.
 - A closed check can't be reopened; corrections after closing are refund records.
+- The time clock and tip pool are record only: no payroll, pay stubs or tip payouts. Overtime is weekly only and is your own setting, not a labor-law calculation.
 - There is no "forgot password" email or reset link. An administrator resets passwords in the app.
 - Full offline operation is not supported. If a request fails, check the displayed error and current record state before retrying a consequential action.
 

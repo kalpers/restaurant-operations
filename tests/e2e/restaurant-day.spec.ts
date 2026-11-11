@@ -14,7 +14,9 @@ import {
   orderNumberOf,
   periodStatus,
 } from "../helpers/e2e-day";
+import { findMainLocationId } from "../helpers/e2e-accounts";
 import type { OrdersAccount } from "../helpers/e2e-orders";
+import { createWorker, ensureServerTipPool } from "../helpers/e2e-timeclock";
 
 // Phase 13: the canonical restaurant day (README section 38) through the screens, one
 // browser per role. Setup (accounts, menu, a table, a draft schedule) uses the services;
@@ -89,6 +91,12 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   const table = await createDayTable(owner);
   const { periodId } = await createDraftSchedule(owner);
   const guest = `Day Garcia ${Date.now()}`;
+  // Phase 18: the server's login is linked to an employee who works as a Server at MAIN, and
+  // MAIN pools tips by Server hours.
+  const mainLocationId = await findMainLocationId();
+  const serverWorker = await createWorker({ locationId: mainLocationId, userId: server.id, firstName: "Sam" });
+
+  await ensureServerTipPool(mainLocationId);
 
   // 1. The manager publishes the schedule.
   const managerPage = await signedIn(browser, manager);
@@ -132,8 +140,13 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   await seatForm.getByRole("button", { name: "Seat party" }).click();
   await expect(reservation).toContainText(`Seated at ${table.tableNumber}`);
 
-  // 3. The server opens the order: drinks, then the appetizer, then the canonical burger.
+  // 3. The server clocks in (Phase 18), then opens the order: drinks, then the appetizer,
+  // then the canonical burger.
   const serverPage = await signedIn(browser, server);
+
+  await serverPage.goto("/my-time");
+  await serverPage.getByRole("button", { name: "Clock in" }).click();
+  await expect(serverPage.getByRole("region", { name: "Time clock" })).toContainText("On the clock");
 
   await serverPage.goto("/restaurant/floor");
   await serverPage.getByRole("listitem", { name: `Table ${table.tableNumber}` }).getByRole("link", { name: "Orders" }).click();
@@ -272,6 +285,19 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   await tableCard.getByRole("button", { name: "Mark clean" }).click();
   await expect(tableCard).toContainText("Available");
 
+  // 7b. Phase 18: the server clocks out; the manager sees the server's share in the day's tip
+  // pool. Finalizing is covered by labor-tips.spec on its own location, because other specs
+  // leave open checks on MAIN today.
+  await serverPage.goto("/my-time");
+  await serverPage.getByRole("button", { name: "Clock out" }).click();
+  await expect(serverPage.getByRole("region", { name: "Time clock" })).toContainText("Off the clock");
+  await expect(serverPage.getByRole("region", { name: "This week" })).toContainText("Server");
+
+  await managerPage.goto("/tips");
+  await expect(
+    managerPage.getByRole("region", { name: "Distribute tips" }).getByRole("row").filter({ hasText: serverWorker.name }),
+  ).toBeVisible();
+
   // 8. The owner's reports show the sale from its snapshots, and export it.
   await ownerPage.goto("/reports/menu");
 
@@ -289,17 +315,24 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
 
   expect(csv).toContain(`${menu.burger.code},${menu.burger.name},1,17.49`);
 
-  // 9. The audit trail holds each SEND batch and the settlement, by this server.
+  // Phase 18: actual labor shows the server's clocked time next to the scheduled sections.
+  await ownerPage.goto("/reports/labor");
+  await expect(
+    ownerPage.getByRole("table", { name: "Actual labor by employee" }).getByRole("row").filter({ hasText: serverWorker.employeeNumber }),
+  ).toBeVisible({ timeout: 20_000 });
+
+  // 9. The audit trail holds each SEND batch and the settlement, by this server. The viewer
+  // names a login linked to an employee (Phase 18 links the server) by the employee name.
   await ownerPage.goto("/audit");
   await expect(ownerPage.getByRole("heading", { name: "Audit trail" })).toBeVisible({ timeout: 20_000 });
   await ownerPage.getByLabel("Action").selectOption("orders.items-sent");
   await ownerPage.getByRole("button", { name: "Filter" }).click();
   await expect(
-    ownerPage.getByRole("row", { name: "Audit orders.items-sent" }).filter({ hasText: server.email }),
+    ownerPage.getByRole("row", { name: "Audit orders.items-sent" }).filter({ hasText: serverWorker.name }),
   ).toHaveCount(3);
   await ownerPage.getByLabel("Action").selectOption("settlements.completed");
   await ownerPage.getByRole("button", { name: "Filter" }).click();
   await expect(
-    ownerPage.getByRole("row", { name: "Audit settlements.completed" }).filter({ hasText: server.email }),
+    ownerPage.getByRole("row", { name: "Audit settlements.completed" }).filter({ hasText: serverWorker.name }),
   ).toHaveCount(1);
 });

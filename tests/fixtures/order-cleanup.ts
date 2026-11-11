@@ -31,6 +31,13 @@ import {
   settlements,
   settlementStatusHistory,
   settlementTenders,
+  timeEntries,
+  timeEntryAdjustments,
+  timeEntryBreaks,
+  tipDistributionLines,
+  tipDistributions,
+  tipPoolRulePositions,
+  tipPoolRules,
 } from "@/db/schema";
 
 const APPEND_ONLY = [
@@ -46,6 +53,8 @@ const APPEND_ONLY = [
   "kitchen_remakes",
   "kitchen_remake_consumption",
   "settlement_status_history",
+  "time_entry_adjustments",
+  "tip_distribution_lines",
 ];
 
 /** Guard triggers that also refuse deletes, lifted with the append-only ones. */
@@ -60,6 +69,9 @@ const GUARDED: readonly [table: string, trigger: string][] = [
   ["settlement_tenders", "settlement_tenders_guard_trigger"],
   ["order_refunds", "order_refunds_guard_trigger"],
   ["cash_drawer_sessions", "cash_drawer_sessions_guard_trigger"],
+  ["time_entries", "time_entries_guard_trigger"],
+  ["time_entry_breaks", "time_entry_breaks_guard_trigger"],
+  ["tip_distributions", "tip_distributions_guard_trigger"],
 ];
 
 /**
@@ -125,6 +137,14 @@ export async function clearOrderData(database: Database): Promise<void> {
     await transaction.delete(orderTaxLines);
     await transaction.delete(orders);
     await transaction.delete(orderNumberCounters);
+    // Phase 18: time entries and tip distributions reference idempotency records.
+    await transaction.delete(tipDistributionLines);
+    await transaction.delete(tipDistributions);
+    await transaction.delete(tipPoolRulePositions);
+    await transaction.delete(tipPoolRules);
+    await transaction.delete(timeEntryAdjustments);
+    await transaction.delete(timeEntryBreaks);
+    await transaction.delete(timeEntries);
     await transaction.delete(idempotencyRecords);
 
     for (const table of APPEND_ONLY) {

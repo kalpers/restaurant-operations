@@ -18,6 +18,7 @@ import { loadLocationClock, loadReportContext, type ReportContext } from "../que
 import { salesSections } from "../queries/sales-report";
 import { seatingSections } from "../queries/seating-report";
 import { settlementSections } from "../queries/settlement-report";
+import { tipsSections } from "../queries/tips-report";
 import { csvFileName, reportToCsv } from "../rules/csv";
 import { assertValidRange } from "../rules/period";
 import {
@@ -39,6 +40,7 @@ const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<ReportSec
   fulfillment: fulfillmentSections,
   labor: laborSections,
   seating: seatingSections,
+  tips: tipsSections,
 };
 
 function holds(actor: Actor, permission: PermissionCode): boolean {
@@ -76,7 +78,9 @@ function notesFor(area: ReportArea, context: ReportContext): string[] {
   }
 
   if (area === "labor") {
-    notes.push("Labor is scheduled hours from published schedules; there is no time clock.");
+    notes.push(
+      "Scheduled labor is from published schedules. Actual labor is from closed time entries; open entries count zero until closed.",
+    );
 
     if (!context.canViewCompensation) {
       notes.push("Labor cost and labor % are hidden: they need the compensation-view permission.");
@@ -252,9 +256,11 @@ function tilesFor(area: ReportArea, sections: ReportSection[], context: ReportCo
     }
     case "labor": {
       const summary = sectionOf(sections, "summary")?.rows[0];
+      const actual = sectionOf(sections, "actual")?.rows[0];
 
       return [
         { key: "hours", label: "Scheduled hours", value: summary?.hours ?? "0.0000", kind: "hours" },
+        { key: "workedHours", label: "Worked hours", value: actual?.workedHours ?? "0.0000", kind: "hours" },
         // Cost and labor % can reveal a wage, so they need hr.compensation.view too.
         ...(context.canViewCompensation
           ? [{ key: "cost", label: "Scheduled labor cost", value: summary?.cost ?? "0.00", kind: "money" as const }]
@@ -291,6 +297,14 @@ function tilesFor(area: ReportArea, sections: ReportSection[], context: ReportCo
       }
 
       return tiles;
+    }
+    case "tips": {
+      const day = sectionOf(sections, "byDate")?.rows[0];
+
+      return [
+        { key: "tips", label: "Tips", value: day?.tips ?? "0.00", kind: "money" },
+        { key: "distributed", label: "Tips distributed", value: day?.distributed ?? "0.00", kind: "money" },
+      ];
     }
     default:
       return [];

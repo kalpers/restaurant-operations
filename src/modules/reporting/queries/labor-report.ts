@@ -10,6 +10,8 @@ import {
 } from "../rules/labor-cost";
 import type { ReportColumn, ReportRow, ReportSection } from "../types";
 
+import { actualLaborSections } from "./actual-labor-report";
+import { compensationAt } from "./compensation-at";
 import { rowsOf, type ReportContext } from "./report-context";
 import { netSalesTotal } from "./sales-report";
 
@@ -67,8 +69,8 @@ function totalsRow(totals: LaborTotals, canViewCompensation: boolean): ReportRow
  * (and ARCHIVED ones, which were published), ACTIVE assignments only, non-cancelled shifts,
  * by `shift_date`. Each is costed at the HOURLY rate in effect on the shift date for that
  * Employee and the Position worked (`employee_position_compensation`, effective dates
- * inclusive). Salaried work and work with no rate are hours only. There is no time clock,
- * so this is scheduled labor, not actual hours worked.
+ * inclusive). Salaried work and work with no rate are hours only. Actual clocked labor
+ * (Phase 18) is in `actual-labor-report.ts` and follows these sections.
  */
 export async function laborSections(context: ReportContext): Promise<ReportSection[]> {
   const { filters } = context;
@@ -92,16 +94,7 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
       JOIN shift_assignments a ON a.shift_id = sh.id AND a.status = 'ACTIVE'
       JOIN employees e ON e.id = a.employee_id
       JOIN positions p ON p.id = sh.position_id
-      LEFT JOIN LATERAL (
-        SELECT epc.compensation_type, epc.hourly_rate
-        FROM employee_position_compensation epc
-        WHERE epc.employee_id = a.employee_id
-          AND epc.position_id = sh.position_id
-          AND epc.effective_from <= sh.shift_date
-          AND (epc.effective_to IS NULL OR epc.effective_to >= sh.shift_date)
-        ORDER BY epc.effective_from DESC
-        LIMIT 1
-      ) c ON true
+      ${compensationAt(sql`a.employee_id`, sql`sh.position_id`, sql`sh.shift_date`)}
       WHERE ${scope}
         ${filters.employeeId ? sql`AND a.employee_id = ${filters.employeeId}` : sql``}
       ORDER BY sh.shift_date, p.name, e.employee_number
@@ -172,7 +165,7 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
     { key: "noRateHours", label: "Hours with no rate", kind: "hours" },
   ];
 
-  return [
+  const scheduled: ReportSection[] = [
     {
       key: "summary",
       title: "Scheduled labor",
@@ -260,4 +253,7 @@ export async function laborSections(context: ReportContext): Promise<ReportSecti
       })),
     },
   ];
+
+  // Phase 18: actual (clocked) labor follows the unchanged scheduled sections.
+  return [...scheduled, ...(await actualLaborSections(context))];
 }

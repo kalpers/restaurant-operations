@@ -13,6 +13,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/shared/errors/app-error";
+import { compareDecimals } from "@/shared/decimal/decimal";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 import { addDays, dayOfWeek, localToInstant } from "@/shared/time/zoned-time";
 
@@ -74,6 +75,18 @@ function assertRules(input: SchedulingRuleRow): void {
       "HARD_LIMIT_NEEDS_VALUE",
       "A hard limit needs a value.",
     );
+  }
+
+  if (
+    !/^\d(\.\d{1,2})?$/.test(input.overtimeMultiplier) ||
+    compareDecimals(input.overtimeMultiplier, "1.00") < 0 ||
+    compareDecimals(input.overtimeMultiplier, "3.00") > 0
+  ) {
+    throw new ValidationError("Enter an overtime multiplier from 1.00 to 3.00.");
+  }
+
+  if (!Number.isInteger(input.lateClockInGraceMinutes) || input.lateClockInGraceMinutes < 0 || input.lateClockInGraceMinutes > 120) {
+    throw new ValidationError("Enter a late clock-in grace from 0 to 120 minutes.");
   }
 }
 

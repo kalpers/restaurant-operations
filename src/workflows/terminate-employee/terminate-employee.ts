@@ -9,6 +9,8 @@ import {
   lockEmployee,
 } from "@/modules/employees/services/access";
 import { recordTermination } from "@/modules/employees/services/status-service";
+import { isOnTheClock } from "@/modules/scheduling/queries/worked-time";
+import { BusinessRuleError } from "@/shared/errors/app-error";
 
 /**
  * Crosses Employees and Auth in one transaction, so a terminated employee can't keep
@@ -34,6 +36,14 @@ export async function terminateEmployee(
 
     assertVersion(employee, input.expectedVersion);
     assertNotTerminated(employee);
+
+    // Phase 18 policy A10: clock them out first, so no entry is left open forever.
+    if (await isOnTheClock(transaction, employee.id)) {
+      throw new BusinessRuleError(
+        "EMPLOYEE_ON_CLOCK",
+        "This employee is on the clock. Clock them out before terminating them.",
+      );
+    }
 
     if (employee.userId) {
       await disableUserForTermination(transaction, actor, employee.userId);

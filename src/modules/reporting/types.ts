@@ -1,6 +1,6 @@
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 
-/** The eight reporting areas (Phase 12). Menu performance shares `reports.sales`. */
+/** The reporting areas (Phase 12, plus Tips in Phase 18). Menu performance shares `reports.sales`. */
 export const REPORT_AREAS = [
   "sales",
   "menu",
@@ -10,6 +10,7 @@ export const REPORT_AREAS = [
   "fulfillment",
   "labor",
   "seating",
+  "tips",
 ] as const;
 
 export type ReportArea = (typeof REPORT_AREAS)[number];
@@ -23,6 +24,7 @@ export const REPORT_AREA_PERMISSION: Record<ReportArea, PermissionCode> = {
   fulfillment: "reports.fulfillment",
   labor: "reports.labor",
   seating: "reports.seating",
+  tips: "reports.tips",
 };
 
 export const REPORT_AREA_TITLE: Record<ReportArea, string> = {
@@ -34,6 +36,7 @@ export const REPORT_AREA_TITLE: Record<ReportArea, string> = {
   fulfillment: "Kitchen & bar fulfillment",
   labor: "Labor",
   seating: "Seating",
+  tips: "Tips",
 };
 
 export const ORDER_TYPES = ["DINE_IN", "BAR", "TAKEOUT"] as const;

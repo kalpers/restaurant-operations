@@ -44,10 +44,11 @@ const ALL_REPORTS: readonly PermissionCode[] = [
   "reports.labor",
   "reports.settlements",
   "reports.seating",
+  "reports.tips",
   "reports.export",
 ];
 
-/** What the Manager role holds for reporting: no labor, no export. */
+/** What the Manager role holds for reporting: no labor, no export (tips since Phase 18). */
 const MANAGER_REPORTS: readonly PermissionCode[] = [
   "reports.view",
   "reports.sales",
@@ -56,6 +57,7 @@ const MANAGER_REPORTS: readonly PermissionCode[] = [
   "reports.fulfillment",
   "reports.settlements",
   "reports.seating",
+  "reports.tips",
 ];
 
 async function codeOf(work: Promise<unknown>): Promise<string | undefined> {

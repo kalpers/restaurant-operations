@@ -54,6 +54,9 @@ export const PERMISSION_CATALOG = [
   { code: "schedule.swap.approve", name: "Manage and approve shift swaps", category: "Scheduling" },
   { code: "schedule.templates.manage", name: "Manage staffing templates", category: "Scheduling" },
   { code: "schedule.rules.manage", name: "Manage scheduling rules", category: "Scheduling" },
+  { code: "timeclock.punch", name: "Clock in and out, and see own time and tips", category: "Scheduling" },
+  { code: "timeclock.view", name: "View everyone's time entries", category: "Scheduling" },
+  { code: "timeclock.manage", name: "Punch for others, adjust and void time entries", category: "Scheduling" },
 
   { code: "restaurant.view", name: "View tables and seating", category: "Restaurant / Seating" },
   { code: "restaurant.tables.manage", name: "Configure tables", category: "Restaurant / Seating" },
@@ -129,6 +132,7 @@ export const PERMISSION_CATALOG = [
   { code: "drawers.view", name: "View cash drawers", category: "Settlements" },
   { code: "drawers.operate", name: "Open, count and close cash drawers", category: "Settlements" },
   { code: "drawers.manage", name: "Set up cash drawers and the drawer requirement", category: "Settlements" },
+  { code: "tips.manage", name: "Set up the tip pool and finalize tip distributions", category: "Settlements" },
 
   { code: "kitchen.view", name: "View kitchen station tickets", category: "Kitchen" },
   { code: "kitchen.manage", name: "Work kitchen station tickets", category: "Kitchen" },
@@ -147,6 +151,7 @@ export const PERMISSION_CATALOG = [
   { code: "reports.labor", name: "View labor reports", category: "Reports" },
   { code: "reports.settlements", name: "View settlement reports", category: "Reports" },
   { code: "reports.seating", name: "View seating reports", category: "Reports" },
+  { code: "reports.tips", name: "View tip reports", category: "Reports" },
   { code: "reports.export", name: "Export reports", category: "Reports" },
 
   { code: "audit.view", name: "View audit history", category: "Audit" },

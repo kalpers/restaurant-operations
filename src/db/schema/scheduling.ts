@@ -592,6 +592,12 @@ export const schedulingRules = pgTable(
       .default(true),
     preferTargetHours: boolean("prefer_target_hours").notNull().default(true),
     weekStartDay: integer("week_start_day").notNull().default(1),
+    /** Phase 18: worked overtime hours are costed at the hourly rate times this. */
+    overtimeMultiplier: numeric("overtime_multiplier", { precision: 4, scale: 2, mode: "string" })
+      .notNull()
+      .default("1.50"),
+    /** Phase 18: a clock-in later than this after the shift start is flagged late. */
+    lateClockInGraceMinutes: integer("late_clock_in_grace_minutes").notNull().default(5),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -600,6 +606,14 @@ export const schedulingRules = pgTable(
     check(
       "scheduling_rules_week_start_day_valid",
       sql`${table.weekStartDay} BETWEEN 0 AND 6`,
+    ),
+    check(
+      "scheduling_rules_overtime_multiplier_valid",
+      sql`${table.overtimeMultiplier} BETWEEN 1.00 AND 3.00`,
+    ),
+    check(
+      "scheduling_rules_late_grace_valid",
+      sql`${table.lateClockInGraceMinutes} BETWEEN 0 AND 120`,
     ),
     check(
       "scheduling_rules_day_limits_valid",

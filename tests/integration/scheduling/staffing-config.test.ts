@@ -59,6 +59,8 @@ const baseRules = {
   balanceClosingShifts: true,
   preferTargetHours: true,
   weekStartDay: 1,
+  overtimeMultiplier: "1.50",
+  lateClockInGraceMinutes: 5,
 };
 
 describe("staffing templates and rules", () => {

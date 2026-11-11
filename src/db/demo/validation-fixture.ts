@@ -6,6 +6,8 @@
 
 /** Marks a completed run in `seed_runs`. Change the fixture by adding a new key. */
 export const VALIDATION_SEED_KEY = "phase13.validation-fixtures";
+/** Phase 18: the validation server's time entry, the MAIN tip pool and today's distribution. */
+export const VALIDATION_LABOR_SEED_KEY = "phase18.validation-labor-tips";
 
 export const VALIDATION_EMPLOYEES = [
   { employeeNumber: "P13-SERVER", firstName: "Vera", lastName: "Validation", position: "SERVER", hourlyRate: "12.00" },

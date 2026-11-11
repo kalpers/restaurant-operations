@@ -37,7 +37,7 @@ describe("visibleNavigation", () => {
     const hrefs = visibleNavigation(ALL_PERMISSION_CODES).map((item) => item.href);
 
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(41);
+    expect(hrefs).toHaveLength(44);
   });
 });
 
@@ -73,8 +73,11 @@ describe("visibleNavigationGroups", () => {
         "People",
         [
           "My schedule",
+          "My time",
           "Scheduling",
           "Timeline",
+          "Time clock",
+          "Tips",
           "Scheduling requests",
           "Availability",
           "Staffing & rules",

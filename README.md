@@ -505,6 +505,18 @@ Manager may override generated assignments and use a fill-open-shifts mode.
 
 A read-only day timeline (Gantt) shows the schedule by employee or by position; see "Phase 14 Schedule Timeline" in section 33.
 
+### Time clock (Phase 18)
+
+Tables:
+
+```text
+time_entries
+time_entry_breaks
+time_entry_adjustments
+```
+
+A time entry is one stretch of work in one Position, on the business date of its clock-in. Employees punch on their own login (`/my-time`, `timeclock.punch`); a manager (`timeclock.manage`) can punch for anyone eligible, including staff with no login. There is no PIN or kiosk mode. A clock-in is matched to the employee's published shift for that Position starting within 60 minutes either way; otherwise it is unscheduled, which is allowed and flagged. Effective times can be corrected later with a reason, but the original punch instants never change, and every correction is kept in `time_entry_adjustments`. A forgotten clock-out stays OPEN and counts no hours until a manager closes it. Weekly overtime uses `scheduling_rules.weekly_overtime_threshold`, `week_start_day` and `overtime_multiplier`; it only warns, never blocks. See "Phase 18 Labor and Tips" in section 33.
+
 ## 12. Domain 05: Restaurant and Seating
 
 Tables:
@@ -920,6 +932,7 @@ Support:
 - Zero-amount Settlement closure for a fully comped Order, without a fake $0 tender
 - Cash drawers (Phase 17): sessions with a float, paid-in/out and a count at close; cash tenders and cash refunds go into an OPEN session where the location requires it
 - Refund records on CLOSED orders (Phase 17), record only
+- Tip pools (Phase 18), record only: one pool per location and business date (`tip_pool_rules`, `tip_pool_rule_positions`, `tip_distributions`, `tip_distribution_lines`), shared by worked hours × position points and finalized as an immutable snapshot
 
 Do not represent one Order obligation as multiple partially completed Settlements. A fully reconciled Settlement closes the Order atomically; a CLOSED Order is terminal. Money returned afterwards is a separate refund record (Phase 17): the Order, its Settlement and tenders never change, nothing reopens a check, and a refund counts on the business date it is recorded. Settlement completion does not change Inventory, fulfillment, or Table Session status. Table Sessions still complete only through the explicit physical departure workflow after associated Orders are CLOSED.
 
@@ -1048,7 +1061,8 @@ Examples:
 - Historical item revenue uses submitted Order price snapshots.
 - Tender reporting uses Settlement and Tender history.
 - Inventory reporting uses inventory ledger history.
-- Labor reporting uses the effective compensation of the Employee for the Position worked.
+- Labor reporting uses the effective compensation of the Employee for the Position worked: scheduled labor on the shift date, and (since Phase 18) actual labor on each time entry's business date.
+- Tip reporting (Phase 18) uses tender tips of CLOSED orders and finalized distribution snapshots.
 - Fulfillment reporting uses fulfillment status history.
 
 ### Exporting
@@ -1843,6 +1857,17 @@ Phase 17 completed the guest check and the end of the night. Plan: `docs/Phase-1
 - **Audit and events.** `tax.*`, `orders.items-moved`, `settlements.refund-*` and `drawers.*` audit actions; `kitchen.course-fired`, `order.items-moved`, `settlement.refund-*` and `drawer.*` outbox events. The audit and outbox name CHECKs forbid a hyphen in the domain part, so the drawer domain word is `drawers`.
 - **Migrations:** `0026` to `0034` (generated and custom pairs per area, plus `0034` naming three foreign keys within PostgreSQL's 63-character limit).
 
+### Phase 18 Labor and Tips
+
+Phase 18 records the hours people actually work and how tips are shared. Record only: no payroll, pay periods or payouts (section 39). Plan: `docs/Phase-18-Labor-and-Tips.md`. Report: `docs/Phase-18-Completion-Report.md`.
+
+- **Time clock** (Scheduling module). `time_entries` hold the effective `clock_in_at`/`clock_out_at` beside the original `clock_in_recorded_at`/`clock_out_recorded_at`, which a trigger freezes; a clock-out set later by a manager has source `ADJUSTMENT` and no recorded instant. One OPEN entry per employee (partial unique index) and no overlapping non-voided entries (exclusion constraint). Breaks lie inside their entry (deferred constraint trigger); unpaid breaks are subtracted. Clock-in, clock-out and breaks take idempotency keys. Eligibility (ACTIVE, at the location, holding the position on the business date) uses the Employees module's scheduling facts. Terminating someone on the clock is refused (`EMPLOYEE_ON_CLOCK`). Manager punches, adjustments and voids are audited (category `SCHEDULING`); self punches aren't.
+- **Overtime.** Weekly only, by business date: hours past the threshold in a work week, allocated to the latest work first and computed over whole weeks, so a date's figures don't depend on the report range. Overtime is costed at the hourly rate × `scheduling_rules.overtime_multiplier` (default 1.50). Warnings (`NONE`, `APPROACHING` within 4 hours, `OVERTIME`) show on `/my-time` and the manager's time clock.
+- **Tips** (Settlements module, finalize in `src/workflows/finalize-tip-distribution`). The pool is all RECORDED tender tips on COMPLETED settlements of CLOSED orders on the business date. Shares are worked hours × points per participating Position, in whole cents by largest remainder (ties: employee number, then UUID, then position code). Finalize is refused while the date has OPEN checks, OPEN settlements or OPEN time entries; one FINALIZED distribution per location and date; voiding allows a redo. While a date is finalized its time entries can't be created, corrected or voided (`TIP_DISTRIBUTION_FINALIZED`).
+- **Reports.** Labor keeps the Phase 12 scheduled sections unchanged and adds actual labor (overall and by employee), scheduled vs. actual (late and early-out by `late_clock_in_grace_minutes`, unscheduled, no-show, over 16 hours), overtime by week and time clock exceptions. Every cost figure still needs `hr.compensation.view`. A new Tips area (`reports.tips`) shows tips by date and tender, direct tips by server, and finalized shares.
+- **Permissions** (137 in all): `timeclock.punch` (every role), `timeclock.view`, `timeclock.manage`, `tips.manage` and `reports.tips` (Owner, General Manager, Manager), seeded by `security.labor-tips-permissions`.
+- **Migrations:** `0035` (tables and the two `scheduling_rules` columns) and `0036` (custom: overlap exclusion, freeze, break and append-only triggers).
+
 ## 34. Cloud Deployment (On Hold)
 
 Cloud deployment is on hold by owner decision (2026-11-10). No deployment phase is scheduled. `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure.
@@ -2005,6 +2030,16 @@ Added by owner decision on 2026-11-10. It is not a deployment phase; cloud deplo
 Complete the guest check and the end of the night. Five areas: tax by explicitly assigned tax category with effective-dated location rates, snapshotted at SEND, with settlement reconciling to `total_due`; refund records on CLOSED orders (record only; the order stays CLOSED and nothing reopens it); moving draft and sent items between checks on one Table Session; course numbers with Send & hold and a manual Fire, using held tickets rather than a new kitchen item state; and cash drawers with float, paid-in/out, count and variance, required for cash per a location setting. Plan: `docs/Phase-17-Checks-and-Closeout.md`.
 
 Added by owner decision on 2026-11-10. It replaces the README section 19 deferrals for tax and refunds, and the section 18 deferral of courses and hold/fire.
+
+### Phase 18: Labor and Tips
+
+Record the hours people actually work and what happens to tips. Four areas: a time clock (self punches on the user's own login and manager punches for staff without one, breaks, shift matching, idempotent retries, and audited adjustments that keep the original punch times); weekly overtime from the existing scheduling rules with an overtime multiplier and live warnings; actual labor reports next to the unchanged scheduled ones (scheduled vs. actual, overtime, exceptions, cost behind `hr.compensation.view`); and one daily tip pool per location split by hours worked × position points, previewed then finalized as an immutable snapshot, with a Tips report. Record only: no payroll, pay periods or tip payouts. Plan: `docs/Phase-18-Labor-and-Tips.md`.
+
+Added by owner decision on 2026-11-10. It adds actual labor next to the Phase 12 scheduled labor policy; payroll processing stays a future capability (section 39).
+
+### Phase 19: Menu and Stock Signals (planned next)
+
+Par levels and low-stock alerts, suggested purchase orders from the shortfall, an 86 board driven by stock, and sales-by-hour, server performance, item mix and void/comp/discount reports. Not yet planned; it needs its own plan and the owner's approval before it starts.
 
 ### Cloud Deployment: On Hold
 

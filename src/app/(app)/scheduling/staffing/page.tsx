@@ -178,6 +178,8 @@ export default async function StaffingAndRulesPage() {
               { name: "weekStartDay", label: "Week starts on", type: "select", required: true, options: DAY_OPTIONS, defaultValue: String(rules.weekStartDay) },
               { name: "avoidOvertime", label: "Preference: avoid overtime", type: "checkbox", defaultValue: rules.avoidOvertime },
               { name: "weeklyOvertimeThreshold", label: "Weekly overtime threshold (hours)", required: true, defaultValue: rules.weeklyOvertimeThreshold },
+              { name: "overtimeMultiplier", label: "Time clock: overtime cost multiplier", required: true, defaultValue: rules.overtimeMultiplier },
+              { name: "lateClockInGraceMinutes", label: "Time clock: late clock-in grace (minutes)", type: "number", required: true, defaultValue: rules.lateClockInGraceMinutes },
               { name: "maximumWeeklyHours", label: "Hard limit: maximum weekly hours", defaultValue: rules.maximumWeeklyHours },
               { name: "minimumRestHours", label: "Minimum rest between shifts (hours)", defaultValue: rules.minimumRestHours },
               { name: "minimumRestHard", label: "Minimum rest is a hard limit", type: "checkbox", defaultValue: rules.minimumRestHard },

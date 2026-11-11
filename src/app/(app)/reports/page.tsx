@@ -11,8 +11,9 @@ const DESCRIPTIONS: Record<ReportArea, string> = {
   orders: "Order lifecycle, check speed, voids, discounts and results by server.",
   inventory: "Ledger usage, waste, count variance, receipts and supplier cost changes.",
   fulfillment: "Kitchen and bar ticket times by station, late items and remakes.",
-  labor: "Scheduled hours and hourly labor cost from published schedules, with coverage.",
+  labor: "Scheduled and actual hours, overtime, time clock exceptions and labor cost, with coverage.",
   seating: "Table sessions, covers, turns, reservations and the waitlist.",
+  tips: "Tips by business date and server, and finalized tip-pool shares.",
 };
 
 /** The reports you may open at the current location. */

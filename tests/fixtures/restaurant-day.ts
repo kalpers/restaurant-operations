@@ -87,6 +87,7 @@ export const REPORTER_PERMISSIONS: readonly PermissionCode[] = [
   "reports.labor",
   "reports.settlements",
   "reports.seating",
+  "reports.tips",
   "reports.export",
   "inventory.cost.view",
   "hr.compensation.view",

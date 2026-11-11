@@ -59,6 +59,8 @@ export async function loadLocationContext(
     balanceClosingShifts: row.balanceClosingShifts,
     preferTargetHours: row.preferTargetHours,
     weekStartDay: row.weekStartDay,
+    overtimeMultiplier: row.overtimeMultiplier,
+    lateClockInGraceMinutes: row.lateClockInGraceMinutes,
   };
 
   return { timeZone: location.timezone, rules: toRuleSet(ruleRow), ruleRow };

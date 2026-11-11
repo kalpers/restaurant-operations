@@ -25,6 +25,8 @@ const SCHEDULE_SELF_SERVICE: readonly PermissionCode[] = [
   "schedule.availability.self",
   "schedule.time-off.request",
   "schedule.swap.request",
+  // Phase 18: clock in and out, own entries, own tip shares.
+  "timeclock.punch",
 ];
 
 /** Clearing up after a party, which floor staff do during service. */
@@ -188,6 +190,12 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "reports.fulfillment",
       "reports.settlements",
       "reports.seating",
+      // Phase 18: time clock oversight, tip pools and the Tips report.
+      "timeclock.punch",
+      "timeclock.view",
+      "timeclock.manage",
+      "tips.manage",
+      "reports.tips",
     ],
   },
   {

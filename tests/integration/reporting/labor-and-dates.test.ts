@@ -165,7 +165,7 @@ describe("labor reporting", () => {
     const dashboard = await buildDashboard(database(), salesOnly, scenario.locationA, TUESDAY);
     const tiles = dashboard.groups.find((group) => group.area === "labor")!.tiles.map((tile) => tile.key);
 
-    expect(tiles).toEqual(["hours"]);
+    expect(tiles).toEqual(["hours", "workedHours"]);
   });
 
   it("filters to one employee", async () => {
