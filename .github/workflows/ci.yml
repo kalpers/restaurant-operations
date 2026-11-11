@@ -47,7 +47,10 @@ jobs:
         run: npm audit --omit=dev
 
       - name: Generate a throwaway session secret
-        run: echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+        run: |
+          secret="$(openssl rand -base64 32)"
+          echo "::add-mask::$secret"
+          echo "NEXTAUTH_SECRET=$secret" >> "$GITHUB_ENV"
 
       - name: Apply migrations
         run: npm run db:migrate
@@ -64,8 +67,16 @@ jobs:
       - run: npm run test:integration
       - run: npm run build
 
+      # The runner downloads a few OS packages here, and the Ubuntu mirrors are sometimes
+      # briefly unreachable, so retry before failing the job.
       - name: Install the E2E browser
-        run: npx playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            npx playwright install --with-deps chromium && exit 0
+            echo "Browser install failed (attempt $attempt); retrying in 30s"
+            sleep 30
+          done
+          exit 1
 
       - run: npm run test:e2e
 
