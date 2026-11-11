@@ -13,6 +13,8 @@ import {
   subtractDecimals,
   sumDecimals,
   toScale,
+  wholeQuotient,
+  wholeQuotientCeiling,
 } from "./decimal";
 
 describe("decimal arithmetic", () => {
@@ -71,5 +73,22 @@ describe("decimal arithmetic", () => {
     expect(multiplyDecimals("1", "16.000000", 6)).toBe("16.000000");
     expect(multiplyDecimals("2.5", "16", 4)).toBe("40.0000");
     expect(() => multiplyDecimals("0.000001", "0.5", 6)).toThrow(DecimalError);
+  });
+});
+
+describe("whole quotients (Phase 19)", () => {
+  it("floors and ceils exact quotients without rounding", () => {
+    expect(wholeQuotient("100.0000", "8.0000")).toBe("12");
+    expect(wholeQuotient("7", "8")).toBe("0");
+    expect(wholeQuotient("0.9", "0.3")).toBe("3");
+    expect(wholeQuotientCeiling("25", "12")).toBe("3");
+    expect(wholeQuotientCeiling("24.0000", "12")).toBe("2");
+    expect(wholeQuotientCeiling("0", "12")).toBe("0");
+  });
+
+  it("refuses a negative dividend or a non-positive divisor", () => {
+    expect(() => wholeQuotient("-1", "2")).toThrow();
+    expect(() => wholeQuotient("1", "0")).toThrow();
+    expect(() => wholeQuotientCeiling("1", "-2")).toThrow();
   });
 });

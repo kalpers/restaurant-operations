@@ -1,10 +1,15 @@
 import { loadLocalEnv } from "../src/config/tooling-env";
 import { closeDatabase, getDatabase } from "../src/db";
-import { VALIDATION_LABOR_SEED_KEY, VALIDATION_SEED_KEY } from "../src/db/demo/validation-fixture";
+import {
+  VALIDATION_LABOR_SEED_KEY,
+  VALIDATION_MENU_STOCK_SEED_KEY,
+  VALIDATION_SEED_KEY,
+} from "../src/db/demo/validation-fixture";
 
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 import { seedValidationFixture } from "./validation-fixture";
 import { seedValidationLaborTips } from "./validation-labor";
+import { seedValidationMenuStock } from "./validation-menu-stock";
 
 /**
  * `npm run db:seed:validation`: the opt-in Phase 13 validation fixture, for a local
@@ -38,6 +43,18 @@ async function main(): Promise<void> {
       console.log(
         `Labor and tips: server time entry ${labor.entry ? "recorded" : "already present"}; tip pool ${labor.pool ? "created" : "already present"}; ` +
           `distribution ${labor.distribution}. Recorded as ${VALIDATION_LABOR_SEED_KEY}.`,
+      );
+    }
+
+    // Phase 19, under its own key, so a database seeded before Phase 19 gets it too.
+    const signals = await seedValidationMenuStock(getDatabase(), await mainOwnerActor("menu.availability.manage"));
+
+    if (signals.skipped) {
+      console.log(`Menu and stock signals: ${VALIDATION_MENU_STOCK_SEED_KEY} already applied; nothing to do.`);
+    } else {
+      console.log(
+        `Menu and stock signals: Buffalo Wings ${signals.outage ? "86'd" : "already 86'd"}; pickle-chip alert ${signals.alert ? "opened" : "already open or no stock"}; ` +
+          `${signals.drafts} suggested draft order(s). Recorded as ${VALIDATION_MENU_STOCK_SEED_KEY}.`,
       );
     }
   } finally {

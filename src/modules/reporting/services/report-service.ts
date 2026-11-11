@@ -18,6 +18,13 @@ import { loadLocationClock, loadReportContext, type ReportContext } from "../que
 import { salesSections } from "../queries/sales-report";
 import { seatingSections } from "../queries/seating-report";
 import { settlementSections } from "../queries/settlement-report";
+import {
+  adjustmentsByEmployeeSection,
+  eightySixHistorySection,
+  itemMixSections,
+  salesByHourSection,
+  serverPerformanceSection,
+} from "../queries/signals-report";
 import { tipsSections } from "../queries/tips-report";
 import { csvFileName, reportToCsv } from "../rules/csv";
 import { assertValidRange } from "../rules/period";
@@ -31,12 +38,17 @@ import {
   type ReportSection,
 } from "../types";
 
+// Phase 19 sections follow each area's existing ones, which stay exactly as they were.
 const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<ReportSection[]>> = {
-  sales: salesSections,
-  menu: menuSections,
+  sales: async (context) => [...(await salesSections(context)), await salesByHourSection(context)],
+  menu: async (context) => [...(await menuSections(context)), ...(await itemMixSections(context))],
   settlements: settlementSections,
-  orders: orderSections,
-  inventory: inventorySections,
+  orders: async (context) => [
+    ...(await orderSections(context)),
+    await serverPerformanceSection(context),
+    await adjustmentsByEmployeeSection(context),
+  ],
+  inventory: async (context) => [...(await inventorySections(context)), await eightySixHistorySection(context)],
   fulfillment: fulfillmentSections,
   labor: laborSections,
   seating: seatingSections,
@@ -89,6 +101,10 @@ function notesFor(area: ReportArea, context: ReportContext): string[] {
 
   if (["sales", "menu", "orders"].includes(area)) {
     notes.push("Net sales are CLOSED orders before tax; tax is shown separately. Refunds count on the day they were given.");
+  }
+
+  if (area === "orders" && !context.canViewTips) {
+    notes.push("Tips by server are hidden: they need the Tips report or tip-pool permission.");
   }
 
   return notes;

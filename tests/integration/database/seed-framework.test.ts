@@ -182,6 +182,7 @@ describe("runSeeds", () => {
       "security.system-permissions",
       "security.checks-closeout-permissions",
       "security.labor-tips-permissions",
+      "security.menu-stock-permissions",
     ]);
   });
 });

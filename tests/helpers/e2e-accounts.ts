@@ -13,6 +13,7 @@ import {
 } from "../../src/db/schema";
 import { hashPassword } from "../../src/modules/auth/password";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
+import { clearStockSignalRows } from "./e2e-stock-signals";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -154,6 +155,7 @@ export async function removeE2eAccounts(): Promise<void> {
   const ids = accounts.map((account) => account.id);
 
   if (ids.length > 0) {
+    await database.transaction((transaction) => clearStockSignalRows(transaction, { userIds: ids }));
     await database.delete(userRoles).where(inArray(userRoles.userId, ids));
     await clearAuditEvents(database, { userIds: ids });
     await database.delete(users).where(inArray(users.id, ids));

@@ -20,9 +20,10 @@ describe("visibleNavigation", () => {
   });
 
   it("shows the menu to anyone who can view it, and management only with its permissions", () => {
-    expect(labels(["menu.view"])).toEqual(["Dashboard", "Menu"]);
+    expect(labels(["menu.view"])).toEqual(["Dashboard", "86 board", "Menu"]);
     expect(labels(["menu.view", "menu.edit", "recipes.view"])).toEqual([
       "Dashboard",
+      "86 board",
       "Menu",
       "Manage menu",
       "Recipes",
@@ -37,7 +38,7 @@ describe("visibleNavigation", () => {
     const hrefs = visibleNavigation(ALL_PERMISSION_CODES).map((item) => item.href);
 
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(44);
+    expect(hrefs).toHaveLength(46);
   });
 });
 
@@ -53,7 +54,7 @@ describe("visibleNavigationGroups", () => {
   it("groups everything with every permission", () => {
     expect(groups(ALL_PERMISSION_CODES)).toEqual([
       ["Insights", ["Dashboard", "Reports", "Audit"]],
-      ["Service", ["Floor", "Reservations", "Waitlist", "Orders", "Kitchen", "Bar", "Expo", "Discounts", "Cash drawers"]],
+      ["Service", ["Floor", "Reservations", "Waitlist", "Orders", "Kitchen", "Bar", "Expo", "Discounts", "Cash drawers", "86 board"]],
       [
         "Back of house",
         [
@@ -66,6 +67,7 @@ describe("visibleNavigationGroups", () => {
           "Inventory counts",
           "Inventory items",
           "Purchase orders",
+          "Suggested orders",
           "Suppliers",
         ],
       ],

@@ -8,6 +8,8 @@
 export const VALIDATION_SEED_KEY = "phase13.validation-fixtures";
 /** Phase 18: the validation server's time entry, the MAIN tip pool and today's distribution. */
 export const VALIDATION_LABOR_SEED_KEY = "phase18.validation-labor-tips";
+/** Phase 19: Buffalo Wings 86'd at MAIN, a pickle-chip low-stock alert and its suggested draft. */
+export const VALIDATION_MENU_STOCK_SEED_KEY = "phase19.validation-menu-stock";
 
 export const VALIDATION_EMPLOYEES = [
   { employeeNumber: "P13-SERVER", firstName: "Vera", lastName: "Validation", position: "SERVER", hourlyRate: "12.00" },

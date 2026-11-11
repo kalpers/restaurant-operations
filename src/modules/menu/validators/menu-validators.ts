@@ -224,3 +224,21 @@ export const setLocationTaxSchema = z.object({
   enabled: z.boolean(),
   expectedVersion,
 });
+
+// Phase 19: the 86 board.
+export const markItemOutSchema = z.object({
+  menuItemId: z.uuid(),
+  reason: requiredText(200),
+});
+
+export const sellAnywaySchema = markItemOutSchema;
+
+export const versionOnlySchema = z.object({ expectedVersion });
+
+export const auto86SettingSchema = z.object({
+  enabled: z.boolean(),
+  expectedVersion,
+});
+
+export const outageIdParamsSchema = z.object({ outageId: z.uuid() });
+export const overrideIdParamsSchema = z.object({ overrideId: z.uuid() });

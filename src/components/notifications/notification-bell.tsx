@@ -152,6 +152,14 @@ export function NotificationBell() {
                         </Link>
                       </>
                     )}
+                    {notice.type === "INVENTORY_LOW" && (
+                      <>
+                        {" · "}
+                        <Link href="/inventory/low-stock" className="underline">
+                          See low stock
+                        </Link>
+                      </>
+                    )}
                   </p>
                 </li>
               ))}

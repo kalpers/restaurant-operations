@@ -7,6 +7,7 @@ import { formatQuantity, MEASUREMENT_TYPE_OPTIONS } from "@/components/inventory
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { getItemConfiguration, listUnitChoices } from "@/modules/inventory/services/item-service";
+import { listSupplierItems } from "@/modules/inventory/services/supplier-service";
 import { NotFoundError } from "@/shared/errors/app-error";
 import { Breadcrumbs } from "@/components/ui/page-header";
 
@@ -32,6 +33,13 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
   const here = detail.locations.find((entry) => entry.locationId === location.locationId);
   const { item } = detail;
   const base = unitCode.get(item.baseUnitId) ?? "";
+  // Phase 19 (D8): the supplier item suggested orders use here. Needs purchasing access to list.
+  const canChooseSupplier = location.permissions.includes("purchasing.view") || location.permissions.includes("suppliers.manage");
+  const supplierChoices = canChooseSupplier
+    ? (await listSupplierItems(database, actor, { inventoryItemId: item.id })).filter(
+        (entry) => entry.active || entry.id === here?.preferredSupplierItemId,
+      )
+    : [];
 
   return (
     <>
@@ -75,6 +83,23 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
             { name: "reorderTarget", label: "Reorder target", defaultValue: here?.reorderTarget ? formatQuantity(here.reorderTarget) : null },
             { name: "storageNote", label: "Storage note", defaultValue: here?.storageNote },
             { name: "active", label: "Stocked here", type: "checkbox", defaultValue: here?.active ?? true },
+            ...(canChooseSupplier
+              ? [
+                  {
+                    name: "preferredSupplierItemId",
+                    label: "Preferred supplier (for suggested orders)",
+                    type: "select" as const,
+                    defaultValue: here?.preferredSupplierItemId ?? "",
+                    options: [
+                      { value: "", label: "None" },
+                      ...supplierChoices.map((entry) => ({
+                        value: entry.id,
+                        label: `${entry.supplierName}, by the ${entry.purchaseUnitCode}`,
+                      })),
+                    ],
+                  },
+                ]
+              : []),
           ]}
         />
       </section>

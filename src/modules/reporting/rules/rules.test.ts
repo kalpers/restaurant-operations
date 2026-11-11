@@ -4,7 +4,9 @@ import type { ReportResult } from "../types";
 import { reportFiltersSchema } from "../validators/report-filters";
 
 import { csvCell, csvFileName, csvLine, reportToCsv } from "./csv";
+import { hourLabel, hoursFromCutoff } from "./hour-buckets";
 import { addLabor, emptyLaborTotals, percentOf, secondsToHours, shiftLabor } from "./labor-cost";
+import { classifyMenuItems } from "./menu-engineering";
 import { assertValidRange, daysInRange, MAX_REPORT_DAYS } from "./period";
 
 const report: ReportResult = {
@@ -162,5 +164,47 @@ describe("report filters", () => {
     expect(reportFiltersSchema.safeParse({ ...base, from: "2030-1-1" }).success).toBe(false);
     expect(reportFiltersSchema.safeParse({ ...base, locationId: "x" }).success).toBe(false);
     expect(reportFiltersSchema.safeParse({ ...base, tenderType: "CARD_NUMBER" }).success).toBe(false);
+  });
+});
+
+describe("sales by hour buckets (Phase 19 policy 19)", () => {
+  it("starts at the cutoff hour and wraps through midnight", () => {
+    expect(hoursFromCutoff("04:00:00")).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3]);
+    expect(hoursFromCutoff("00:00")[0]).toBe(0);
+    expect(hourLabel(4)).toBe("04:00–04:59");
+  });
+});
+
+describe("menu engineering (Phase 19 policy 21)", () => {
+  it("places items by the 70% popularity line and the weighted-average margin", () => {
+    // 4 items, 100 sold: even share 25, line 17.5. Average margin per item = 400 / 100 = 4.
+    const classes = classifyMenuItems([
+      { key: "star", quantity: 40, marginTotal: "200.00" }, // 5 per item, popular
+      { key: "plow", quantity: 40, marginTotal: "120.00" }, // 3 per item, popular
+      { key: "puzzle", quantity: 10, marginTotal: "60.00" }, // 6 per item, not popular
+      { key: "dog", quantity: 10, marginTotal: "20.00" }, // 2 per item
+    ]);
+
+    expect(Object.fromEntries(classes)).toEqual({ star: "STAR", plow: "PLOWHORSE", puzzle: "PUZZLE", dog: "DOG" });
+  });
+
+  it("counts exactly at the lines as popular and profitable", () => {
+    // 2 items, 20 sold: line = 0.7 * 10 = 7. Average margin = (14 + 26) / 20 = 2.
+    const classes = classifyMenuItems([
+      { key: "edge", quantity: 7, marginTotal: "14.00" },
+      { key: "other", quantity: 13, marginTotal: "26.00" },
+    ]);
+
+    expect(classes.get("edge")).toBe("STAR");
+  });
+
+  it("leaves items without cost out of the averages", () => {
+    const classes = classifyMenuItems([
+      { key: "a", quantity: 10, marginTotal: "50.00" },
+      { key: "nocost", quantity: 1000, marginTotal: null },
+    ]);
+
+    expect(classes.get("nocost")).toBe("NO_COST");
+    expect(classes.get("a")).toBe("STAR");
   });
 });

@@ -36,7 +36,8 @@ import { requireSupplier } from "./supplier-service";
 
 // A purchase order is procurement intent. Nothing here posts stock: only receiving does.
 // Lines snapshot the price, unit and conversion chosen, so later supplier edits never
-// rewrite an order. There is no preferred supplier: every order names its supplier.
+// rewrite an order. Every order names its supplier; Phase 19 suggested orders take it from
+// the stocked item's preferred supplier item and create drafts only.
 
 const quantity4 = (value: string, label: string) => {
   let result: string;
@@ -241,7 +242,18 @@ export async function createPurchaseOrder(
 ) {
   assertPermission(actor, "purchasing.manage");
 
-  return withTransaction(database, async (transaction) => {
+  return withTransaction(database, (transaction) => createPurchaseOrderIn(transaction, actor, input));
+}
+
+/** `createPurchaseOrder` inside the caller's transaction (Phase 19 suggested orders). */
+export async function createPurchaseOrderIn(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  input: { supplierId: string; expectedAt: Date | null; notes: string | null },
+) {
+  assertPermission(actor, "purchasing.manage");
+
+  {
     const supplier = await requireSupplier(transaction, actor, input.supplierId);
 
     if (!supplier.active) {
@@ -275,7 +287,7 @@ export async function createPurchaseOrder(
       .returning();
 
     return row!;
-  });
+  }
 }
 
 export async function updatePurchaseOrder(
@@ -335,13 +347,32 @@ export async function addPurchaseOrderLine(
 ) {
   assertPermission(actor, "purchasing.manage");
 
+  return withTransaction(database, (transaction) =>
+    addPurchaseOrderLineIn(transaction, actor, purchaseOrderId, input),
+  );
+}
+
+/** `addPurchaseOrderLine` inside the caller's transaction (Phase 19 suggested orders). */
+export async function addPurchaseOrderLineIn(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  purchaseOrderId: string,
+  input: {
+    supplierItemId: string;
+    orderedQuantity: string;
+    unitPrice: string | null;
+    expectedVersion: number;
+  },
+) {
+  assertPermission(actor, "purchasing.manage");
+
   const orderedQuantity = quantity4(input.orderedQuantity, "The ordered quantity");
 
   if (!isPositiveDecimal(orderedQuantity)) {
     throw new BusinessRuleError("INVALID_QUANTITY", "Order a quantity greater than zero.");
   }
 
-  return withTransaction(database, async (transaction) => {
+  {
     const order = await lockOrder(transaction, actor, purchaseOrderId, input.expectedVersion);
 
     assertDraft(order.status);
@@ -391,7 +422,7 @@ export async function addPurchaseOrderLine(
     await bumpOrder(transaction, purchaseOrderId);
 
     return line;
-  });
+  }
 }
 
 export async function updatePurchaseOrderLine(

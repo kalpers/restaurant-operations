@@ -40,6 +40,7 @@ import {
   setGroupModifier,
 } from "../../src/modules/menu/services/modifier-service";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
+import { clearStockSignalRows } from "./e2e-stock-signals";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -269,6 +270,7 @@ export function createMenuE2e(scope: "MENU" | "RECIPES") {
     }
 
     if (itemIds.length) {
+      await database.transaction((transaction) => clearStockSignalRows(transaction, { menuItemIds: itemIds }));
       await database.delete(menuItems).where(inArray(menuItems.id, itemIds));
     }
 
@@ -288,6 +290,7 @@ export function createMenuE2e(scope: "MENU" | "RECIPES") {
     const userIds = accounts.map((row) => row.id);
 
     if (userIds.length) {
+      await database.transaction((transaction) => clearStockSignalRows(transaction, { userIds }));
       await database.delete(userRoles).where(inArray(userRoles.userId, userIds));
       await clearAuditEvents(database, { userIds: userIds });
       await database.delete(users).where(inArray(users.id, userIds));

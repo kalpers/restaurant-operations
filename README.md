@@ -661,6 +661,13 @@ Menu item `active` and `available` are distinct:
 - `active`: belongs to the catalog/configuration.
 - `available`: can currently be sold.
 
+Phase 19 adds per-location sellability next to `available`, which stays organization-wide:
+- `menu_item_outages`: a manual 86 of one item at one location, with a reason, until restored.
+- Auto-86 (opt-in per location, `location_settings.auto_86_from_stock`): an item whose current recipe can't cover one more portion from on-hand stock isn't sellable there. Portions remaining are worked out on every read and never stored.
+- `menu_item_stock_overrides`: "sell anyway" for one business date, lifting auto-86 only.
+
+An item is sellable at a location when it is active, available, not 86'd there, and not auto-86'd without an override. `getOperationalMenu` applies this, so draft add and SEND share one check.
+
 Prep stations initially include concepts such as:
 
 ```text
@@ -774,6 +781,8 @@ Support partial receipts.
 Use weighted-average costing initially. Preserve actual received/supplier cost history.
 
 Physical counts snapshot the system quantity, record counted quantity, and create adjustment transactions on completion.
+
+Phase 19 adds `inventory_stock_alerts`: the posting service opens one when a posting takes stock from above the reorder level to at or below it, and resolves it when stock rises above again, in the same transaction, with in-app `INVENTORY_LOW` notifications to `purchasing.manage` holders at the location. A stocked item may name a preferred supplier item (`inventory_item_locations.preferred_supplier_item_id`), from which suggested purchase orders are built as DRAFTs, never submitted.
 
 Theoretical versus actual inventory and cost variance are critical reporting capabilities.
 
@@ -1016,6 +1025,8 @@ Reporting areas include:
 - Table turnover and utilization
 - Kitchen and bar performance
 
+Phase 19 adds, inside the existing areas and permissions: sales by hour (Sales), item mix and menu engineering (Menu), server performance and voids, comps and discounts by employee (Orders), and 86 history (Inventory). See section 33.
+
 ### Reporting Filters
 
 Reports should support filtering by:
@@ -1115,7 +1126,7 @@ CERTIFICATION_EXPIRING
 
 Do not introduce SMS/email/push integration during the POC unless intentionally added later.
 
-As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` only (see section 33). The other kinds arrive with the phases that need them.
+As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` (see section 33). Phase 19 adds `INVENTORY_LOW`, linked to its low-stock alert. The other kinds arrive with the phases that need them.
 
 ## 23. Infrastructure Reliability Tables
 
@@ -1558,7 +1569,7 @@ The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 a
 
 **Menu Item is not Recipe, and Recipe is not Inventory.** A Menu Item is what is sold and has no category column: it reaches a Category through `menu_item_placements` (menu, category, item, display order, active), and one item may have many placements. A Recipe is a durable identity (optionally linked to one Menu Item) with immutable revisions. Neither stores stock. Recipe revisions carry yield and preparation notes only. **Recipe ingredients, quantities and persisted modifier ingredient effects are Phase 8**, when a revision can reference an Inventory Item. Phase 7 builds no ingredient catalog.
 
-**Active versus available.** `active` keeps an item in the catalog and its history. `available` says it can be sold now. The operational menu returns an item only when the menu is active and offered at the location (and inside an availability window, if it has any), the category, placement and item are active, the item is available, and a price is in effect. Nothing infers availability from stock or recipes.
+**Active versus available.** `active` keeps an item in the catalog and its history. `available` says it can be sold now. The operational menu returns an item only when the menu is active and offered at the location (and inside an availability window, if it has any), the category, placement and item are active, the item is available, and a price is in effect. Nothing infers availability from stock or recipes, except where a location turns on Phase 19 auto-86.
 
 **Prices** are `NUMERIC(12,2)` decimal strings, effective-dated and half-open `[effective_from, effective_to)`. A location price wins over the organization default (`location_id` null). An exclusion constraint forbids two prices in force in one scope. A change takes the item row lock, closes the open row where the new one begins and inserts the new row, in one transaction; an optional `expectedCurrentPriceId` rejects a stale editor. A new price can't start in the past, can't start at or before the one it replaces, and can't jump ahead of one already scheduled. `resolveMenuItemPrice` is the only lookup; Orders will call it, not read the rows. Placement price overrides are deferred.
 
@@ -1592,7 +1603,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Weighted-average cost.** Per base unit, `NUMERIC(14,4)`, computed with exact `BigInt` arithmetic (`divideRoundHalfUp` in `src/shared/decimal/`) and rounded ROUND_HALF_UP to four places after each receipt; the persisted value is the next receipt's basis, with no hidden precision. A receipt enters as its exact total cost, so a base-unit cost needing more than four places isn't rounded twice. From QOH at or below zero the ordinary formula is never used: a receipt that leaves QOH at or below zero keeps the average, and one that lifts it above zero sets the average to that receipt's base-unit cost. Stock that arrived with no cost (an adjustment before any receipt) takes the next receipt's cost as its first average. Outgoing movements are valued at the current average and don't change it. Transfers carry the source's average to the destination. Costs and valuation are returned only to holders of `inventory.cost.view`.
 
-**Suppliers and purchasing.** `supplier_items` says how a supplier sells an item: a purchase unit and `base_units_per_purchase`, computed from the item's conversions when saved and refused if the unit can't convert. There is no preferred-supplier field and nothing chooses a supplier: an order names one explicitly, and low-stock results list every active supplier option. Listed costs and every receipt price are appended to `supplier_item_cost_history`. Purchase orders are numbered per Location (`PO-000001`) and move `DRAFT -> SUBMITTED -> PARTIALLY_RECEIVED -> RECEIVED`, or to `CANCELLED` from any but `RECEIVED`. Only drafts are edited. Lines snapshot the supplier item, unit, conversion and price; the order total is the exact sum of line totals; no tax or freight. Submitting moves no stock.
+**Suppliers and purchasing.** `supplier_items` says how a supplier sells an item: a purchase unit and `base_units_per_purchase`, computed from the item's conversions when saved and refused if the unit can't convert. As built in Phase 8 there was no preferred-supplier field and nothing chose a supplier: an order names one explicitly, and low-stock results list every active supplier option. Phase 19 (owner decision D8) adds an optional preferred supplier item per stocked item and location, used only to build suggested DRAFT orders. Listed costs and every receipt price are appended to `supplier_item_cost_history`. Purchase orders are numbered per Location (`PO-000001`) and move `DRAFT -> SUBMITTED -> PARTIALLY_RECEIVED -> RECEIVED`, or to `CANCELLED` from any but `RECEIVED`. Only drafts are edited. Lines snapshot the supplier item, unit, conversion and price; the order total is the exact sum of line totals; no tax or freight. Submitting moves no stock.
 
 **Receiving** locks the order, refuses over-receiving per line (no override), and in one transaction writes the receipt and its lines, posts a `RECEIVE` per line through the posting service at the actual cost, appends cost history, and sets the order status. The ordered price is never rewritten; the actual price lives on the receipt line. Any refused line rolls back the whole receipt. A cancelled order can't receive; stock already received stays.
 
@@ -1602,7 +1613,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Counts.** `DRAFT -> SUBMITTED -> APPROVED`, with `SUBMITTED -> DRAFT` to correct and `CANCELLED` from either. Starting a count snapshots each line's expected quantity and the item's latest ledger sequence together under the balance lock. Stock stays live while a count is open. Variance is counted minus expected. Approval locks the balances, so no posting can slip in, and if any ledger row has a higher sequence than a line's snapshot it requires an explicit acknowledgement, recording the actor and time. It then posts each non-zero variance as `COUNT_INCREASE` or `COUNT_DECREASE` against current stock (never setting stock to the count) and approves, atomically. A decrease that would take current stock below zero refuses the whole approval.
 
-**Replenishment** is a recommendation: an item is low when QOH is at or below its reorder level, and the suggestion is reorder target (else par) minus QOH, never below zero. Negative QOH is shown as it is. Nothing creates or submits an order.
+**Replenishment** is a recommendation: an item is low when QOH is at or below its reorder level, and the suggestion is reorder target (else par) minus QOH, never below zero. Negative QOH is shown as it is. Nothing submits an order; since Phase 19 a manager can turn the shortfall into DRAFT orders.
 
 **Recipe ingredients.** `recipe_version_ingredients` reference Inventory Items with a positive quantity in any unit convertible to the item's base. They change only on a `DRAFT` revision (a trigger refuses changes to a published revision's rows); each change checks and bumps the revision's version. A draft may copy another revision's ingredients. `resolveRevisionRequirements` returns base-unit requirements for Phase 9. Saving moves no stock.
 
@@ -1868,6 +1879,17 @@ Phase 18 records the hours people actually work and how tips are shared. Record 
 - **Permissions** (137 in all): `timeclock.punch` (every role), `timeclock.view`, `timeclock.manage`, `tips.manage` and `reports.tips` (Owner, General Manager, Manager), seeded by `security.labor-tips-permissions`.
 - **Migrations:** `0035` (tables and the two `scheduling_rules` columns) and `0036` (custom: overlap exclusion, freeze, break and append-only triggers).
 
+### Phase 19 Menu and Stock Signals
+
+Phase 19 turns recorded stock and sales into signals for service. Nothing in it moves inventory. Plan: `docs/Phase-19-Menu-and-Stock-Signals.md`. Report: `docs/Phase-19-Completion-Report.md`.
+
+- **86 board** (Menu module). `menu_item_outages` (manual 86 with a reason, then restore; one ACTIVE per item and location; frozen once RESTORED) and `menu_item_stock_overrides` (sell anyway for one business date; one uncleared per item, location and date). Portions remaining = the lowest whole `on hand / per-portion requirement` over the current recipe's ingredients, from a bulk Recipes query that gives exactly what SEND resolves; modifiers are ignored, and an item with no recipe has no figure. Auto-86 is opt-in per location (`auto_86_from_stock`, default off) and worked out on every read, never stored. `getOperationalMenu` leaves out unsellable items, so draft add and SEND refuse them with `ITEM_NOT_SELLABLE`. `/menu/86` shows what is 86'd, running low (1 to 5 portions), sold anyway and restored today; the order screen shows "N left" and what is 86'd. Changes are audited (category `MENU`) and emit `menu.availability-changed` after commit.
+- **Low-stock alerts** (Inventory module). `postInventoryTransaction` opens an alert when a posting takes stock from above the reorder level to at or below it, and resolves it on the way back above, under the balance lock, writing `INVENTORY_LOW` notifications to active `purchasing.manage` holders at the location. Changing the reorder level opens or closes nothing until the next posting.
+- **Suggested orders.** Need = the Phase 8 suggested quantity minus what is outstanding on DRAFT, SUBMITTED and PARTIALLY_RECEIVED orders, in whole purchase units rounded up, from the stocked item's preferred supplier item. `POST /api/purchasing/suggested-orders` (idempotency scope `purchasing.suggest`) creates one DRAFT per supplier; nothing is submitted.
+- **Reports**, in the existing areas after their unchanged sections: sales by hour opened (Sales); item mix and menu engineering across the whole menu (Menu; engineering only with cost); server performance, with tips only for tip viewers, and voids, comps and discounts by the employee who did them (Orders); 86 history (Inventory).
+- **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
+- **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
+
 ## 34. Cloud Deployment (On Hold)
 
 Cloud deployment is on hold by owner decision (2026-11-10). No deployment phase is scheduled. `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure.
@@ -2037,9 +2059,11 @@ Record the hours people actually work and what happens to tips. Four areas: a ti
 
 Added by owner decision on 2026-11-10. It adds actual labor next to the Phase 12 scheduled labor policy; payroll processing stays a future capability (section 39).
 
-### Phase 19: Menu and Stock Signals (planned next)
+### Phase 19: Menu and Stock Signals
 
-Par levels and low-stock alerts, suggested purchase orders from the shortfall, an 86 board driven by stock, and sales-by-hour, server performance, item mix and void/comp/discount reports. Not yet planned; it needs its own plan and the owner's approval before it starts.
+Turn recorded stock and sales into signals for service. Four areas: a per-location 86 board (manual 86 with a reason and restore, read-time portions remaining, opt-in auto-86 from stock, and a "sell anyway" override for the business date), checked in one place for both draft add and SEND; low-stock alerts opened and resolved by inventory postings, with in-app `INVENTORY_LOW` notifications; suggested DRAFT purchase orders per preferred supplier, never submitted; and report sections for sales by hour, item mix and menu engineering, server performance, voids/comps/discounts by employee, and 86 history. Nothing in this phase moves inventory. Plan: `docs/Phase-19-Menu-and-Stock-Signals.md`.
+
+Approved by the owner on 2026-11-11, with decisions D1–D10 as recommended in the plan. Item mix and menu engineering compare items across the whole menu (amendment 7: order items carry no category snapshot).
 
 ### Cloud Deployment: On Hold
 

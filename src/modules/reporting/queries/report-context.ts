@@ -30,6 +30,8 @@ export type ReportContext = {
   canViewCompensation: boolean;
   /** Labor % of sales needs `reports.sales`. */
   canViewSales: boolean;
+  /** Per-server tip figures need `reports.tips` or `tips.manage` (Phase 18 rule). */
+  canViewTips: boolean;
 };
 
 /** The Location's name and business-date clock. */
@@ -74,6 +76,7 @@ export async function loadReportContext(
     canViewCost: actor.permissions.has("inventory.cost.view"),
     canViewCompensation: actor.permissions.has("hr.compensation.view"),
     canViewSales: actor.permissions.has("reports.sales"),
+    canViewTips: actor.permissions.has("reports.tips") || actor.permissions.has("tips.manage"),
   };
 }
 

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { inventoryItems, inventoryItemUnitConversions, unitConversions, unitsOfMeasure } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
@@ -43,6 +43,55 @@ export async function loadConversionContext(
   ]);
 
   return { units, generic, product };
+}
+
+/**
+ * `loadConversionContext` for many items at once: the shared units and generic conversions
+ * once, and every item's packaging conversions in one query. Each context equals what
+ * `loadConversionContext` returns for that item.
+ */
+export async function loadConversionContexts(
+  executor: DatabaseExecutor,
+  inventoryItemIds: readonly string[],
+): Promise<Map<string, ConversionContext>> {
+  const ids = [...new Set(inventoryItemIds)];
+  const result = new Map<string, ConversionContext>();
+
+  if (ids.length === 0) {
+    return result;
+  }
+
+  const [units, generic, product] = await Promise.all([
+    executor
+      .select({ id: unitsOfMeasure.id, code: unitsOfMeasure.code, measurementType: unitsOfMeasure.measurementType })
+      .from(unitsOfMeasure),
+    executor
+      .select({ fromUnitId: unitConversions.fromUnitId, toUnitId: unitConversions.toUnitId, factor: unitConversions.factor })
+      .from(unitConversions)
+      .where(eq(unitConversions.active, true)),
+    executor
+      .select({
+        inventoryItemId: inventoryItemUnitConversions.inventoryItemId,
+        id: inventoryItemUnitConversions.id,
+        fromUnitId: inventoryItemUnitConversions.fromUnitId,
+        toUnitId: inventoryItemUnitConversions.toUnitId,
+        factor: inventoryItemUnitConversions.factor,
+      })
+      .from(inventoryItemUnitConversions)
+      .where(and(inArray(inventoryItemUnitConversions.inventoryItemId, ids), eq(inventoryItemUnitConversions.active, true))),
+  ]);
+
+  for (const id of ids) {
+    result.set(id, {
+      units,
+      generic,
+      product: product
+        .filter((row) => row.inventoryItemId === id)
+        .map((row) => ({ id: row.id, fromUnitId: row.fromUnitId, toUnitId: row.toUnitId, factor: row.factor })),
+    });
+  }
+
+  return result;
 }
 
 export type ItemFacts = {

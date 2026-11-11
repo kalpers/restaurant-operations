@@ -10,6 +10,8 @@ import {
   inventoryItemUnitConversions,
   inventoryTransactions,
   locations,
+  supplierItems,
+  suppliers,
   unitsOfMeasure,
 } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
@@ -184,7 +186,37 @@ type LevelInput = {
   reorderTarget: string | null;
   storageNote: string | null;
   active: boolean;
+  /** Phase 19 (D8). Undefined leaves it as it is; null clears it. */
+  preferredSupplierItemId?: string | null;
 };
+
+/** The preferred supplier item must sell this item, in this organization, and be active. */
+async function assertPreferredSupplierItem(
+  executor: DatabaseExecutor,
+  actor: Actor,
+  itemId: string,
+  supplierItemId: string,
+) {
+  const [row] = await executor
+    .select({ active: supplierItems.active, supplierActive: suppliers.active })
+    .from(supplierItems)
+    .innerJoin(suppliers, eq(suppliers.id, supplierItems.supplierId))
+    .where(
+      and(
+        eq(supplierItems.id, supplierItemId),
+        eq(supplierItems.inventoryItemId, itemId),
+        eq(supplierItems.organizationId, actor.organizationId),
+      ),
+    );
+
+  if (!row) {
+    throw new NotFoundError("supplier item");
+  }
+
+  if (!row.active || !row.supplierActive) {
+    throw new BusinessRuleError("SUPPLIER_ITEM_INACTIVE", "That supplier item is inactive.");
+  }
+}
 
 const normalizeLevel = (value: string | null) => {
   if (value === null) {
@@ -224,6 +256,12 @@ export async function setItemLocation(
   return withTransaction(database, async (transaction) => {
     await requireItemFacts(transaction, actor.organizationId, itemId);
 
+    if (input.preferredSupplierItemId) {
+      await assertPreferredSupplierItem(transaction, actor, itemId, input.preferredSupplierItemId);
+    }
+
+    const preferred =
+      input.preferredSupplierItemId === undefined ? {} : { preferredSupplierItemId: input.preferredSupplierItemId };
     const [existing] = await transaction
       .select()
       .from(inventoryItemLocations)
@@ -239,6 +277,7 @@ export async function setItemLocation(
         .insert(inventoryItemLocations)
         .values({
           ...levels,
+          ...preferred,
           storageNote: input.storageNote,
           active: input.active,
           organizationId: actor.organizationId,
@@ -258,7 +297,7 @@ export async function setItemLocation(
       id: existing.id,
       organizationId: actor.organizationId,
       expectedVersion: input.expectedVersion,
-      values: { ...levels, storageNote: input.storageNote, active: input.active },
+      values: { ...levels, ...preferred, storageNote: input.storageNote, active: input.active },
       label: "stock configuration",
     });
   });

@@ -152,6 +152,49 @@ export function divideRoundHalfUp(a: string, b: string, scale: number): string {
   return format(negative ? -quotient : quotient, scale);
 }
 
+/**
+ * How many whole times `b` fits in `a`, for non-negative `a` and positive `b` (floor of the
+ * exact quotient), as a decimal string with no fraction. Used for counts such as portions
+ * remaining and whole purchase units; nothing is rounded.
+ */
+export function wholeQuotient(a: string, b: string): string {
+  const left = parse(a);
+  const right = parse(b);
+
+  if (right.units <= 0n) {
+    throw new DecimalError("The divisor must be positive.");
+  }
+
+  if (left.units < 0n) {
+    throw new DecimalError("The dividend can't be negative.");
+  }
+
+  const numerator = left.units * 10n ** BigInt(right.scale);
+  const denominator = right.units * 10n ** BigInt(left.scale);
+
+  return (numerator / denominator).toString();
+}
+
+/** The smallest whole number at or above `a / b`, for non-negative `a` and positive `b`. */
+export function wholeQuotientCeiling(a: string, b: string): string {
+  const left = parse(a);
+  const right = parse(b);
+
+  if (right.units <= 0n) {
+    throw new DecimalError("The divisor must be positive.");
+  }
+
+  if (left.units < 0n) {
+    throw new DecimalError("The dividend can't be negative.");
+  }
+
+  const numerator = left.units * 10n ** BigInt(right.scale);
+  const denominator = right.units * 10n ** BigInt(left.scale);
+  const quotient = numerator / denominator;
+
+  return (numerator % denominator === 0n ? quotient : quotient + 1n).toString();
+}
+
 /** Rounds ROUND_HALF_UP to `scale` places. */
 export function roundHalfUp(value: string, scale: number): string {
   return divideRoundHalfUp(value, "1", scale);

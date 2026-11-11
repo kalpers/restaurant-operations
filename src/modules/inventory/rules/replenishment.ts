@@ -1,4 +1,10 @@
-import { compareDecimals, subtractDecimals, toScale } from "@/shared/decimal/decimal";
+import {
+  compareDecimals,
+  isPositiveDecimal,
+  subtractDecimals,
+  toScale,
+  wholeQuotientCeiling,
+} from "@/shared/decimal/decimal";
 import { BusinessRuleError } from "@/shared/errors/app-error";
 
 // Recommendations only: nothing here creates or submits a purchase order. All amounts are in
@@ -57,4 +63,68 @@ export function assertThresholds(thresholds: Thresholds): void {
       "The reorder target can't be below the reorder level.",
     );
   }
+}
+
+export type SuggestionCandidate = {
+  inventoryItemId: string;
+  quantityOnHand: string;
+  thresholds: Thresholds;
+  /** Base units still to arrive on this location's DRAFT, SUBMITTED and PARTIALLY_RECEIVED orders. */
+  outstandingBaseQuantity: string;
+  preferred: { supplierItemId: string; supplierId: string; baseUnitsPerPurchase: string } | null;
+};
+
+export type SuggestedLine = {
+  inventoryItemId: string;
+  supplierItemId: string;
+  supplierId: string;
+  /** Base units still needed after what's already on order. */
+  needBaseQuantity: string;
+  /** Whole purchase units, rounded up, so the need is always covered. */
+  orderedQuantity: string;
+};
+
+/**
+ * Phase 19 policy 16: what to put on draft orders. Need = the Phase 8 suggested quantity minus
+ * what is already on order; a positive need with a preferred supplier item becomes a line of
+ * whole purchase units, rounded up. Lines are grouped by supplier in input order.
+ */
+export function suggestPurchaseLines(candidates: readonly SuggestionCandidate[]): {
+  bySupplier: Map<string, SuggestedLine[]>;
+  withoutSupplier: { inventoryItemId: string; needBaseQuantity: string }[];
+} {
+  const bySupplier = new Map<string, SuggestedLine[]>();
+  const withoutSupplier: { inventoryItemId: string; needBaseQuantity: string }[] = [];
+
+  for (const candidate of candidates) {
+    const { suggestedQuantity } = evaluateStock(candidate.quantityOnHand, candidate.thresholds);
+
+    if (suggestedQuantity === null) {
+      continue;
+    }
+
+    const need = toScale(subtractDecimals(suggestedQuantity, candidate.outstandingBaseQuantity), 4);
+
+    if (!isPositiveDecimal(need)) {
+      continue;
+    }
+
+    if (!candidate.preferred) {
+      withoutSupplier.push({ inventoryItemId: candidate.inventoryItemId, needBaseQuantity: need });
+      continue;
+    }
+
+    const lines = bySupplier.get(candidate.preferred.supplierId) ?? [];
+
+    lines.push({
+      inventoryItemId: candidate.inventoryItemId,
+      supplierItemId: candidate.preferred.supplierItemId,
+      supplierId: candidate.preferred.supplierId,
+      needBaseQuantity: need,
+      orderedQuantity: wholeQuotientCeiling(need, candidate.preferred.baseUnitsPerPurchase),
+    });
+    bySupplier.set(candidate.preferred.supplierId, lines);
+  }
+
+  return { bySupplier, withoutSupplier };
 }

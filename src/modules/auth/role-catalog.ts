@@ -137,6 +137,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "menu.pricing.view",
       "menu.pricing.edit",
       "menu.modifiers.manage",
+      // Phase 19: 86 and restore items at the location.
+      "menu.availability.manage",
       "prep-stations.manage",
       "recipes.view",
       "recipes.edit",
@@ -208,7 +210,13 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
     code: "BARTENDER",
     name: "Bartender",
     description: "Takes orders and fulfills bar tickets.",
-    permissions: [...SERVER_PERMISSIONS, "bar.manage", ...FULFILLMENT_ACTIONS],
+    permissions: [
+      ...SERVER_PERMISSIONS,
+      "bar.manage",
+      ...FULFILLMENT_ACTIONS,
+      // Phase 19: the bar 86es drinks it has run out of.
+      "menu.availability.manage",
+    ],
   },
   {
     code: "HOST",
@@ -238,6 +246,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "kitchen.manage",
       ...FULFILLMENT_ACTIONS,
       "menu.view",
+      // Phase 19: the kitchen 86es dishes it has run out of.
+      "menu.availability.manage",
       "inventory.view",
       "inventory.waste",
       ...SCHEDULE_SELF_SERVICE,

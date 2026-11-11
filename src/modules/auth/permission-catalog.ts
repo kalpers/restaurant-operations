@@ -84,6 +84,7 @@ export const PERMISSION_CATALOG = [
   { code: "menu.pricing.view", name: "View menu pricing history", category: "Menu" },
   { code: "menu.pricing.edit", name: "Change menu prices", category: "Menu" },
   { code: "menu.modifiers.manage", name: "Manage modifier groups and modifiers", category: "Menu" },
+  { code: "menu.availability.manage", name: "86 and restore items at a location, and sell anyway", category: "Menu" },
   { code: "prep-stations.manage", name: "Manage preparation stations and routing", category: "Menu" },
   { code: "tax.view", name: "View tax categories and rates", category: "Menu" },
   { code: "tax.manage", name: "Manage tax categories, rates and the location tax switch", category: "Menu" },

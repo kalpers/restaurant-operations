@@ -36,3 +36,31 @@ export async function findEmployeeDisplayNames(
     ]),
   );
 }
+
+/** Linked user ID to employee name, for screens that record who acted by user. */
+export async function findDisplayNamesByUser(
+  executor: DatabaseExecutor,
+  input: { organizationId: string; userIds: readonly string[] },
+): Promise<Map<string, string>> {
+  const ids = [...new Set(input.userIds)];
+
+  if (ids.length === 0) {
+    return new Map();
+  }
+
+  const rows = await executor
+    .select({
+      userId: employees.userId,
+      firstName: employees.firstName,
+      preferredName: employees.preferredName,
+      lastName: employees.lastName,
+    })
+    .from(employees)
+    .where(and(inArray(employees.userId, ids), eq(employees.organizationId, input.organizationId)));
+
+  return new Map(
+    rows
+      .filter((row) => row.userId !== null)
+      .map((row) => [row.userId!, `${row.preferredName ?? row.firstName} ${row.lastName}`]),
+  );
+}

@@ -17,6 +17,7 @@ import { normalizeEmail } from "@/modules/auth/email";
 import { assertLocalDevelopment } from "../../../scripts/local-seed-guard";
 import { seedValidationFixture } from "../../../scripts/validation-fixture";
 import { seedValidationLaborTips } from "../../../scripts/validation-labor";
+import { seedValidationMenuStock } from "../../../scripts/validation-menu-stock";
 import { dropDatabase, recreateEmptyDatabase } from "../../helpers/prepare-test-database";
 
 const VALIDATION_DATABASE = "restaurant_ops_test_validation_seed";
@@ -47,6 +48,11 @@ const COUNTED = [
   "tip_pool_rules",
   "tip_distributions",
   "tip_distribution_lines",
+  "menu_item_outages",
+  "inventory_stock_alerts",
+  "notifications",
+  "purchase_orders",
+  "purchase_order_lines",
 ] as const;
 
 /**
@@ -89,6 +95,8 @@ describe("Phase 13: opt-in validation seed", () => {
   let afterSecond: Record<string, number>;
   let laborFirst: Awaited<ReturnType<typeof seedValidationLaborTips>>;
   let laborSecond: Awaited<ReturnType<typeof seedValidationLaborTips>>;
+  let signalsFirst: Awaited<ReturnType<typeof seedValidationMenuStock>>;
+  let signalsSecond: Awaited<ReturnType<typeof seedValidationMenuStock>>;
 
   beforeAll(async () => {
     const url = await recreateEmptyDatabase(requireTestDatabaseUrl(), VALIDATION_DATABASE);
@@ -101,9 +109,11 @@ describe("Phase 13: opt-in validation seed", () => {
 
     first = await seedValidationFixture(database, await owner());
     laborFirst = await seedValidationLaborTips(database, await owner());
+    signalsFirst = await seedValidationMenuStock(database, await owner());
     afterFirst = await counts();
     second = await seedValidationFixture(database, await owner());
     laborSecond = await seedValidationLaborTips(database, await owner());
+    signalsSecond = await seedValidationMenuStock(database, await owner());
     afterSecond = await counts();
   }, 180_000);
 
@@ -116,6 +126,28 @@ describe("Phase 13: opt-in validation seed", () => {
     expect(first).toEqual({ skipped: false, employees: 4, schedule: true, dineIn: true, takeout: true, upcoming: true });
     expect(second).toEqual({ skipped: true });
     expect(afterSecond).toEqual(afterFirst);
+  });
+
+  it("adds the Phase 19 86, low-stock alert and suggested draft once", async () => {
+    expect(signalsFirst).toMatchObject({ skipped: false, outage: true, alert: true });
+    expect(signalsFirst.skipped === false && signalsFirst.drafts).toBeGreaterThanOrEqual(1);
+    expect(signalsSecond).toEqual({ skipped: true });
+
+    const outages = await client<{ code: string; status: string }[]>`
+      SELECT m.code, o.status FROM menu_item_outages o JOIN menu_items m ON m.id = o.menu_item_id`;
+
+    expect(outages).toEqual([{ code: "BUFFALO_WINGS", status: "ACTIVE" }]);
+
+    const alerts = await client<{ code: string; status: string }[]>`
+      SELECT i.code, a.status FROM inventory_stock_alerts a JOIN inventory_items i ON i.id = a.inventory_item_id`;
+
+    expect(alerts).toEqual([{ code: "PICKLE_CHIPS", status: "OPEN" }]);
+
+    const drafts = await client<{ status: string }[]>`
+      SELECT po.status FROM purchase_orders po WHERE po.notes = 'Suggested from low stock.'`;
+
+    expect(drafts.length).toBeGreaterThanOrEqual(1);
+    expect(drafts.every((row) => row.status === "DRAFT")).toBe(true);
   });
 
   it("adds the Phase 18 time entry, tip pool and distribution once", async () => {

@@ -113,6 +113,11 @@ export const locationSettings = pgTable(
      * Changed only through the drawer endpoints.
      */
     cashDrawerRequired: boolean("cash_drawer_required").notNull().default(true),
+    /**
+     * Phase 19: when true, an item whose current recipe can't cover one more portion from
+     * on-hand stock isn't sellable here. Changed only through the menu stock-settings endpoint.
+     */
+    auto86FromStock: boolean("auto_86_from_stock").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),

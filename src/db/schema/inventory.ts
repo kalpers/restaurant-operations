@@ -78,6 +78,8 @@ export const inventoryItemLocations = pgTable(
     parLevel: quantity("par_level"),
     reorderLevel: quantity("reorder_level"),
     reorderTarget: quantity("reorder_target"),
+    /** Phase 19 (D8): the supplier item suggested purchase orders use. Same item and organization. */
+    preferredSupplierItemId: uuid("preferred_supplier_item_id"),
     storageNote: text("storage_note"),
     active: activeColumn(),
     createdAt: createdAt(),
@@ -104,6 +106,11 @@ export const inventoryItemLocations = pgTable(
       sql`coalesce(${table.parLevel}, 0) >= 0 AND coalesce(${table.reorderLevel}, 0) >= 0 AND coalesce(${table.reorderTarget}, 0) >= 0`,
     ),
     index("inventory_item_locations_location_id_idx").on(table.locationId),
+    foreignKey({
+      name: "inventory_item_locations_preferred_supplier_item_fk",
+      columns: [table.preferredSupplierItemId, table.inventoryItemId, table.organizationId],
+      foreignColumns: [supplierItems.id, supplierItems.inventoryItemId, supplierItems.organizationId],
+    }).onDelete("restrict"),
   ],
 );
 
@@ -346,6 +353,7 @@ export const supplierItems = pgTable(
       table.purchaseUnitId,
     ),
     unique("supplier_items_id_supplier_id_unique").on(table.id, table.supplierId),
+    unique("supplier_items_id_item_org_unique").on(table.id, table.inventoryItemId, table.organizationId),
     foreignKey({
       name: "supplier_items_supplier_org_fk",
       columns: [table.supplierId, table.organizationId],
@@ -681,5 +689,63 @@ export const inventoryCountLines = pgTable(
       "inventory_count_lines_variance_matches",
       sql`(${table.countedQuantity} IS NULL AND ${table.varianceQuantity} IS NULL) OR ${table.varianceQuantity} = ${table.countedQuantity} - ${table.expectedQuantity}`,
     ),
+  ],
+);
+
+export const STOCK_ALERT_STATUSES = ["OPEN", "RESOLVED"] as const;
+
+/**
+ * Phase 19 low-stock alerts (policies 11-12). Opened by the posting service when a balance
+ * falls from above the reorder level to at or below it, and resolved when it rises above it
+ * again, in the posting's own transaction. One OPEN alert per item and location.
+ */
+export const inventoryStockAlerts = pgTable(
+  "inventory_stock_alerts",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    locationId: uuid("location_id").notNull(),
+    inventoryItemId: uuid("inventory_item_id").notNull(),
+    status: text("status").notNull().default("OPEN"),
+    quantityWhenOpened: quantity("quantity_when_opened").notNull(),
+    reorderLevelWhenOpened: quantity("reorder_level_when_opened").notNull(),
+    openedAt: timestamptz("opened_at").notNull(),
+    openedByTransactionId: uuid("opened_by_transaction_id").notNull(),
+    resolvedAt: timestamptz("resolved_at"),
+    quantityWhenResolved: quantity("quantity_when_resolved"),
+    resolvedByTransactionId: uuid("resolved_by_transaction_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "inventory_stock_alerts_item_org_fk",
+      columns: [table.inventoryItemId, table.organizationId],
+      foreignColumns: [inventoryItems.id, inventoryItems.organizationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_stock_alerts_location_org_fk",
+      columns: [table.locationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_stock_alerts_opened_tx_fk",
+      columns: [table.openedByTransactionId],
+      foreignColumns: [inventoryTransactions.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_stock_alerts_resolved_tx_fk",
+      columns: [table.resolvedByTransactionId],
+      foreignColumns: [inventoryTransactions.id],
+    }).onDelete("restrict"),
+    uniqueIndex("inventory_stock_alerts_one_open")
+      .on(table.locationId, table.inventoryItemId)
+      .where(sql`${table.status} = 'OPEN'`),
+    check("inventory_stock_alerts_status_valid", sql`${table.status} IN ('OPEN', 'RESOLVED')`),
+    check(
+      "inventory_stock_alerts_resolve_consistent",
+      sql`(${table.status} = 'OPEN' AND ${table.resolvedAt} IS NULL AND ${table.quantityWhenResolved} IS NULL AND ${table.resolvedByTransactionId} IS NULL) OR (${table.status} = 'RESOLVED' AND ${table.resolvedAt} IS NOT NULL AND ${table.quantityWhenResolved} IS NOT NULL AND ${table.resolvedByTransactionId} IS NOT NULL)`,
+    ),
+    index("inventory_stock_alerts_location_opened_idx").on(table.locationId, table.openedAt),
   ],
 );

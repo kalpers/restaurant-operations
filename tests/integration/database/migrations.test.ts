@@ -58,6 +58,7 @@ const EXPECTED_TABLES = [
   "public.inventory_item_locations",
   "public.inventory_item_unit_conversions",
   "public.inventory_items",
+  "public.inventory_stock_alerts",
   "public.inventory_transactions",
   "public.kitchen_remake_consumption",
   "public.kitchen_remakes",
@@ -70,9 +71,11 @@ const EXPECTED_TABLES = [
   "public.menu_availability",
   "public.menu_categories",
   "public.menu_item_modifier_groups",
+  "public.menu_item_outages",
   "public.menu_item_placements",
   "public.menu_item_prep_routing",
   "public.menu_item_prices",
+  "public.menu_item_stock_overrides",
   "public.menu_items",
   "public.menu_locations",
   "public.menus",
@@ -488,6 +491,31 @@ describe("reconstruction from checked-in migrations", () => {
       { tgname: "time_entry_breaks_guard_trigger" },
       { tgname: "tip_distribution_lines_append_only_trigger" },
       { tgname: "tip_distributions_guard_trigger" },
+    ]);
+  });
+
+  it("upgrades a Phase 18 database in place: 86 list and alerts start empty, auto-86 is off", async () => {
+    // 0000-0036 are Phase 18 and earlier; 0037 and 0038 are Phase 19.
+    await upgradeFromMigrationIndex(36);
+
+    for (const table of ["menu_item_outages", "menu_item_stock_overrides", "inventory_stock_alerts"]) {
+      expect(await query(`SELECT * FROM ${table}`)).toEqual([]);
+    }
+
+    expect(
+      await query(
+        "SELECT column_default, is_nullable FROM information_schema.columns WHERE table_name = 'location_settings' AND column_name = 'auto_86_from_stock'",
+      ),
+    ).toEqual([{ column_default: "false", is_nullable: "NO" }]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname IN ('menu_item_outages_guard', 'menu_item_stock_overrides_guard', 'inventory_stock_alerts_guard', 'notifications_guard_trigger') ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "inventory_stock_alerts_guard" },
+      { tgname: "menu_item_outages_guard" },
+      { tgname: "menu_item_stock_overrides_guard" },
+      { tgname: "notifications_guard_trigger" },
     ]);
   });
 

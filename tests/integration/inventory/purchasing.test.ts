@@ -116,7 +116,7 @@ describe("purchasing and receiving", () => {
       ).rejects.toMatchObject({ code: "NO_CONVERSION" });
     });
 
-    it("lets one item come from several suppliers, with no preferred supplier", async () => {
+    it("lets one item come from several suppliers; the only preference is the stocked item's (Phase 19)", async () => {
       const { vodka } = await vodkaSetup();
 
       await supplierWith(database(), scenario.admin, [{ inventoryItemId: vodka.id, purchaseUnitId: scenario.units.bottle }]);
@@ -129,7 +129,7 @@ describe("purchasing and receiving", () => {
 
       expect(
         (columns as unknown as { column_name: string }[]).filter((row) => /prefer/.test(row.column_name)),
-      ).toEqual([]);
+      ).toEqual([{ column_name: "preferred_supplier_item_id" }]);
     });
 
     it("appends each listed cost to history and hides costs without cost access", async () => {

@@ -1,5 +1,7 @@
 import {
   Activity,
+  Ban,
+  PackagePlus,
   Percent,
   Wallet,
   Timer,
@@ -89,6 +91,8 @@ export const NAV_ICONS: Record<NavigationIcon, LucideIcon> = {
   "my-time": Timer,
   "time-clock": AlarmClock,
   tips: HandCoins,
+  "eighty-six": Ban,
+  "suggested-orders": PackagePlus,
   tables: LayoutGrid,
   sections: Square,
 };

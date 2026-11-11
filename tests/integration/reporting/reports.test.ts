@@ -7,6 +7,7 @@ import { withReadOnlySnapshot } from "@/db/transactions/transaction-context";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
 import { transitionTicketItem } from "@/modules/kitchen/services/fulfillment-service";
+import { markItemOut, restoreItem } from "@/modules/menu/services/outage-service";
 import {
   buildDashboard,
   exportReportCsv,
@@ -395,6 +396,81 @@ describe("reporting", () => {
     );
     // Inventory cost is withheld without inventory.cost.view.
     expect(dashboard.groups.find((group) => group.area === "inventory")!.tiles.map((tile) => tile.key)).not.toContain("wasteCost");
+  });
+
+  describe("Phase 19 sections", () => {
+    const sum = (values: (string | number | null | undefined)[]) =>
+      values.reduce<number>((total, value) => total + Math.round(Number(value ?? 0) * 100), 0) / 100;
+
+    it("lays sales out by the hour opened, every hour shown, matching net sales", async () => {
+      const sales = await report("sales");
+      const hours = section(sales, "salesByHour");
+
+      expect(hours.rows).toHaveLength(24);
+      expect(hours.rows[0]!.hour).toBe("04:00–04:59");
+      expect(sum(hours.rows.map((entry) => entry.closedOrders))).toBe(2);
+      expect(sum(hours.rows.map((entry) => entry.netSales))).toBe(32.99);
+    });
+
+    it("reports item mix across the whole menu, and menu engineering only with cost", async () => {
+      const menu = await report("menu");
+      const mix = section(menu, "itemMix");
+
+      expect(mix.rows.map((entry) => entry.quantityPercent)).toEqual(["33.33", "33.33", "33.33"]);
+      expect(sum(mix.rows.map((entry) => entry.netSales))).toBe(32.99);
+      expect(section(menu, "menuEngineering").rows.find((entry) => entry.name === "Bacon Cheeseburger")?.class).toMatch(
+        /Star|Plowhorse|Puzzle|Dog/,
+      );
+
+      const noCost = await actorWith(database(), scenario, ["reports.view", "reports.sales"]);
+      const plain = await report("menu", noCost);
+
+      expect(plain.sections.map((entry) => entry.key)).not.toContain("menuEngineering");
+    });
+
+    it("adds server performance, with tips only for tip viewers", async () => {
+      const orders = await report("orders");
+      const servers = section(orders, "serverPerformance");
+
+      expect(sum(servers.rows.map((entry) => entry.checks))).toBe(2);
+      expect(servers.columns.map((column) => column.key)).toContain("tips");
+      expect(sum(servers.rows.map((entry) => entry.tips))).toBe(5);
+
+      const noTips = await actorWith(database(), scenario, ["reports.view", "reports.orders"]);
+      const hidden = section(await report("orders", noTips), "serverPerformance");
+
+      expect(hidden.columns.map((column) => column.key)).not.toContain("tips");
+      expect(hidden.rows.every((entry) => !("tips" in entry))).toBe(true);
+    });
+
+    it("lists voids, comps and discounts by the person who did them", async () => {
+      const adjustments = section(await report("orders"), "adjustmentsByEmployee");
+
+      expect(sum(adjustments.rows.map((entry) => entry.voids))).toBe(1);
+      expect(sum(adjustments.rows.map((entry) => entry.voidAmount))).toBe(11);
+      expect(adjustments.rows.find((entry) => entry.voids === 1)?.reasons).toBe("Guest changed mind");
+    });
+
+    it("keeps the Phase 12 sections exactly as they were, ahead of the new ones", async () => {
+      expect((await report("orders")).sections.map((entry) => entry.key).slice(-2)).toEqual([
+        "serverPerformance",
+        "adjustmentsByEmployee",
+      ]);
+      expect((await report("sales")).sections.at(-1)!.key).toBe("salesByHour");
+    });
+
+    it("shows 86 history in the inventory area", async () => {
+      const cook = await actorWith(database(), scenario, ["menu.availability.manage"]);
+      const outage = await markItemOut(database(), cook, { menuItemId: scenario.fries.id, reason: "Fryer down" });
+
+      await restoreItem(database(), cook, { outageId: outage.id, expectedVersion: outage.version });
+
+      const history = section(await report("inventory"), "eightySixHistory");
+      const entry = history.rows.find((candidate) => candidate.reason === "Fryer down");
+
+      expect(entry).toMatchObject({ kind: "86", name: "Fries" });
+      expect(entry!.ended).not.toBe("Still 86'd");
+    });
   });
 
   describe("authorization", () => {

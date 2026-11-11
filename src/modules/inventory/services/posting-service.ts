@@ -17,6 +17,7 @@ import { baseUnitCost, extendCost, nextAverageCost } from "../rules/costing";
 import { assertDirection, assertStockPolicy } from "../rules/stock-policy";
 import { toBaseQuantity } from "../rules/unit-resolution";
 import { TRANSACTION_DIRECTION, type InventoryTransactionType } from "../types";
+import { applyStockAlert } from "./stock-alerts";
 
 // The one authoritative stock posting. Receiving, waste, adjustments, transfers, count
 // approval and (from Phase 9) order consumption all call this inside their own transaction.
@@ -245,6 +246,17 @@ export async function postInventoryTransaction(
       updatedAt: new Date(),
     })
     .where(eq(inventoryBalances.id, balance.id));
+
+  // Phase 19: open or resolve the item's low-stock alert, still under the balance lock.
+  await applyStockAlert(transaction, {
+    organizationId: input.organizationId,
+    locationId: input.locationId,
+    inventoryItemId: item.id,
+    quantityBefore: balance.quantityOnHand,
+    quantityAfter,
+    transactionId: posted!.id,
+    occurredAt,
+  });
 
   return {
     transactionId: posted!.id,

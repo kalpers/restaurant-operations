@@ -19,12 +19,15 @@ import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 
 import { effectiveConstraints, type SelectionType } from "../rules/modifier-selection";
+import { isSellable } from "../rules/stock-signals";
 import { resolvePrice } from "../rules/price-resolution";
 import { assertPermission } from "../services/access";
+import { loadStockSignals } from "./stock-signals";
 
 // The contract Phase 9 order entry reads. It carries what is sold and how it is chosen:
 // placement, exact price, modifier groups with their effective rules, and routing IDs.
-// It deliberately has no recipe, revision, cost, audit or version data.
+// It deliberately has no recipe, revision, cost, audit or version data. Phase 19 filters out
+// items that aren't sellable at the location; "N left" figures come from `stock-signals`.
 
 export type OperationalModifier = {
   id: string;
@@ -133,7 +136,7 @@ export async function getOperationalMenu(
     return result;
   }
 
-  const placed = await executor
+  const placedRows = await executor
     .select({
       placementId: menuItemPlacements.id,
       placementOrder: menuItemPlacements.displayOrder,
@@ -161,6 +164,20 @@ export async function getOperationalMenu(
       asc(menuItemPlacements.displayOrder),
       asc(menuItems.name),
     );
+  // Phase 19 (policy A6): an item 86'd here, or auto-86'd with no sell-anyway override, is
+  // left out, so draft add and SEND refuse it through `resolveSellableItem`.
+  const signals = await loadStockSignals(executor, {
+    organizationId: actor.organizationId,
+    locationId: actor.locationId,
+    menuItemIds: [...new Set(placedRows.map((row) => row.item.id))],
+    at,
+    withPortions: false,
+  });
+  const placed = placedRows.filter((row) => {
+    const signal = signals.items.get(row.item.id);
+
+    return signal === undefined || isSellable(signal.state);
+  });
   const itemIds = [...new Set(placed.map((row) => row.item.id))];
 
   if (itemIds.length === 0) {

@@ -246,6 +246,37 @@ export const AUDIT_ACTIONS = {
     scope: "LOCATION",
     fields: ["itemCode", "name", "active", "available", "changedFields"],
   },
+  // Phase 19 per-location 86 board. Reasons are short operational text.
+  "menu.item-marked-out": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "LOCATION",
+    fields: ["itemCode", "outageId", "reason"],
+  },
+  "menu.item-restored": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "LOCATION",
+    fields: ["itemCode", "outageId"],
+  },
+  "menu.sell-anyway-set": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "LOCATION",
+    fields: ["itemCode", "overrideId", "businessDate", "reason"],
+  },
+  "menu.sell-anyway-cleared": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "LOCATION",
+    fields: ["itemCode", "overrideId", "businessDate"],
+  },
+  "menu.stock-availability-setting-changed": {
+    category: "MENU",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: ["enabled"],
+  },
   // Phase 17 tax configuration. The rate percentage is configuration, not pay.
   "tax.category-created": {
     category: "MENU",
@@ -320,6 +351,13 @@ export const AUDIT_ACTIONS = {
     entityType: "purchase_order",
     scope: "LOCATION",
     fields: ["receiptId", "poNumber", "status", "lineCount"],
+  },
+  // Phase 19: drafts made from the low-stock shortfall. Never submitted.
+  "purchasing.suggested-orders-created": {
+    category: "INVENTORY",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: ["poNumbers", "lineCount"],
   },
 
   // Settlements: tender details only as recorded; card data is never stored.

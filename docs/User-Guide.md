@@ -46,6 +46,8 @@ The active table session represents the seated party. Orders are associated with
 
 Draft items are not sent to the kitchen or bar and do not consume inventory. When the guest's current round is ready, choose **Submit _N_ Items**. Submission records the item and price snapshots, posts applicable inventory consumption, and creates fulfillment tickets. Add later rounds as new drafts and submit them separately.
 
+Items running low show **N left** under their price. Items 86'd at your location are listed above the menu and can't be added or sent; if an item is 86'd after you add it, **Submit** refuses it and you remove the draft.
+
 The check on the right stays in view while you scroll the menu. It shows how many items are not sent yet and the running total of what has been sent.
 
 **Courses.** When adding an item, choose its **Course** (1 to 5). If the drafts span more than one course, **Send & hold courses …** sends everything now but only the first course goes to the kitchen. The later courses wait under **Held courses** until you choose **Fire course _N_**. Held food is already counted against inventory, because it was ordered.
@@ -130,9 +132,21 @@ Open **Employees** to view or manage employee records according to your permissi
 
 Open **Menu** to review currently available, priced menu items and their modifiers. Users with configuration access can choose **Configure menu** or open **Menu & Recipes** to manage menu and recipe data. Orders already submitted retain their recorded item, price, modifier, and recipe-related snapshots when configuration later changes.
 
+### The 86 board
+
+Open **86 board** to see what can't be sold at your location right now, what is running low (five portions or fewer, from recorded stock and the current recipe), what is being sold anyway today, and what was restored today. Everyone with menu access can see it.
+
+- **86 an item:** kitchen, bar and managers choose the item, give a reason (for example "Out of salmon") and choose **86 item**. It comes off sale at this location only, at once, on every order screen. It stays 86'd until someone chooses **Restore** on it; it doesn't end at close.
+- **Auto-86 from stock:** a manager who manages locations can turn this on for the location. Then an item whose recipe can't be made once more from recorded stock comes off sale by itself, and comes back when stock is received or counted.
+- **Sell anyway:** when recorded stock is wrong (a delivery not yet received, a bad count), a manager can sell an auto-86'd item anyway, with a reason. It lasts until the end of the business date. It never lifts a manual 86.
+
 ### Inventory and purchasing
 
 Open **Inventory & Purchasing** to review stock, low-stock items, and inventory transactions. Depending on your permissions, the workspace also supports counts, adjustments, purchasing, receiving, and inventory configuration.
+
+**Low-stock alerts.** When stock of an item falls to or below its reorder level, people who manage purchasing at the location get an in-app alert (the bell), once per drop; it clears itself when stock is back above the level. **Low stock** shows when each alert opened.
+
+**Suggested orders.** On an item's stock settings, choose a **Preferred supplier**. Then **Suggested orders** lists, per supplier, what to order: enough to reach the reorder target, less what is already on order, in whole cases. **Create draft orders** makes one draft purchase order per supplier. Review, change and submit them as usual; nothing is sent to a supplier by itself. Items with no preferred supplier are listed so you can choose one.
 
 Receiving goods changes on-hand inventory; creating a purchase order by itself does not. Inventory changes are recorded as transactions. Use the inventory workflows rather than attempting to correct stock outside the app, so the stock balance and movement history stay aligned.
 
@@ -141,6 +155,8 @@ Receiving goods changes on-hand inventory; creating a purchase order by itself d
 Open **Reporting**, choose an available report, and set the date range. Which reports and export actions appear depends on your permissions. Reports use the selected location and operational business dates; an early-morning clock time may belong to the previous restaurant business date.
 
 The **Labor** report shows scheduled labor first, then actual labor from the time clock: worked hours, regular and overtime hours, scheduled vs. actual by day (late, early out, unscheduled, no-show), overtime by work week, and time clock exceptions (missed clock-outs, corrections, voids). Labor cost appears only for people allowed to see compensation. The **Tips** report shows tips by date and tender, direct tips by server, and finalized tip shares.
+
+Also in the reports: **Sales by hour** (by the hour each check was opened, from the start of the business day), **Item mix** and **Menu engineering** (Star, Plowhorse, Puzzle, Dog, shown to people who can see cost), **Server performance** (tips appear only for people who can see tips), **Voids, comps and discounts by employee** (facts only, no thresholds), and **86 history** in Inventory.
 
 ### Your password and account security
 

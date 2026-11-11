@@ -12,7 +12,8 @@ import {
   remainingQuantity,
   statusAfterReceipt,
 } from "./purchasing";
-import { assertThresholds, evaluateStock } from "./replenishment";
+import { assertThresholds, evaluateStock, suggestPurchaseLines } from "./replenishment";
+import { alertCrossing } from "./stock-alerts";
 import { assertDirection, assertStockPolicy } from "./stock-policy";
 import {
   factorToBase,
@@ -301,5 +302,57 @@ describe("replenishment", () => {
     expect(() => assertThresholds({ ...thresholds, reorderLevel: "-1" })).toThrow(/negative/);
     expect(() => assertThresholds({ ...thresholds, reorderLevel: "25" })).toThrow(/above the par/);
     expect(() => assertThresholds({ ...thresholds, reorderTarget: "4" })).toThrow(/below the reorder/);
+  });
+});
+
+describe("low-stock alert crossings (Phase 19 policy 12)", () => {
+  it("opens on the way down to or below the level, resolves on the way above", () => {
+    expect(alertCrossing("51", "50", "50")).toBe("OPEN");
+    expect(alertCrossing("60", "-2", "50")).toBe("OPEN");
+    expect(alertCrossing("50", "49", "50")).toBe("NONE");
+    expect(alertCrossing("45", "50", "50")).toBe("NONE");
+    expect(alertCrossing("50", "50.0001", "50")).toBe("RESOLVE");
+    expect(alertCrossing("60", "55", "50")).toBe("NONE");
+    expect(alertCrossing("60", "0", null)).toBe("NONE");
+  });
+});
+
+describe("suggested purchase lines (Phase 19 policy 16)", () => {
+  const thresholds = { parLevel: "100.0000", reorderLevel: "20.0000", reorderTarget: "90.0000" };
+  const preferred = { supplierItemId: "si-1", supplierId: "sup-1", baseUnitsPerPurchase: "12.0000" };
+
+  it("subtracts what's on order and rounds up to whole purchase units", () => {
+    const { bySupplier } = suggestPurchaseLines([
+      { inventoryItemId: "a", quantityOnHand: "10.0000", thresholds, outstandingBaseQuantity: "24.0000", preferred },
+    ]);
+
+    // Suggest 90 - 10 = 80; minus 24 on order = 56; 56 / 12 = 4.67 -> 5 cases.
+    expect(bySupplier.get("sup-1")).toEqual([
+      { inventoryItemId: "a", supplierItemId: "si-1", supplierId: "sup-1", needBaseQuantity: "56.0000", orderedQuantity: "5" },
+    ]);
+  });
+
+  it("skips items that aren't low or are already covered, and lists those with no supplier", () => {
+    const result = suggestPurchaseLines([
+      { inventoryItemId: "high", quantityOnHand: "30", thresholds, outstandingBaseQuantity: "0", preferred },
+      { inventoryItemId: "covered", quantityOnHand: "10", thresholds, outstandingBaseQuantity: "80", preferred },
+      { inventoryItemId: "orphan", quantityOnHand: "5", thresholds, outstandingBaseQuantity: "0", preferred: null },
+    ]);
+
+    expect(result.bySupplier.size).toBe(0);
+    expect(result.withoutSupplier).toEqual([{ inventoryItemId: "orphan", needBaseQuantity: "85.0000" }]);
+  });
+
+  it("groups lines by supplier", () => {
+    const other = { supplierItemId: "si-2", supplierId: "sup-2", baseUnitsPerPurchase: "1.0000" };
+    const result = suggestPurchaseLines([
+      { inventoryItemId: "a", quantityOnHand: "0", thresholds, outstandingBaseQuantity: "0", preferred },
+      { inventoryItemId: "b", quantityOnHand: "0", thresholds, outstandingBaseQuantity: "0", preferred: other },
+      { inventoryItemId: "c", quantityOnHand: "0", thresholds, outstandingBaseQuantity: "0", preferred: { ...preferred, supplierItemId: "si-3" } },
+    ]);
+
+    expect([...result.bySupplier.keys()]).toEqual(["sup-1", "sup-2"]);
+    expect(result.bySupplier.get("sup-1")!.map((line) => line.orderedQuantity)).toEqual(["8", "8"]);
+    expect(result.bySupplier.get("sup-2")![0]!.orderedQuantity).toBe("90");
   });
 });

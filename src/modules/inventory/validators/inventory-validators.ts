@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { IDEMPOTENCY_KEY_PATTERN } from "@/infrastructure/idempotency/idempotency-service";
+
 import { ADJUSTMENT_REASONS, INVENTORY_TRANSACTION_TYPES, WASTE_REASONS } from "../types";
 
 // Shape only. Business rules are in the services and PostgreSQL has the final word.
@@ -52,6 +54,8 @@ export const setItemLocationSchema = z.object({
   reorderTarget: optionalDecimal,
   storageNote: optionalText(200),
   active: z.boolean().default(true),
+  /** Phase 19: the supplier item suggested orders use. Left out means unchanged. */
+  preferredSupplierItemId: z.uuid().nullable().optional(),
   /** Null when stocking the item here for the first time. */
   expectedVersion: expectedVersion.nullable().default(null),
 });
@@ -170,4 +174,9 @@ export const recordCountLineSchema = z.object({
 export const approveCountSchema = z.object({
   expectedVersion,
   acknowledgeActivity: z.boolean().default(false),
+});
+
+// Phase 19: draft purchase orders from the low-stock shortfall.
+export const createSuggestedOrdersSchema = z.object({
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
 });

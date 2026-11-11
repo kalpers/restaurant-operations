@@ -9,6 +9,7 @@ export * from "./inventory";
 export * from "./inventory-links";
 export * from "./kitchen";
 export * from "./menu";
+export * from "./menu-outages";
 export * from "./notifications";
 export * from "./orders";
 export * from "./organization";

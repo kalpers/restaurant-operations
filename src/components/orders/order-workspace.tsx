@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 
 import { ApiErrorMessage } from "@/components/forms/api-error-message";
 import { StatusBadge } from "@/components/format/status-badge";
-import { useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import { useRealtime, useRealtimeRefresh } from "@/components/realtime/realtime-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
@@ -42,6 +42,12 @@ export type OtherCheck = { id: string; orderNumber: number; version: number };
 const COURSES = [1, 2, 3, 4, 5] as const;
 
 export type MenuCategory = { id: string; name: string; items: OperationalMenuItem[] };
+
+/** Phase 19: "N left" for running-low items, and items off sale here, from the 86 board. */
+export type StockHints = {
+  left: Record<string, number>;
+  out: { menuItemId: string; name: string; reason: string | null }[];
+};
 
 export type DiscountChoice = {
   id: string;
@@ -271,7 +277,76 @@ function isTyping(target: EventTarget | null): boolean {
   );
 }
 
+type BoardItem = {
+  menuItemId: string;
+  name: string;
+  available: boolean;
+  state: string;
+  portions: number | null;
+  runningLow: boolean;
+  outage: { reason: string } | null;
+};
+
+/**
+ * Phase 19: "N left" and what is 86'd here, read from the 86 board after the page has loaded,
+ * so the order screen's own render never waits on it. Refetched after an 86 or a restore, after
+ * this check's own changes (the order version), and every 60 s.
+ */
+function useStockHints(orderVersion: number): StockHints | undefined {
+  const { subscribe } = useRealtime();
+  const [hints, setHints] = useState<StockHints>();
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/menu/stock-signals");
+
+        if (!response.ok || cancelled) {
+          return;
+        }
+
+        const board = (await response.json()) as { items: BoardItem[] };
+
+        if (!cancelled) {
+          setHints({
+            left: Object.fromEntries(
+              board.items.filter((entry) => entry.runningLow).map((entry) => [entry.menuItemId, entry.portions!]),
+            ),
+            out: board.items
+              .filter((entry) => entry.available && (entry.state === "MANUAL_86" || entry.state === "AUTO_86"))
+              .map((entry) => ({
+                menuItemId: entry.menuItemId,
+                name: entry.name,
+                reason: entry.outage?.reason ?? (entry.state === "AUTO_86" ? "out of stock" : null),
+              })),
+          });
+        }
+      } catch {
+        // Hints only: the server still refuses an unsellable item at SEND.
+      }
+    };
+    const unsubscribe = subscribe((type) => {
+      if (type === "menu.availability-changed") {
+        void load();
+      }
+    });
+    const timer = setInterval(() => void load(), 60_000);
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, [subscribe, orderVersion]);
+
+  return hints;
+}
+
 function MenuBrowser({ order, categories }: { order: OrderDetail; categories: MenuCategory[] }) {
+  const stock = useStockHints(order.version);
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [picking, setPicking] = useState<OperationalMenuItem | null>(null);
   const [query, setQuery] = useState("");
@@ -349,6 +424,12 @@ function MenuBrowser({ order, categories }: { order: OrderDetail; categories: Me
           ))}
         </div>
       )}
+      {stock && stock.out.length > 0 && (
+        <p role="status" aria-label="86'd items" className="rounded-md border border-warning-300 bg-warning-50 p-2 text-sm text-warning-900">
+          <span className="font-medium">86&apos;d here:</span>{" "}
+          {stock.out.map((entry) => (entry.reason ? `${entry.name} (${entry.reason})` : entry.name)).join(", ")}
+        </p>
+      )}
       {picking ? (
         <ItemPicker orderId={order.id} version={order.version} item={picking} onDone={() => setPicking(null)} />
       ) : shown.length === 0 ? (
@@ -366,6 +447,9 @@ function MenuBrowser({ order, categories }: { order: OrderDetail; categories: Me
               >
                 <span className="block font-medium">{item.name}</span>
                 <span className="tabular text-sm text-neutral-700">{formatMoney(item.price)}</span>
+                {stock?.left[item.menuItemId] !== undefined && (
+                  <span className="ml-2 text-xs font-medium text-warning-800">{stock.left[item.menuItemId]} left</span>
+                )}
               </button>
             </li>
           ))}

@@ -4,6 +4,7 @@ import {
   inventoryBalances,
   inventoryItemLocations,
   inventoryItems,
+  inventoryStockAlerts,
   inventoryTransactions,
   supplierItems,
   suppliers,
@@ -112,9 +113,22 @@ export async function listLowStock(executor: DatabaseExecutor, actor: Actor) {
     )
     .orderBy(asc(suppliers.name), asc(supplierItems.id));
   const showCost = canSeeCost(actor);
+  // Phase 19: when each item's open low-stock alert was raised, if it has one.
+  const openAlerts = await executor
+    .select({ inventoryItemId: inventoryStockAlerts.inventoryItemId, openedAt: inventoryStockAlerts.openedAt })
+    .from(inventoryStockAlerts)
+    .where(
+      and(
+        eq(inventoryStockAlerts.locationId, actor.locationId),
+        eq(inventoryStockAlerts.organizationId, actor.organizationId),
+        eq(inventoryStockAlerts.status, "OPEN"),
+      ),
+    );
+  const alertSince = new Map(openAlerts.map((row) => [row.inventoryItemId, row.openedAt.toISOString()]));
 
   return low.map((row) => ({
     ...row,
+    alertOpenSince: alertSince.get(row.inventoryItemId) ?? null,
     supplierOptions: options
       .filter((option) => option.inventoryItemId === row.inventoryItemId)
       .map((option) => ({ ...option, lastUnitCost: showCost ? option.lastUnitCost : null })),

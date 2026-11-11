@@ -49,6 +49,7 @@ import {
   createSupplierItem,
 } from "../../src/modules/inventory/services/supplier-service";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
+import { clearStockSignalRows } from "./e2e-stock-signals";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -257,6 +258,14 @@ export async function removeInventoryE2eData(): Promise<void> {
 
     await transaction.execute("ALTER TABLE recipe_version_ingredients DISABLE TRIGGER recipe_version_ingredients_freeze_trigger" as never);
     await transaction.execute("ALTER TABLE recipe_versions DISABLE TRIGGER recipe_versions_forbid_published_delete_trigger" as never);
+
+    const ownSupplierItemIds = supplierIds.length
+      ? (await transaction.select({ id: supplierItems.id }).from(supplierItems).where(inArray(supplierItems.supplierId, supplierIds))).map(
+          (row) => row.id,
+        )
+      : [];
+
+    await clearStockSignalRows(transaction, { userIds, inventoryItemIds: itemIds, supplierItemIds: ownSupplierItemIds });
 
     if (userIds.length) {
       const countIds = (

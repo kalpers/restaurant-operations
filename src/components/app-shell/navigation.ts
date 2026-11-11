@@ -47,7 +47,9 @@ export type NavigationIcon =
   | "taxes"
   | "my-time"
   | "time-clock"
-  | "tips";
+  | "tips"
+  | "eighty-six"
+  | "suggested-orders";
 
 export type NavigationItem = {
   href: string;
@@ -88,6 +90,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/expo", label: "Expo", permission: "kitchen.view", group: "service", icon: "expo" },
   { href: "/orders/discounts", label: "Discounts", permission: "orders.discount.manage", group: "service", icon: "discounts" },
   { href: "/cash-drawers", label: "Cash drawers", permission: "drawers.view", group: "service", icon: "drawers" },
+  { href: "/menu/86", label: "86 board", permission: "menu.view", group: "service", icon: "eighty-six" },
 
   { href: "/menu", label: "Menu", permission: "menu.view", group: "back-of-house", icon: "menu" },
   { href: "/menu/manage", label: "Manage menu", permission: "menu.edit", group: "back-of-house", icon: "menu-manage" },
@@ -98,6 +101,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/inventory/counts", label: "Inventory counts", permission: "inventory.count", group: "back-of-house", icon: "counts" },
   { href: "/inventory/items", label: "Inventory items", permission: "inventory.configure", group: "back-of-house", icon: "items" },
   { href: "/purchasing/orders", label: "Purchase orders", permission: "purchasing.view", group: "back-of-house", icon: "purchase-orders" },
+  { href: "/purchasing/suggested", label: "Suggested orders", permission: "purchasing.manage", group: "back-of-house", icon: "suggested-orders" },
   { href: "/purchasing/suppliers", label: "Suppliers", permission: "suppliers.manage", group: "back-of-house", icon: "suppliers" },
 
   { href: "/my-schedule", label: "My schedule", permission: "schedule.view", group: "people", icon: "my-schedule" },
