@@ -67,12 +67,11 @@ jobs:
       - run: npm run test:integration
       - run: npm run build
 
-      # The runner downloads a few OS packages here, and the Ubuntu mirrors are sometimes
-      # briefly unreachable, so retry before failing the job.
+      # Retry the browser download in case of transient network failures.
       - name: Install the E2E browser
         run: |
           for attempt in 1 2 3; do
-            npx playwright install --with-deps chromium && exit 0
+            npx playwright install chromium && exit 0
             echo "Browser install failed (attempt $attempt); retrying in 30s"
             sleep 30
           done
