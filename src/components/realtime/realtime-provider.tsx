@@ -37,6 +37,20 @@ const EVENT_TYPES = [
   "kitchen.ticket-ready",
   "kitchen.remake-requested",
   "notification.created",
+  // Phase 17: held courses, split checks, settlement changes, refunds and cash drawers.
+  "kitchen.course-fired",
+  "order.items-moved",
+  "order.closed",
+  "settlement.opened",
+  "settlement.tender-recorded",
+  "settlement.tender-voided",
+  "settlement.completed",
+  "settlement.cancelled",
+  "settlement.refund-recorded",
+  "settlement.refund-voided",
+  "drawer.session-opened",
+  "drawer.session-closed",
+  "drawer.movement-recorded",
 ];
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {

@@ -377,7 +377,7 @@ describe("reporting", () => {
     expect(csv).toContain("Report,Sales\r\n");
     expect(csv).toContain(`Business dates,${today} to ${today}\r\n`);
     expect(csv).toContain("Order type,Closed orders,Covers,Gross sales");
-    expect(csv).toMatch(/\r\nAll,2,2,32\.99,0\.00,0\.00,32\.99,16\.50,2,9\.00,0,1,11\.00\r\n/);
+    expect(csv).toMatch(/\r\nAll,2,2,32\.99,0\.00,0\.00,32\.99,0\.00,16\.50,2,9\.00,0,1,11\.00\r\n/);
     expect(await codeOf(exportReportCsv(database(), reporter, "sales", filters(), "nope"))).toBe("NOT_FOUND");
   });
 

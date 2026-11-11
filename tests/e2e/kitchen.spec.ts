@@ -198,4 +198,79 @@ test.describe("kitchen and bar", () => {
     expect(anonymous.status()).toBe(401);
     expect(await ticketItemStatuses(sent.orderId)).toEqual(["NEW"]);
   });
+
+  test("Send & hold keeps the next course off the kitchen until it is fired", async ({ browser }) => {
+    const manager = await createKitchenRoleAccount("MANAGER");
+    const server = await createKitchenRoleAccount("SERVER");
+    const cook = await createKitchenRoleAccount("COOK");
+    const menu = await createKitchenMenu(manager);
+    const draft = await sendKitchenOrder(
+      server,
+      manager,
+      [
+        { menuItemId: menu.soda.id, courseNumber: 1 },
+        { menuItemId: menu.burger.id, selections: await mediumSelection(menu.burger.id), courseNumber: 2 },
+      ],
+      "DINE_IN",
+      { send: false },
+    );
+    const serverPage = await (await browser.newContext()).newPage();
+    const cookPage = await (await browser.newContext()).newPage();
+
+    await signIn(serverPage, server);
+    await serverPage.goto(`/orders/${draft.orderId}`);
+    await expect(serverPage.getByRole("listitem", { name: `Unsent ${menu.burger.name}` })).toContainText("Course 2");
+    await serverPage.getByRole("button", { name: "Send & hold courses 2" }).click();
+
+    const held = serverPage.getByRole("region", { name: "Held courses" });
+
+    await expect(held).toBeVisible();
+
+    // Held: the kitchen doesn't see the burger yet.
+    await signIn(cookPage, cook);
+    await cookPage.goto("/kitchen");
+    await expect(cookPage.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(card(cookPage, draft.orderNumber)).toHaveCount(0);
+
+    // Fired: it arrives, and can be worked.
+    await held.getByRole("button", { name: "Fire course 2" }).click();
+    await expect(held).toHaveCount(0);
+    await cookPage.reload();
+
+    const fired = card(cookPage, draft.orderNumber);
+
+    await expect(fired).toContainText(menu.burger.name, { timeout: 10_000 });
+    await expect(fired).toContainText("Course 2");
+    await fired.getByRole("button", { name: "Start" }).click();
+    await expect(fired.getByTestId("item-status")).toHaveText("Preparing");
+  });
+
+  test("a server splits the check: sent items move to a new check at the same table", async ({ page }) => {
+    const manager = await createKitchenRoleAccount("MANAGER");
+    const server = await createKitchenRoleAccount("SERVER");
+    const menu = await createKitchenMenu(manager);
+    const sent = await sendKitchenOrder(server, manager, [
+      { menuItemId: menu.burger.id, selections: await mediumSelection(menu.burger.id) },
+      { menuItemId: menu.soda.id },
+    ]);
+
+    await signIn(page, server);
+    await page.goto(`/orders/${sent.orderId}`);
+    await expect(page.getByLabel("Order total")).toHaveText("$14.50");
+    await page.getByRole("button", { name: "Move items" }).click();
+
+    const move = page.getByRole("form", { name: "Move items" });
+
+    await move.getByLabel(new RegExp(`${menu.soda.name}`)).check();
+    await expect(move.getByLabel("Move to")).toHaveValue("NEW");
+    await move.getByRole("button", { name: "Move items" }).click();
+
+    // The new check opens with the soda; the first check keeps the burger.
+    await expect(page).not.toHaveURL(new RegExp(`/orders/${sent.orderId}$`));
+    await expect(page.getByRole("listitem", { name: `Sent ${menu.soda.name}` })).toBeVisible();
+    await expect(page.getByLabel("Order total")).toHaveText("$2.50");
+    await page.goto(`/orders/${sent.orderId}`);
+    await expect(page.getByLabel("Order total")).toHaveText("$12.00");
+    await expect(page.getByRole("listitem", { name: `Sent ${menu.soda.name}` })).toHaveCount(0);
+  });
 });

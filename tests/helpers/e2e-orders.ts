@@ -73,6 +73,8 @@ import { openSettlement, recordTender } from "../../src/modules/settlements/serv
 import { completeSettlement } from "../../src/workflows/close-order/complete-settlement";
 import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
 import { seatParty } from "../../src/workflows/seat-party/seat-party";
+import { ensureE2eDrawerSession } from "./e2e-drawers";
+import { deleteOrderExtras } from "./e2e-order-extras";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -118,6 +120,13 @@ export const SHELL_SCOPE: E2eScope = {
   emailDomain: "shell-e2e.example.test",
   rolePrefix: "SHELL_E2E_",
   tablePrefix: "SHL-",
+};
+
+/** Phase 17 checks and close-out spec. */
+export const CLOSEOUT_SCOPE: E2eScope = {
+  emailDomain: "closeout-e2e.example.test",
+  rolePrefix: "CLOSEOUT_E2E_",
+  tablePrefix: "CLO-",
 };
 
 export const CODE_PREFIX = "E2EO_";
@@ -422,6 +431,8 @@ export async function settleInCashFor(owner: OrdersAccount, orderId: string) {
     authorizationReference: null,
     otherDescription: null,
     failureReason: null,
+    // Phase 17: the seeded main location requires a drawer for cash.
+    cashDrawerSessionId: await ensureE2eDrawerSession(actor),
   });
 
   await completeSettlement(database, actor, opened.settlementId, {
@@ -532,6 +543,8 @@ export async function removeOrdersE2eData(scope: E2eScope = ORDERS_SCOPE): Promi
     await transaction.execute("ALTER TABLE settlement_tenders DISABLE TRIGGER settlement_tenders_guard_trigger" as never);
 
     if (orderIds.length) {
+      await deleteOrderExtras(transaction, orderIds);
+
       const settlementIds = (
         await transaction.select({ id: settlements.id }).from(settlements).where(inArray(settlements.orderId, orderIds))
       ).map((row) => row.id);
@@ -598,4 +611,9 @@ export async function removeOrdersE2eData(scope: E2eScope = ORDERS_SCOPE): Promi
     .catch(() => undefined);
   await database.update(users).set({ active: false, disabledAt: new Date() }).where(inArray(users.id, userIds));
   await closeDatabase();
+}
+
+/** Opens (or finds) the shared E2E cash drawer at the main location, for UI cash flows. */
+export async function ensureE2eDrawerFor(account: OrdersAccount): Promise<string> {
+  return ensureE2eDrawerSession(await actorOf(account));
 }

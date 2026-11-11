@@ -24,6 +24,7 @@ import {
 import { assertSettlementOpen, planTender, reconcile } from "../rules/settlement-math";
 import { TENDER_PERMISSIONS, TENDER_SCOPE, type TenderType } from "../types";
 import { assertPermission } from "./access";
+import { resolveCashDrawerSession } from "./drawer-service";
 
 // Settlement commands (README section 19). Record only: nothing here contacts a payment
 // provider. Every command locks the order row first, then the settlement, the same order
@@ -110,7 +111,9 @@ export async function openSettlement(
         organizationId: actor.organizationId,
         locationId: actor.locationId,
         orderId: order.id,
-        orderAmountSnapshot: order.subtotal,
+        // Phase 17: the amount due includes tax; the tax part is kept alongside it.
+        orderAmountSnapshot: order.totalDue,
+        taxTotalSnapshot: order.taxTotal,
         openedByUserId: actor.userId,
         openedAt: now,
         openedBusinessDate: location.businessDate,
@@ -164,6 +167,8 @@ export type RecordTenderInput = {
   authorizationReference: string | null;
   otherDescription: string | null;
   failureReason: string | null;
+  /** Phase 17: the OPEN drawer session cash goes into. CASH only. */
+  cashDrawerSessionId?: string | null;
 };
 
 export type RecordTenderResult = {
@@ -199,6 +204,10 @@ export async function recordTender(
 
   if (input.tenderType === "CASH" && input.externalReference) {
     throw new BusinessRuleError("REFERENCE_NOT_ALLOWED", "Cash has no external reference.");
+  }
+
+  if (input.tenderType !== "CASH" && input.cashDrawerSessionId) {
+    throw new BusinessRuleError("DRAWER_CASH_ONLY", "Only cash goes into a drawer.");
   }
 
   const { idempotencyKey, ...request } = input;
@@ -239,6 +248,16 @@ export async function recordTender(
         );
         const now = new Date();
         const location = await readOrderLocation(transaction, actor.locationId, now);
+        // Phase 17: cash goes into an open drawer session, required per the Location setting.
+        const cashDrawerSessionId =
+          input.tenderType === "CASH"
+            ? await resolveCashDrawerSession(
+                transaction,
+                actor,
+                input.cashDrawerSessionId ?? null,
+                location.cashDrawerRequired,
+              )
+            : null;
         const [tender] = await transaction
           .insert(settlementTenders)
           .values({
@@ -260,6 +279,7 @@ export async function recordTender(
             recordedAt: now,
             businessDate: location.businessDate,
             idempotencyRecordId,
+            cashDrawerSessionId,
           })
           .returning();
         const updated = await refreshSettlementTotals(transaction, settlement, { updatedAt: now });
@@ -338,6 +358,11 @@ export async function voidTender(
         "TENDER_NOT_VOIDABLE",
         tender.status === "VOIDED" ? "That tender is already voided." : "A failed attempt can't be voided.",
       );
+    }
+
+    // Phase 17: voiding cash changes its drawer's count, so the drawer must still be open.
+    if (tender.cashDrawerSessionId) {
+      await resolveCashDrawerSession(transaction, actor, tender.cashDrawerSessionId, true);
     }
 
     const now = new Date();

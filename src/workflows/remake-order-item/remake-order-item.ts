@@ -121,6 +121,11 @@ export async function remakeOrderItem(
           assertCanWorkStationType(actor, ticket.stationTypeSnapshot);
         }
 
+        // Phase 17: a held course hasn't been cooked, so there is nothing to remake yet.
+        if (original.some(({ ticket }) => ticket.firedAt === null)) {
+          throw new BusinessRuleError("TICKET_HELD", "This course is held. Fire it before asking for a remake.");
+        }
+
         const [last] = await transaction
           .select({
             attempt: max(kitchenTicketItems.attemptNumber),
@@ -182,6 +187,8 @@ export async function remakeOrderItem(
               tableLabelSnapshot: ticket.tableLabelSnapshot,
               pickupLabelSnapshot: ticket.pickupLabelSnapshot,
               serverNameSnapshot: ticket.serverNameSnapshot,
+              courseNumber: ticket.courseNumber,
+              firedAt: at,
               createdAt: at,
             })
             .returning({ id: kitchenTickets.id });

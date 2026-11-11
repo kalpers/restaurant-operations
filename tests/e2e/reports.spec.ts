@@ -69,7 +69,7 @@ test.describe("reports", () => {
     // Only the closed order counts: two sodas at 2.50.
     await expect(row).toContainText("2");
     await expect(row).toContainText("$5.00");
-    await expect(page.getByText("Sales are CLOSED orders, before tax")).toBeVisible();
+    await expect(page.getByText("Net sales are CLOSED orders before tax")).toBeVisible();
     // Export needs reports.export, which managers don't hold.
     await expect(page.getByRole("link", { name: /Export/ })).toHaveCount(0);
 

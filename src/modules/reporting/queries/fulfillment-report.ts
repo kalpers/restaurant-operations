@@ -30,7 +30,8 @@ export async function fulfillmentSections(context: ReportContext): Promise<Repor
     sql`
       WITH work AS (
         SELECT k.station_name_snapshot AS station, k.station_type_snapshot AS station_type, i.status,
-               EXTRACT(EPOCH FROM i.ready_at - i.submitted_at) / 60 AS ready_minutes,
+               -- Phase 17: from when the course was fired, so held time isn't kitchen time.
+               EXTRACT(EPOCH FROM i.ready_at - COALESCE(k.fired_at, i.submitted_at)) / 60 AS ready_minutes,
                EXTRACT(EPOCH FROM i.completed_at - i.ready_at) / 60 AS handoff_minutes
         FROM kitchen_ticket_items i
         JOIN kitchen_tickets k ON k.id = i.ticket_id

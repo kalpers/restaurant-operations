@@ -792,7 +792,7 @@ BAR
 TAKEOUT
 ```
 
-Table session to orders is one-to-many to support split checks.
+Table session to orders is one-to-many to support split checks. Since Phase 17, draft and sent items can move between OPEN orders on one session (or into a new check there); each move is recorded in `order_item_transfers`, and an item's snapshots, consumption and kitchen work move with it. Items carry a course number (1 to 5); see section 18 for hold and fire.
 
 An order has a UUID primary key plus a separate human-readable order number.
 
@@ -883,7 +883,7 @@ Support architecturally:
 - Course concept
 - Hold/fire concept
 
-As built in Phase 10, the approved Phase 10 policies replace recall with an explicit Remake (a new linked attempt), and defer courses and hold/fire: submitted work enters `NEW` at once, and nothing in the schema precludes adding them later. See section 33.
+As built in Phase 10, the approved Phase 10 policies replace recall with an explicit Remake (a new linked attempt). Phase 17 added courses and hold/fire without a new item state: a ticket holds one course of one send batch, and SEND can hold the courses above the round's lowest. A held ticket's items stay `NEW`, off the station queues, until its course is fired; inventory was already consumed at SEND. See section 33.
 
 Overall order state and kitchen fulfillment state remain separate.
 
@@ -909,7 +909,7 @@ OTHER
 
 The application **records settlement only**. It does not authorize or process card payments, gift-card balances, house-account receivables, or external-provider payments. These tender types are financial classifications, not processing integrations. `OTHER` requires a description/reason identifying what was recorded.
 
-Settlement reconciles against the exact Phase 9 post-discount, pre-tax Order amount. Tax calculation is deferred; do not infer taxability from the item, location, Order type, or food/alcohol category. Tips are separate from the Order obligation and may be recorded only for CASH and EXTERNAL_CARD. Cash change is calculated after the Order amount applied and cash tip; no cash rounding is performed.
+Settlement reconciles against the Order's amount due: since Phase 17, `orders.total_due`, the post-discount subtotal plus tax. Tax comes only from the Tax Category explicitly assigned to a Menu Item and the rate in force at the location, snapshotted at SEND; taxability is never inferred from the item, location, Order type, or food/alcohol category. A location with tax switched off charges none. Tips are separate from the Order obligation and may be recorded only for CASH and EXTERNAL_CARD. Cash change is calculated after the Order amount applied and cash tip; no cash rounding is performed.
 
 Support:
 - Multiple historical settlements per order, with at most one OPEN settlement
@@ -918,8 +918,10 @@ Support:
 - External safe transaction/reference ID
 - Tender idempotency and exact reconciliation
 - Zero-amount Settlement closure for a fully comped Order, without a fake $0 tender
+- Cash drawers (Phase 17): sessions with a float, paid-in/out and a count at close; cash tenders and cash refunds go into an OPEN session where the location requires it
+- Refund records on CLOSED orders (Phase 17), record only
 
-Do not represent one Order obligation as multiple partially completed Settlements. A fully reconciled Settlement closes the Order atomically; a CLOSED Order is terminal in Phase 11. Refunds and post-close corrections are deferred. Settlement completion does not change Inventory, fulfillment, or Table Session status. Table Sessions still complete only through the explicit physical departure workflow after associated Orders are CLOSED.
+Do not represent one Order obligation as multiple partially completed Settlements. A fully reconciled Settlement closes the Order atomically; a CLOSED Order is terminal. Money returned afterwards is a separate refund record (Phase 17): the Order, its Settlement and tenders never change, nothing reopens a check, and a refund counts on the business date it is recorded. Settlement completion does not change Inventory, fulfillment, or Table Session status. Table Sessions still complete only through the explicit physical departure workflow after associated Orders are CLOSED.
 
 Before order closure, valid settlements must cover the amount due, except where legitimate discounts/comps reduce the amount.
 
@@ -1662,7 +1664,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Read-only by construction.** `src/modules/reporting/` runs every report inside `withReadOnlySnapshot` (a `REPEATABLE READ, READ ONLY` transaction), so PostgreSQL refuses any write and every figure in a report comes from one snapshot. It imports no other module's services, has no tables of its own, and uses indexed aggregation queries, with no views, summary tables or caches. Each report is for one Location and an inclusive business-date range of at most 92 days. Sources with a `business_date` column filter on it. Sources stored only as instants (kitchen items, Table Sessions, reservations, waitlist, settlement cancellations, supplier costs) use `businessDateRangeBounds` from BusinessDateService, which always agrees with `businessDateOf`, including across DST gaps. There is no calendar-date filter.
 
-**Approved policies.** *Sales* are CLOSED orders by `orders.business_date`, from the stored totals that Phase 9 derives from price and discount snapshots. Open checks and voids are separate figures, and net sales reconcile exactly to RECORDED tenders on completed settlements. *Labor* is scheduled, not clocked: ACTIVE assignments on non-cancelled shifts in PUBLISHED (or ARCHIVED) periods, by `shift_date`. Each is costed at the HOURLY `employee_position_compensation` rate in effect on that date for the Employee and the Position worked. SALARY work and work with no rate show hours only. *Audit* viewing was not built in Phase 12; see Audit Domain below.
+**Approved policies.** *Sales* are CLOSED orders by `orders.business_date`, from the stored totals that Phase 9 derives from price and discount snapshots. Open checks and voids are separate figures, and net sales plus tax reconcile exactly to RECORDED tenders on completed settlements (before Phase 17, tax was always zero). *Labor* is scheduled, not clocked: ACTIVE assignments on non-cancelled shifts in PUBLISHED (or ARCHIVED) periods, by `shift_date`. Each is costed at the HOURLY `employee_position_compensation` rate in effect on that date for the Employee and the Position worked. SALARY work and work with no rate show hours only. *Audit* viewing was not built in Phase 12; see Audit Domain below.
 
 **Areas.**
 - *Sales*: by order type and date; covers count once per Table Session.
@@ -1827,6 +1829,20 @@ Phase 16 closed four reliability and security gaps and added no restaurant featu
   - `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_RETENTION_DAYS`, `MAINTENANCE_INTERVAL_MS`.
 - **Commands:** `npm run maintenance` runs one retention pass and prints counts only.
 
+### Phase 17 Checks and Close-out
+
+Phase 17 completed the guest check and the end of the night. Plan: `docs/Phase-17-Checks-and-Closeout.md`. Report: `docs/Phase-17-Completion-Report.md`.
+
+- **Tax.** Tax categories are organization-wide; their rates are effective-dated per location (`tax_rates`, half-open, with an exclusion constraint). A menu item is taxed only through its explicit `tax_category_id`. `location_settings.tax_enabled` (default off) switches tax on; then SEND refuses an item with no category or no rate in force (`TAX_NOT_CONFIGURED`). SEND snapshots each item's category and rate. Tax is added on top of prices, on the amount after discounts: order discounts are allocated to items in proportion, cents by largest remainder; each (category, rate) group is rounded half up once. `orders.tax_total` and the generated `orders.total_due` (subtotal plus tax) are recomputed with the other totals, with the `order_tax_lines` projection. Settlement snapshots `total_due` (and its tax part), and the order guards lock the tax while a settlement is open.
+- **Courses and hold/fire.** `order_items.course_number` (1 to 5) is chosen on drafts and frozen at SEND. SEND with `fire: FIRST_COURSE` creates held tickets (`held_at` set, `fired_at` null) for the courses above the round's lowest; one ticket per send batch, station and course. Firing (`orders.fire`) sets `fired_at` once and is idempotent by state. Station queues show only fired tickets; Expo shows held courses. Age and the fulfillment report count from firing. A trigger refuses working held items; an unprepared void still cancels them and returns their stock.
+- **Split checks.** `POST /api/orders/{id}/items/move` (`orders.move-items`, idempotent) moves draft and sent items between OPEN orders on one session, or into a new check there, with neither order being settled. Both orders are locked in UUID order and recomputed. The `order_items` freeze trigger lets a sent item change order only alongside an `order_item_transfers` row written in the same transaction, and a guard keeps its send batch tied to its own order or one it was transferred from. Order screens and Expo find station work through the item; tickets keep their original order, and READY notifications still go to that order's server.
+- **Refunds.** `order_refunds` records money returned after a check CLOSED (`settlements.refund`; void with `settlements.refund-void`). Cumulative refunds can't exceed the order's total due, nor their tax its tax. Card-safety checks match tenders. Refunds never touch the order, settlement, tenders, inventory or fulfillment.
+- **Cash drawers.** `cash_drawers`, `cash_drawer_sessions` and `cash_drawer_movements` (paid in and out). Expected cash = float + cash tenders with tips + paid in − paid out − cash refunds; the count and the variance are snapshotted at close, and a closed session never changes. Closing is refused while an open settlement holds cash in the drawer. `location_settings.cash_drawer_required` is false for locations that existed before Phase 17 and true for new ones; when true, cash needs an open session (`CASH_DRAWER_REQUIRED`).
+- **Reports.** Sales adds tax, a tax-by-category section and refunds with net after refunds (by the refund's business date). Settlements adds refunds by type and a cash drawers section.
+- **Permissions** (132 in all): `tax.view`, `tax.manage`, `orders.move-items`, `orders.fire`, `settlements.refund`, `settlements.refund-void`, `drawers.view`, `drawers.operate`, `drawers.manage`, seeded by `security.checks-closeout-permissions`. Servers and bartenders hold move, fire and drawer view; managers also hold tax view, refunds and drawer operation; drawer setup and tax management are Owner and General Manager.
+- **Audit and events.** `tax.*`, `orders.items-moved`, `settlements.refund-*` and `drawers.*` audit actions; `kitchen.course-fired`, `order.items-moved`, `settlement.refund-*` and `drawer.*` outbox events. The audit and outbox name CHECKs forbid a hyphen in the domain part, so the drawer domain word is `drawers`.
+- **Migrations:** `0026` to `0034` (generated and custom pairs per area, plus `0034` naming three foreign keys within PostgreSQL's 63-character limit).
+
 ## 34. Cloud Deployment (On Hold)
 
 Cloud deployment is on hold by owner decision (2026-11-10). No deployment phase is scheduled. `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure.
@@ -1983,6 +1999,12 @@ Inserted by owner decision on 2026-11-10. AWS deployment and acceptance moved fr
 Close reliability and security gaps without adding restaurant features: Postgres-backed sign-in throttling with temporary lockout and admin unlock (identical failure message and timing preserved), outbox backoff and dead letter with an Admin → System health page and audited retry, a maintenance runner that purges published outbox rows past retention and expired throttle rows (idempotency records and all history are kept), and a password lifecycle: self-service change, admin reset with a one-time temporary password, forced change at next sign-in, and ending older sessions after a change. No email, reset links or MFA. Plan: `docs/Phase-16-Hardening.md`.
 
 Added by owner decision on 2026-11-10. It is not a deployment phase; cloud deployment stays on hold.
+
+### Phase 17: Checks and Close-out
+
+Complete the guest check and the end of the night. Five areas: tax by explicitly assigned tax category with effective-dated location rates, snapshotted at SEND, with settlement reconciling to `total_due`; refund records on CLOSED orders (record only; the order stays CLOSED and nothing reopens it); moving draft and sent items between checks on one Table Session; course numbers with Send & hold and a manual Fire, using held tickets rather than a new kitchen item state; and cash drawers with float, paid-in/out, count and variance, required for cash per a location setting. Plan: `docs/Phase-17-Checks-and-Closeout.md`.
+
+Added by owner decision on 2026-11-10. It replaces the README section 19 deferrals for tax and refunds, and the section 18 deferral of courses and hold/fire.
 
 ### Cloud Deployment: On Hold
 

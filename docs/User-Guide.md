@@ -48,6 +48,10 @@ Draft items are not sent to the kitchen or bar and do not consume inventory. Whe
 
 The check on the right stays in view while you scroll the menu. It shows how many items are not sent yet and the running total of what has been sent.
 
+**Courses.** When adding an item, choose its **Course** (1 to 5). If the drafts span more than one course, **Send & hold courses …** sends everything now but only the first course goes to the kitchen. The later courses wait under **Held courses** until you choose **Fire course _N_**. Held food is already counted against inventory, because it was ordered.
+
+**Splitting the bill.** Choose **Move items**, tick the items (sent or not), and pick **A new check at this table** or another open check at the same table. Prices, discounts on those items and their kitchen progress go with them; discounts on the whole check stay on it. A check that is being settled can't be split until its settlement is cancelled.
+
 Submitted items are historical records. To void one, choose **Void item** on it: a window asks for a reason and whether it was prepared, and for a final confirmation. Choose **Not prepared** only when it was not prepared; prepared or discarded food remains consumed.
 
 ### 4. Prepare and fulfill submitted items
@@ -59,17 +63,25 @@ Submitted items are historical records. To void one, choose **Void item** on it:
 
 Modifier preparation notes and special instructions are shown with the ticket. The status for an individual station may differ from the overall item status while other stations are still working.
 
-Each ticket shows how long it has waited. Its border and header turn amber after 10 minutes and red, marked **Late**, after 20. **New-ticket sound** plays a short chime when a new ticket arrives; it is off until you turn it on, and the choice is remembered on that device only.
+Held courses stay off the kitchen and bar queues until they are fired; Expo lists them as **Held**. A fired ticket shows its course.
+
+Each ticket shows how long it has waited (counted from when its course was fired). Its border and header turn amber after 10 minutes and red, marked **Late**, after 20. **New-ticket sound** plays a short chime when a new ticket arrives; it is off until you turn it on, and the choice is remembered on that device only.
 
 ### 5. Record settlement and close the check
 
 1. From the selected order, choose **Settlement**.
 2. Choose **Open Settlement** if one is not already open.
-3. Record each tender using the permitted tender type. For cash, enter the amount applied, tip, and cash received. Split payments can be recorded as multiple tenders.
+3. Record each tender using the permitted tender type. For cash, enter the amount applied, tip, and cash received, and choose the **Cash drawer** it went into. Split payments can be recorded as multiple tenders.
 4. Confirm the remaining balance, shown in large type, and tips. **Cash – exact** and **Card – exact** fill in the remaining amount for you. Submit or remove any draft items before completing.
 5. When the balance is fully settled, choose **Complete Settlement and close Order**.
 
-Settlement is record-keeping only. The app does not charge or authorize cards; any card transaction must be processed in an external system first. You may record safe external references when permitted, but never enter a full card number, security code, PIN, or bank details. Tax calculation is not currently included, and the displayed order obligation is pre-tax.
+Settlement is record-keeping only. The app does not charge or authorize cards; any card transaction must be processed in an external system first. You may record safe external references when permitted, but never enter a full card number, security code, PIN, or bank details. The amount due is the subtotal plus tax, where the location charges tax.
+
+**Refunds.** A manager can record money given back to a guest on a closed check, under **Refunds** on its settlement screen: what it was refunded as, the amount (with the tax part), and a reason. Give the money back outside the app first. The check stays closed; the refund counts on the day it is given. A mistaken refund can be voided with a reason.
+
+### Cash drawers
+
+Open **Cash drawers**. A manager opens a drawer with its **Starting float** at the start of a shift and records any **Paid in** or **Paid out** with a reason. At the end, enter **Cash counted** and choose **Close drawer**: the app shows the expected cash (float, plus cash taken with tips and paid in, less paid out and cash refunds) and the variance (counted minus expected). A drawer can't close while a check with cash in it is still being settled. Where the location requires a drawer, cash can't be recorded until one is open.
 
 ### 6. Complete the table session and clean the table
 
@@ -115,6 +127,10 @@ Open **Reporting**, choose an available report, and set the date range. Which re
 - **Too many wrong passwords.** After 5 wrong passwords within 15 minutes, sign-in is locked for 15 minutes. The message stays "Invalid email or password", even if you then type the right one. Wait, or ask an administrator to unlock the account.
 - **After an administrator resets your password.** Sign in with the temporary password they give you. You go straight to **Change password**, and the app opens nothing else until you choose a new one.
 
+### Taxes
+
+Under **Admin → Taxes**, an owner or general manager adds tax categories (for example *Food* or *Alcohol*), sets each one's rate at this location (a new rate can start now or later; earlier sales keep the rate they were sent with), and switches tax on for the location. Assign a category to each menu item on its page under **Tax category**. Once tax is on, an item with no category, or whose category has no rate here, can't be sent.
+
 ### Administration: users and System health
 
 - **Unlock an account.** In **Admin → Users**, a locked account shows **Locked until …**. Choose **Unlock** to end the lockout now; the password doesn't change.
@@ -142,7 +158,8 @@ Open **Reporting**, choose an available report, and set the date range. Which re
 ## Current Scope Notes
 
 - The application records settlement details but does not process payments.
-- Tax calculation is deferred; settlement amounts shown are pre-tax.
+- Tax is added on top of menu prices. Tax-inclusive prices, tax exemptions and compound taxes aren't supported.
+- A closed check can't be reopened; corrections after closing are refund records.
 - There is no "forgot password" email or reset link. An administrator resets passwords in the app.
 - Full offline operation is not supported. If a request fails, check the displayed error and current record state before retrying a consequential action.
 

@@ -17,6 +17,7 @@ import { createdAt, timestamptz, updatedAt } from "../helpers/timestamps";
 import { versionColumn } from "../helpers/versioning";
 import { users } from "./auth";
 import { locations, organizations } from "./organization";
+import { taxCategories } from "./tax";
 
 // Menu Items are organization-scoped catalog records. A category is reached through a
 // placement, never a column on the item. Prices are effective-dated rows that are closed,
@@ -157,11 +158,18 @@ export const menuItems = pgTable(
     active: activeColumn(),
     available: boolean("available").notNull().default(true),
     displayOrder: integer("display_order").notNull().default(0),
+    /** Phase 17: explicit taxability. Null means no Tax Category is assigned. */
+    taxCategoryId: uuid("tax_category_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
   },
   (table) => [
+    foreignKey({
+      name: "menu_items_tax_category_org_fk",
+      columns: [table.taxCategoryId, table.organizationId],
+      foreignColumns: [taxCategories.id, taxCategories.organizationId],
+    }).onDelete("restrict"),
     unique("menu_items_organization_id_code_unique").on(table.organizationId, table.code),
     unique("menu_items_id_organization_id_unique").on(table.id, table.organizationId),
     check("menu_items_item_type_valid", sql`${table.itemType} IN (${sql.raw(MENU_ITEM_TYPES)})`),

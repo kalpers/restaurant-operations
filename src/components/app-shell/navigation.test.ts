@@ -37,7 +37,7 @@ describe("visibleNavigation", () => {
     const hrefs = visibleNavigation(ALL_PERMISSION_CODES).map((item) => item.href);
 
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(39);
+    expect(hrefs).toHaveLength(41);
   });
 });
 
@@ -53,7 +53,7 @@ describe("visibleNavigationGroups", () => {
   it("groups everything with every permission", () => {
     expect(groups(ALL_PERMISSION_CODES)).toEqual([
       ["Insights", ["Dashboard", "Reports", "Audit"]],
-      ["Service", ["Floor", "Reservations", "Waitlist", "Orders", "Kitchen", "Bar", "Expo", "Discounts"]],
+      ["Service", ["Floor", "Reservations", "Waitlist", "Orders", "Kitchen", "Bar", "Expo", "Discounts", "Cash drawers"]],
       [
         "Back of house",
         [
@@ -83,7 +83,7 @@ describe("visibleNavigationGroups", () => {
           "Certification types",
         ],
       ],
-      ["Admin", ["Organization", "Locations", "Areas", "Tables", "Sections", "Users", "Roles", "Permissions", "System health"]],
+      ["Admin", ["Organization", "Locations", "Areas", "Tables", "Sections", "Users", "Roles", "Permissions", "Taxes", "System health"]],
     ]);
   });
 });

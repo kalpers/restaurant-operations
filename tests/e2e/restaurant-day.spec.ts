@@ -192,7 +192,30 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   await expect(serverPage.getByText(`Food ready: order #${orderNumber}`)).toHaveCount(2);
   await serverPage.keyboard.press("Escape");
 
-  // 6. Settlement, recorded only: part cash, the rest on an external card with a tip.
+  // 6a. Phase 17: the owner sets up a drawer and the manager opens it with a float. The
+  // main location requires an open drawer for cash.
+  const ownerPage = await signedIn(browser, owner);
+  const drawerCode = `DAY_${Date.now().toString(36).toUpperCase()}`;
+  const drawerName = `Day register ${drawerCode}`;
+
+  await ownerPage.goto("/cash-drawers");
+
+  const addDrawer = ownerPage.getByRole("region", { name: "Add a drawer" });
+
+  await addDrawer.getByLabel("Code (capitals, digits, _)").fill(drawerCode);
+  await addDrawer.getByLabel("Name").fill(drawerName);
+  await addDrawer.getByRole("button", { name: "Add drawer" }).click();
+  await expect(ownerPage.getByRole("listitem").filter({ hasText: drawerName })).toBeVisible();
+
+  await managerPage.goto("/cash-drawers");
+
+  const drawerRow = managerPage.getByRole("listitem").filter({ hasText: drawerName });
+
+  await drawerRow.getByLabel("Starting float").fill("100.00");
+  await drawerRow.getByRole("button", { name: `Open ${drawerName}` }).click();
+  await expect(managerPage.getByRole("region", { name: `Open drawer ${drawerCode}` })).toBeVisible();
+
+  // 6b. Settlement, recorded only: part cash into the drawer, the rest on an external card with a tip.
   await serverPage.goto(`/orders/${orderId}`);
   await serverPage.getByRole("link", { name: "Settle check" }).click();
   await serverPage.getByRole("button", { name: "Open settlement for $32.99" }).click();
@@ -201,6 +224,7 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
 
   await tender.getByLabel("Amount applied to the order").fill("20.00");
   await tender.getByLabel("Cash received").fill("20.00");
+  await tender.getByLabel("Cash drawer").selectOption({ label: `${drawerName} (${drawerCode} · session 1)` });
   await tender.getByRole("button", { name: "Record cash" }).click();
   await expect(serverPage.getByLabel("Remaining")).toHaveText("$12.99");
   await tender.getByLabel("Tender type").selectOption("EXTERNAL_CARD");
@@ -211,6 +235,31 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   await expect(serverPage.getByLabel("Remaining")).toHaveText("$0.00");
   await serverPage.getByRole("button", { name: "Complete settlement and close order" }).click();
   await expect(serverPage.getByTestId("order-status")).toHaveText("Closed");
+
+  // 6c. Phase 17: the manager records a partial refund on the closed check (record only).
+  // The check stays closed; the refund counts on today's date.
+  await managerPage.goto(`/orders/${orderId}/settlement`);
+
+  const refund = managerPage.getByRole("form", { name: "Record refund" });
+
+  await refund.getByLabel("Amount refunded (with tax)").fill("5.00");
+  await refund.getByLabel("Reason").fill("Burger came out cold");
+  await refund.getByRole("button", { name: "Record refund" }).click();
+  await expect(managerPage.getByTestId("refund")).toContainText("Burger came out cold");
+  await expect(managerPage.getByTestId("order-status")).toHaveText("Closed");
+
+  // 6d. At close the manager counts the drawer: float 100.00 + 20.00 cash = 120.00, no variance.
+  await managerPage.goto("/cash-drawers");
+
+  const openDrawer = managerPage.getByRole("region", { name: `Open drawer ${drawerCode}` });
+
+  await expect(openDrawer.getByLabel("Expected cash")).toHaveText("$120.00");
+  await openDrawer.getByLabel("Cash counted").fill("120.00");
+  await openDrawer.getByRole("button", { name: "Close drawer" }).click();
+  await expect(managerPage.getByRole("region", { name: `Open drawer ${drawerCode}` })).toHaveCount(0);
+  await expect(
+    managerPage.getByRole("region", { name: "Closed drawers" }).getByRole("row").filter({ hasText: drawerCode }),
+  ).toContainText("$0.00");
 
   // 7. Closing the check doesn't free the table: the guests leave, then it's cleaned.
   await hostPage.goto("/restaurant/floor");
@@ -224,8 +273,6 @@ test("a full restaurant day: schedule, reservation, seating, order, kitchen, set
   await expect(tableCard).toContainText("Available");
 
   // 8. The owner's reports show the sale from its snapshots, and export it.
-  const ownerPage = await signedIn(browser, owner);
-
   await ownerPage.goto("/reports/menu");
 
   const items = ownerPage.getByRole("table", { name: "Menu items" });

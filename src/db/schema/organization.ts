@@ -105,6 +105,14 @@ export const locationSettings = pgTable(
     kitchenDisplayEnabled: boolean("kitchen_display_enabled")
       .notNull()
       .default(true),
+    /** Phase 17: when false nothing is taxed. Changed only through the Tax endpoints. */
+    taxEnabled: boolean("tax_enabled").notNull().default(false),
+    /**
+     * Phase 17: cash tenders and cash refunds need an OPEN drawer session. True for a new
+     * location; the custom migration sets it false for locations that existed before.
+     * Changed only through the drawer endpoints.
+     */
+    cashDrawerRequired: boolean("cash_drawer_required").notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),

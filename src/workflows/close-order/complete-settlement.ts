@@ -78,7 +78,7 @@ export async function completeSettlement(
         assertOrderOpen(order.status);
 
         // The amount lock keeps these equal; refuse rather than close on a stale amount.
-        if (compareDecimals(settlement.orderAmountSnapshot, order.subtotal) !== 0) {
+        if (compareDecimals(settlement.orderAmountSnapshot, order.totalDue) !== 0) {
           throw new BusinessRuleError(
             "SETTLEMENT_AMOUNT_STALE",
             "The order amount changed after this settlement opened. Cancel it and settle again.",

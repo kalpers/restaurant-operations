@@ -84,7 +84,7 @@ function notesFor(area: ReportArea, context: ReportContext): string[] {
   }
 
   if (["sales", "menu", "orders"].includes(area)) {
-    notes.push("Sales are CLOSED orders, before tax; tax is not calculated in this version.");
+    notes.push("Net sales are CLOSED orders before tax; tax is shown separately. Refunds count on the day they were given.");
   }
 
   return notes;

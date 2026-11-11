@@ -31,7 +31,15 @@ export type WorkspaceAbilities = {
   remake: boolean;
   /** `settlements.view`: the link to the settlement screen. */
   settle: boolean;
+  /** Phase 17: fire held courses, move items between checks, open a new check while moving. */
+  fire: boolean;
+  move: boolean;
+  newCheck: boolean;
 };
+
+export type OtherCheck = { id: string; orderNumber: number; version: number };
+
+const COURSES = [1, 2, 3, 4, 5] as const;
 
 export type MenuCategory = { id: string; name: string; items: OperationalMenuItem[] };
 
@@ -50,6 +58,10 @@ type Props = {
   discounts: DiscountChoice[];
   /** Kitchen/Bar fulfillment per sent Order Item, keyed by its ID. */
   fulfillment: Record<string, OrderItemFulfillment>;
+  /** Phase 17: courses sent but held, lowest first. */
+  heldCourses: number[];
+  /** Phase 17: the other OPEN checks at this table. */
+  otherChecks: OtherCheck[];
 };
 
 type ActionError = { code: string; message: string; requestId?: string };
@@ -130,6 +142,7 @@ function ItemPicker({
   const [chosen, setChosen] = useState<Record<string, string[]>>({});
   const [quantity, setQuantity] = useState(1);
   const [instructions, setInstructions] = useState("");
+  const [course, setCourse] = useState(1);
 
   function toggle(groupId: string, modifierId: string, single: boolean) {
     setChosen((current) => {
@@ -157,6 +170,7 @@ function ItemPicker({
         ids.map((modifierId) => ({ modifierGroupId, modifierId })),
       ),
       specialInstructions: instructions.trim() || null,
+      courseNumber: course,
     });
 
     if (result.ok) {
@@ -224,6 +238,15 @@ function ItemPicker({
             onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))}
             className="w-24"
           />
+        </Field>
+        <Field label="Course">
+          <Select value={course} onChange={(event) => setCourse(Number(event.target.value))} className="w-28">
+            {COURSES.map((entry) => (
+              <option key={entry} value={entry}>
+                Course {entry}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Special instructions" className="flex-1">
           <Input value={instructions} maxLength={500} onChange={(event) => setInstructions(event.target.value)} />
@@ -365,6 +388,7 @@ function DraftLine({ order, item, canEdit }: { order: OrderDetail; item: OrderDe
       quantity,
       selections,
       specialInstructions: item.specialInstructions,
+      courseNumber: item.courseNumber,
     });
 
   return (
@@ -376,7 +400,9 @@ function DraftLine({ order, item, canEdit }: { order: OrderDetail; item: OrderDe
         <span className="tabular">{formatMoney(item.lineTotal)}</span>
       </p>
       <ModifierLines item={item} />
-      <p className="text-xs font-medium tracking-wide text-warning-900 uppercase">Not sent · price shown is today&apos;s</p>
+      <p className="text-xs font-medium tracking-wide text-warning-900 uppercase">
+        Course {item.courseNumber} · Not sent · price shown is today&apos;s
+      </p>
       {canEdit && (
         <div className="mt-2 flex flex-wrap gap-2">
           <Button disabled={pending || item.quantity <= 1} onClick={() => setQuantity(item.quantity - 1)} aria-label={`One fewer ${item.name}`}>
@@ -529,7 +555,8 @@ function FulfillmentLine({ fulfillment }: { fulfillment: OrderItemFulfillment | 
 
   return (
     <p className="mt-1 flex flex-wrap items-center gap-2 text-xs" data-testid="fulfillment-status">
-      Kitchen/Bar: <StatusBadge domain="fulfillment" status={fulfillment.status} />
+      Kitchen/Bar:{" "}
+      {fulfillment.held ? <Badge tone="warning">Held</Badge> : <StatusBadge domain="fulfillment" status={fulfillment.status} />}
       {fulfillment.attempts > 1 && <span>remade {fulfillment.attempts - 1}×</span>}
       <span className="text-neutral-600">{[...new Set(fulfillment.stations.map((station) => station.code))].join(", ")}</span>
     </p>
@@ -570,7 +597,7 @@ function SentLine({
       <p className="text-xs tracking-wide uppercase">
         {voided
           ? `Voided${item.voidDisposition === "UNPREPARED" ? " · not prepared" : " · prepared or discarded"} · ${item.voidReason}`
-          : `Sent in round ${item.batchNumber}`}
+          : `Sent in round ${item.batchNumber} · course ${item.courseNumber}`}
       </p>
       <FulfillmentLine fulfillment={fulfillment} />
       {item.discounts
@@ -695,38 +722,175 @@ function AppliedDiscountLine({
   );
 }
 
-function SendButton({ order, draftCount }: { order: OrderDetail; draftCount: number }) {
+function SendButton({ order, drafts }: { order: OrderDetail; drafts: OrderDetail["items"] }) {
   const { run, pending, error } = useAction();
   const toast = useToast();
-  // One key per attempt at this order version, reused if a retry is needed, so a lost
-  // response or a double tap can never send twice.
-  const attempt = useRef<{ version: number; key: string } | null>(null);
+  const draftCount = drafts.length;
+  // One key per attempt at this order version and mode, reused if a retry is needed, so a
+  // lost response or a double tap can never send twice.
+  const attempt = useRef<{ version: number; fire: string; key: string } | null>(null);
+  const courses = [...new Set(drafts.map((item) => item.courseNumber))].sort((a, b) => a - b);
 
-  async function send() {
-    if (attempt.current?.version !== order.version) {
-      attempt.current = { version: order.version, key: newIdempotencyKey() };
+  async function send(fire: "ALL" | "FIRST_COURSE") {
+    if (attempt.current?.version !== order.version || attempt.current.fire !== fire) {
+      attempt.current = { version: order.version, fire, key: newIdempotencyKey() };
     }
 
     const result = await run(
       "POST",
       `/api/orders/${order.id}/send`,
-      { expectedVersion: order.version },
+      { expectedVersion: order.version, fire },
       { "Idempotency-Key": attempt.current.key },
     );
 
     if (result.ok) {
-      toast.success(`Sent ${draftCount} ${draftCount === 1 ? "item" : "items"}.`);
+      toast.success(
+        fire === "FIRST_COURSE"
+          ? `Sent course ${courses[0]}; later courses are held.`
+          : `Sent ${draftCount} ${draftCount === 1 ? "item" : "items"}.`,
+      );
     }
   }
 
   return (
     <div className="grid gap-2">
-      <Button variant="primary" size="lg" onClick={send} disabled={pending || draftCount === 0} className="w-full">
+      <Button variant="primary" size="lg" onClick={() => send("ALL")} disabled={pending || draftCount === 0} className="w-full">
         <Send aria-hidden className="size-5" />
         {pending ? "Sending…" : `Send ${draftCount} ${draftCount === 1 ? "item" : "items"}`}
       </Button>
+      {courses.length > 1 && (
+        <Button onClick={() => send("FIRST_COURSE")} disabled={pending} className="w-full">
+          Send &amp; hold courses {courses.slice(1).join(", ")}
+        </Button>
+      )}
       <ErrorText error={error} />
     </div>
+  );
+}
+
+function HeldCourses({ order, courses, canFire }: { order: OrderDetail; courses: number[]; canFire: boolean }) {
+  const { run, pending, error } = useAction();
+  const toast = useToast();
+
+  if (courses.length === 0) {
+    return null;
+  }
+
+  return (
+    <section aria-label="Held courses" className="grid gap-2 rounded-md border border-warning-500 bg-warning-50 p-3">
+      <h2 className="font-semibold">Held courses</h2>
+      <p className="text-sm">These were sent but the kitchen won&apos;t start them until you fire them.</p>
+      {canFire && (
+        <div className="flex flex-wrap gap-2">
+          {courses.map((course) => (
+            <Button
+              key={course}
+              variant="primary"
+              disabled={pending}
+              onClick={async () => {
+                const result = await run("POST", `/api/orders/${order.id}/courses/${course}/fire`);
+
+                if (result.ok) {
+                  toast.success(`Course ${course} fired.`);
+                }
+              }}
+            >
+              Fire course {course}
+            </Button>
+          ))}
+        </div>
+      )}
+      <ErrorText error={error} />
+    </section>
+  );
+}
+
+function MoveItemsForm({
+  order,
+  otherChecks,
+  canOpenNew,
+  onDone,
+}: {
+  order: OrderDetail;
+  otherChecks: OtherCheck[];
+  canOpenNew: boolean;
+  onDone: () => void;
+}) {
+  const { run, pending, error } = useAction();
+  const toast = useToast();
+  const router = useRouter();
+  const movable = order.items.filter((item) => item.status !== "VOIDED");
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [target, setTarget] = useState(canOpenNew ? "NEW" : (otherChecks[0]?.id ?? ""));
+  const key = useRef<string | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    key.current ??= `move-${crypto.randomUUID()}`;
+
+    const other = otherChecks.find((entry) => entry.id === target);
+    const result = await run(
+      "POST",
+      `/api/orders/${order.id}/items/move`,
+      {
+        itemIds: chosen,
+        expectedVersion: order.version,
+        target: other ? { orderId: other.id, expectedVersion: other.version } : { newCheck: true },
+      },
+      { "Idempotency-Key": key.current },
+    );
+
+    if (result.ok || (result.status >= 400 && result.status < 500)) {
+      key.current = null;
+    }
+
+    if (result.ok) {
+      const moved = result.data as { targetOrderId: string; targetOrderNumber: number };
+
+      toast.success(`Moved ${chosen.length} ${chosen.length === 1 ? "item" : "items"} to check #${moved.targetOrderNumber}.`);
+      onDone();
+
+      if (target === "NEW") {
+        router.push(`/orders/${moved.targetOrderId}`);
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} aria-label="Move items" className="grid gap-3">
+      <fieldset className="grid gap-1">
+        <legend className="mb-1 text-sm font-medium">Items to move</legend>
+        {movable.map((item) => (
+          <Checkbox
+            key={item.id}
+            label={`${item.quantity} × ${item.name} (${formatMoney(item.lineTotal)})${item.status === "DRAFT" ? " · unsent" : ""}`}
+            checked={chosen.includes(item.id)}
+            onChange={(event) =>
+              setChosen((current) =>
+                event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id),
+              )
+            }
+          />
+        ))}
+      </fieldset>
+      <Field label="Move to">
+        <Select value={target} onChange={(event) => setTarget(event.target.value)}>
+          {canOpenNew && <option value="NEW">A new check at this table</option>}
+          {otherChecks.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              Check #{entry.orderNumber}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button onClick={onDone}>Cancel</Button>
+        <Button type="submit" variant="primary" pending={pending} disabled={chosen.length === 0 || !target}>
+          Move items
+        </Button>
+      </div>
+      <ErrorText error={error} />
+    </form>
   );
 }
 
@@ -786,9 +950,11 @@ const FULFILLMENT_EVENTS = [
   "settlement.opened",
   "settlement.cancelled",
   "order.closed",
+  "kitchen.course-fired",
+  "order.items-moved",
 ];
 
-export function OrderWorkspace({ order, categories, abilities, discounts, fulfillment }: Props) {
+export function OrderWorkspace({ order, categories, abilities, discounts, fulfillment, heldCourses, otherChecks }: Props) {
   useRealtimeRefresh(FULFILLMENT_EVENTS, 60_000);
   const open = order.status === "OPEN";
   const drafts = order.items.filter((item) => item.status === "DRAFT");
@@ -838,8 +1004,10 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
               <DraftLine key={item.id} order={order} item={item} canEdit={open && abilities.edit} />
             ))}
           </ul>
-          {open && abilities.submit && <SendButton order={order} draftCount={drafts.length} />}
+          {open && abilities.submit && <SendButton order={order} drafts={drafts} />}
         </section>
+
+        {open && <HeldCourses order={order} courses={heldCourses} canFire={abilities.fire} />}
 
         <section aria-label="Sent items" className="grid gap-2">
           <h2 className="font-semibold">Sent</h2>
@@ -872,10 +1040,22 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
               <span className="tabular">−{formatMoney(order.discountTotal)}</span>
             </p>
           )}
-          <p className="flex justify-between text-xl font-semibold">
-            <span>Total before tax</span>
-            <span aria-label="Order total" className="tabular">
+          <p className="flex justify-between">
+            <span>Subtotal</span>
+            <span aria-label="Subtotal" className="tabular">
               {formatMoney(order.subtotal)}
+            </span>
+          </p>
+          <p className="flex justify-between">
+            <span>Tax</span>
+            <span aria-label="Tax" className="tabular">
+              {formatMoney(order.taxTotal)}
+            </span>
+          </p>
+          <p className="flex justify-between text-xl font-semibold">
+            <span>Total due</span>
+            <span aria-label="Order total" className="tabular">
+              {formatMoney(order.totalDue)}
             </span>
           </p>
           {open && abilities.discount && orderDiscounts.length > 0 && order.itemSubtotal !== "0.00" && (
@@ -887,6 +1067,20 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
           <ButtonLink href={`/orders/${order.id}/settlement`} variant={open && drafts.length === 0 ? "primary" : "secondary"}>
             {open ? "Settle check" : "View settlement"}
           </ButtonLink>
+        )}
+
+        {open && abilities.move && order.tableSessionId && (abilities.newCheck || otherChecks.length > 0) && (
+          <div className="border-t border-neutral-200 pt-2">
+            <DialogAction
+              label="Move items"
+              title="Move items to another check"
+              description="Splits the bill. Prices, discounts on the item and kitchen work go with it."
+            >
+              {(close) => (
+                <MoveItemsForm order={order} otherChecks={otherChecks} canOpenNew={abilities.newCheck} onDone={close} />
+              )}
+            </DialogAction>
+          </div>
         )}
 
         {open && abilities.void && (

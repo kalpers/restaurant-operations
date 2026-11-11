@@ -43,6 +43,7 @@ import { createTable } from "../../src/modules/restaurant/services/table-service
 import { seatParty } from "../../src/workflows/seat-party/seat-party";
 import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
 
+import { deleteOrderExtras } from "./e2e-order-extras";
 import { createOrderMenu } from "./e2e-orders";
 
 loadLocalEnv();
@@ -170,8 +171,9 @@ async function seatKitchenParty(owner: KitchenAccount) {
 export async function sendKitchenOrder(
   server: KitchenAccount,
   seater: KitchenAccount,
-  lines: { menuItemId: string; selections?: { modifierGroupId: string; modifierId: string }[] }[],
+  lines: { menuItemId: string; selections?: { modifierGroupId: string; modifierId: string }[]; courseNumber?: number }[],
   orderType: "DINE_IN" | "TAKEOUT" = "DINE_IN",
+  options: { send?: boolean } = {},
 ) {
   const database = getDatabase();
   const actor = await actorOf(server);
@@ -188,15 +190,19 @@ export async function sendKitchenOrder(
       quantity: 1,
       selections: line.selections ?? [],
       specialInstructions: null,
+      courseNumber: line.courseNumber,
     });
 
     version = added.orderVersion;
   }
 
-  await sendOrderItems(database, actor, order.id, {
-    expectedVersion: version,
-    idempotencyKey: `e2e-${randomUUID()}`,
-  });
+  // Phase 17: `send: false` leaves the items as drafts, for a send from the order screen.
+  if (options.send !== false) {
+    await sendOrderItems(database, actor, order.id, {
+      expectedVersion: version,
+      idempotencyKey: `e2e-${randomUUID()}`,
+    });
+  }
 
   return { orderId: order.id, orderNumber: order.orderNumber, tableNumber: seated?.tableNumber ?? null };
 }
@@ -245,11 +251,11 @@ const APPEND_ONLY = [
   "order_send_batches",
   "order_item_inventory_consumption",
   "order_item_voids",
-  "kitchen_tickets",
   "kitchen_ticket_item_status_history",
 ];
 
 const GUARDED: readonly [string, string][] = [
+  ["kitchen_tickets", "kitchen_tickets_guard_trigger"],
   ["order_items", "order_items_freeze_trigger"],
   ["order_item_modifiers", "order_item_modifiers_freeze_trigger"],
   ["kitchen_ticket_items", "kitchen_ticket_items_guard_trigger"],
@@ -293,6 +299,8 @@ export async function removeKitchenE2eData(): Promise<void> {
     }
 
     if (orderIds.length) {
+      await deleteOrderExtras(transaction, orderIds);
+
       const workIds = (
         await transaction
           .select({ id: kitchenTicketItems.id })

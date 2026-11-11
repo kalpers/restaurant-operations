@@ -183,6 +183,69 @@
       "when": 1794343057320,
       "tag": "0025_outbox_retention_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794350118133,
+      "tag": "0026_checks_closeout_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794350127327,
+      "tag": "0027_checks_closeout_tax_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794351688155,
+      "tag": "0028_checks_closeout_courses",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794351699058,
+      "tag": "0029_checks_closeout_courses_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794363802111,
+      "tag": "0030_checks_closeout_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794363809988,
+      "tag": "0031_checks_closeout_transfer_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794364104324,
+      "tag": "0032_checks_closeout_drawers_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794364112896,
+      "tag": "0033_checks_closeout_drawers_refunds_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794365205172,
+      "tag": "0034_checks_closeout_fk_names",
+      "breakpoints": true
     }
   ]
 }

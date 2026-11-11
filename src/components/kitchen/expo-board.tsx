@@ -15,7 +15,14 @@ import { AGE_BORDER, AGE_HEADER, AGE_LABEL, elapsed, useAge } from "./ticket-age
 // EXPO: read-only. It shows each order's items with their readiness across every station;
 // it has no actions and is not a preparation step.
 
-const EVENTS = ["kitchen.ticket-created", "kitchen.item-status-changed", "kitchen.item-ready", "kitchen.ticket-ready"];
+const EVENTS = [
+  "kitchen.ticket-created",
+  "kitchen.item-status-changed",
+  "kitchen.item-ready",
+  "kitchen.ticket-ready",
+  "kitchen.course-fired",
+  "order.items-moved",
+];
 
 function ExpoCard({ order }: { order: ExpoOrder }) {
   const age = useAge(order.ageSeconds);
@@ -45,6 +52,11 @@ function ExpoCard({ order }: { order: ExpoOrder }) {
           <StatusBadge domain="fulfillment" status={order.status} className="text-sm" />
         </div>
       </header>
+      {order.heldCourses.length > 0 && (
+        <p className="border-b border-warning-300 bg-warning-50 px-3 py-1 text-sm font-semibold text-warning-900" data-testid="expo-held">
+          Held: course {order.heldCourses.join(", ")}
+        </p>
+      )}
       <ul className="space-y-2 p-3">
         {order.items.map((item) => (
           <li key={item.orderItemId} className="flex items-start justify-between gap-2 text-base">
@@ -56,7 +68,13 @@ function ExpoCard({ order }: { order: ExpoOrder }) {
                 {item.stations.map((station) => `${station.name}: ${statusLabel("fulfillment", station.status)}`).join(" · ")}
               </span>
             </span>
-            <StatusBadge domain="fulfillment" status={item.status} className={cn(item.status === "CANCELLED" && "line-through")} />
+            {item.held ? (
+              <span className="rounded-full border border-warning-500 bg-warning-50 px-2 text-xs font-semibold text-warning-900">
+                Held · course {item.courseNumber}
+              </span>
+            ) : (
+              <StatusBadge domain="fulfillment" status={item.status} className={cn(item.status === "CANCELLED" && "line-through")} />
+            )}
           </li>
         ))}
       </ul>

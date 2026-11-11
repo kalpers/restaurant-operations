@@ -79,14 +79,20 @@ export async function createKitchenScenario(database: Database) {
 
 export type KitchenScenario = Awaited<ReturnType<typeof createKitchenScenario>>;
 
-type Line = { menuItemId: string; quantity?: number; selections?: { modifierGroupId: string; modifierId: string }[]; specialInstructions?: string | null };
+type Line = {
+  menuItemId: string;
+  quantity?: number;
+  selections?: { modifierGroupId: string; modifierId: string }[];
+  specialInstructions?: string | null;
+  courseNumber?: number;
+};
 
 /** Opens an order (dine-in by default), adds the lines as drafts, and sends them. */
 export async function sendOrder(
   database: Database,
   scenario: KitchenScenario,
   lines: readonly Line[],
-  options: { orderType?: "DINE_IN" | "TAKEOUT"; key?: string; customerName?: string } = {},
+  options: { orderType?: "DINE_IN" | "TAKEOUT"; key?: string; customerName?: string; fire?: "ALL" | "FIRST_COURSE" } = {},
 ) {
   const actor = scenario.serverActor;
   const order =
@@ -105,13 +111,18 @@ export async function sendOrder(
       quantity: line.quantity ?? 1,
       selections: line.selections ?? [],
       specialInstructions: line.specialInstructions ?? null,
+      courseNumber: line.courseNumber,
     });
 
     version = added.orderVersion;
   }
 
   const key = options.key ?? newKey();
-  const sent = await sendOrderItems(database, actor, order.id, { expectedVersion: version, idempotencyKey: key });
+  const sent = await sendOrderItems(database, actor, order.id, {
+    expectedVersion: version,
+    idempotencyKey: key,
+    fire: options.fire,
+  });
 
   return { order, sent, key };
 }

@@ -5,6 +5,7 @@ import {
   createOrderMenu,
   createPermissionAccount,
   createRoleAccount,
+  ensureE2eDrawerFor,
   ledgerTypesFor,
   orderStatus,
   removeOrdersE2eData,
@@ -60,6 +61,8 @@ test.describe("settlements", () => {
     const { orderId } = await sentOrderFor(manager, [menu.soda.id, menu.soda.id], { tableSessionId: sessionId });
     const ledgerBefore = await ledgerTypesFor(menu.pickles.id);
 
+    // Phase 17: the main location takes cash only into an open drawer.
+    await ensureE2eDrawerFor(manager);
     await signIn(page, server);
 
     // The open check blocks the physical session completion.
@@ -68,8 +71,8 @@ test.describe("settlements", () => {
     await expect(page.getByRole("alert").filter({ hasText: "open order" })).toBeVisible();
 
     await openSettlementScreen(page, orderId, "$5.00");
-    await expect(page.getByLabel("Amount due before tax")).toHaveText("$5.00");
-    await expect(page.getByText("Tax isn't calculated in this version.")).toBeVisible();
+    await expect(page.getByLabel("Total due")).toHaveText("$5.00");
+    await expect(page.getByLabel("Tax", { exact: true })).toHaveText("$0.00");
 
     const form = tenderForm(page);
 
@@ -108,6 +111,7 @@ test.describe("settlements", () => {
     const menu = await createOrderMenu(manager);
     const { orderId } = await sentOrderFor(manager, [menu.soda.id, menu.soda.id]);
 
+    await ensureE2eDrawerFor(manager);
     await signIn(page, server);
     await openSettlementScreen(page, orderId, "$5.00");
 
@@ -171,7 +175,7 @@ test.describe("settlements", () => {
 
     await signIn(page, viewer);
     await page.goto(`/orders/${orderId}/settlement`);
-    await expect(page.getByLabel("Amount due before tax")).toHaveText("$2.50");
+    await expect(page.getByLabel("Total due")).toHaveText("$2.50");
     await expect(page.getByText("No settlement has been opened.")).toBeVisible();
     await expect(page.getByRole("button", { name: /Open settlement/ })).toHaveCount(0);
 

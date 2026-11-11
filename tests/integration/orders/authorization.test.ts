@@ -63,6 +63,8 @@ describe("order role matrix", () => {
       expect(grantsOf(role).filter((code) => code.startsWith("orders.")).sort()).toEqual([
         "orders.create",
         "orders.edit",
+        "orders.fire",
+        "orders.move-items",
         "orders.submit",
         "orders.view",
       ]);
@@ -292,7 +294,9 @@ describe("order module boundaries", () => {
 
   // Since Phase 11 the Orders domain owns OPEN -> CLOSED for a completed Settlement, so it
   // may name settlement; it still never reads settlement or tender data, tickets or tax.
-  it("does not reach into settlement, tender, ticket or tax data", () => {
+  // Phase 17 (approved policy A5) moved tax into the Orders totals, so tax words are no
+  // longer forbidden here; settlement, tender and ticket data still are.
+  it("does not reach into settlement, tender or ticket data", () => {
     for (const file of files) {
       const text = readFileSync(file, "utf8").toLowerCase();
 
@@ -302,8 +306,6 @@ describe("order module boundaries", () => {
         "order_settlements",
         "kitchen_ticket",
         "kitchentickets",
-        "taxamount",
-        "tax_rate",
       ]) {
         // The SEND and void workflows orchestrate across domains and may ask Settlements
         // whether the amount is locked; the Orders module itself may not.

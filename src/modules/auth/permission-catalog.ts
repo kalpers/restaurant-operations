@@ -82,6 +82,8 @@ export const PERMISSION_CATALOG = [
   { code: "menu.pricing.edit", name: "Change menu prices", category: "Menu" },
   { code: "menu.modifiers.manage", name: "Manage modifier groups and modifiers", category: "Menu" },
   { code: "prep-stations.manage", name: "Manage preparation stations and routing", category: "Menu" },
+  { code: "tax.view", name: "View tax categories and rates", category: "Menu" },
+  { code: "tax.manage", name: "Manage tax categories, rates and the location tax switch", category: "Menu" },
 
   { code: "recipes.view", name: "View recipes", category: "Recipes" },
   { code: "recipes.edit", name: "Edit and publish recipes", category: "Recipes" },
@@ -109,6 +111,8 @@ export const PERMISSION_CATALOG = [
   { code: "orders.close", name: "Close orders", category: "Orders" },
   { code: "orders.discount.apply", name: "Apply and remove order discounts", category: "Orders" },
   { code: "orders.discount.manage", name: "Manage discount definitions", category: "Orders" },
+  { code: "orders.move-items", name: "Move items between checks", category: "Orders" },
+  { code: "orders.fire", name: "Fire held courses", category: "Orders" },
 
   { code: "settlements.view", name: "View settlements", category: "Settlements" },
   { code: "settlements.create", name: "Open and cancel settlements", category: "Settlements" },
@@ -120,6 +124,11 @@ export const PERMISSION_CATALOG = [
   { code: "settlements.complete", name: "Complete settlements", category: "Settlements" },
   { code: "settlements.void-tender", name: "Void tenders before completion", category: "Settlements" },
   { code: "settlements.view-card-metadata", name: "View card brand, last four and references", category: "Settlements" },
+  { code: "settlements.refund", name: "Record refunds on closed orders", category: "Settlements" },
+  { code: "settlements.refund-void", name: "Void recorded refunds", category: "Settlements" },
+  { code: "drawers.view", name: "View cash drawers", category: "Settlements" },
+  { code: "drawers.operate", name: "Open, count and close cash drawers", category: "Settlements" },
+  { code: "drawers.manage", name: "Set up cash drawers and the drawer requirement", category: "Settlements" },
 
   { code: "kitchen.view", name: "View kitchen station tickets", category: "Kitchen" },
   { code: "kitchen.manage", name: "Work kitchen station tickets", category: "Kitchen" },

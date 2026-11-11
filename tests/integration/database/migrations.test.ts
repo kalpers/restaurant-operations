@@ -30,6 +30,9 @@ const RECONSTRUCTION_DATABASE = "restaurant_ops_test_reconstruction";
 const EXPECTED_TABLES = [
   "drizzle.__drizzle_migrations",
   "public.audit_events",
+  "public.cash_drawer_movements",
+  "public.cash_drawer_sessions",
+  "public.cash_drawers",
   "public.certification_types",
   "public.discount_definitions",
   "public.employee_addresses",
@@ -83,12 +86,16 @@ const EXPECTED_TABLES = [
   "public.order_item_inventory_consumption",
   "public.order_item_modifiers",
   "public.order_item_status_history",
+  "public.order_item_transfers",
   "public.order_item_voids",
   "public.order_items",
   "public.order_number_counters",
+  "public.order_refund_items",
+  "public.order_refunds",
   "public.order_send_batches",
   "public.order_settlements",
   "public.order_status_history",
+  "public.order_tax_lines",
   "public.orders",
   "public.organizations",
   "public.outbox_events",
@@ -131,6 +138,8 @@ const EXPECTED_TABLES = [
   "public.table_session_overrides",
   "public.table_session_tables",
   "public.table_sessions",
+  "public.tax_categories",
+  "public.tax_rates",
   "public.time_off_requests",
   "public.unit_conversions",
   "public.units_of_measure",
@@ -223,6 +232,7 @@ describe("reconstruction from checked-in migrations", () => {
       "menu_item_prices_no_overlap",
       "recipe_versions_no_overlap",
       "schedule_periods_no_overlap",
+      "tax_rates_no_overlap",
     ]);
   });
 
@@ -397,6 +407,43 @@ describe("reconstruction from checked-in migrations", () => {
     ).rejects.toThrow(/outbox_events_published_or_failed/);
     await query("UPDATE outbox_events SET failed_at = now()");
     await expect(query("DELETE FROM outbox_events")).rejects.toThrow(/Only a published outbox event can be deleted/);
+  });
+
+  it("upgrades a Phase 16 database in place: existing locations keep cash without a drawer, and tax is off", async () => {
+    await upgradeFromMigrationIndex(25);
+    expect(await query("SELECT tax_enabled, cash_drawer_required FROM location_settings")).toEqual([
+      { tax_enabled: false, cash_drawer_required: false },
+    ]);
+
+    for (const table of [
+      "tax_categories",
+      "tax_rates",
+      "order_tax_lines",
+      "order_item_transfers",
+      "cash_drawers",
+      "cash_drawer_sessions",
+      "cash_drawer_movements",
+      "order_refunds",
+      "order_refund_items",
+    ]) {
+      expect(await query(`SELECT * FROM ${table}`)).toEqual([]);
+    }
+
+    expect(
+      await query(
+        "SELECT column_default FROM information_schema.columns WHERE table_name = 'location_settings' AND column_name = 'cash_drawer_required'",
+      ),
+    ).toEqual([{ column_default: "true" }]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname IN ('kitchen_tickets_guard_trigger', 'kitchen_tickets_append_only_trigger', 'order_refunds_guard_trigger', 'cash_drawer_sessions_guard_trigger', 'order_items_batch_order_guard_trigger') ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "cash_drawer_sessions_guard_trigger" },
+      { tgname: "kitchen_tickets_guard_trigger" },
+      { tgname: "order_items_batch_order_guard_trigger" },
+      { tgname: "order_refunds_guard_trigger" },
+    ]);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {

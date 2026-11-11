@@ -48,6 +48,7 @@ export const addDraftItemSchema = z.object({
   quantity: z.int().min(1).max(99),
   selections,
   specialInstructions,
+  courseNumber: z.int().min(1).max(5).optional(),
 });
 
 export const updateDraftItemSchema = z.object({
@@ -55,6 +56,7 @@ export const updateDraftItemSchema = z.object({
   quantity: z.int().min(1).max(99),
   selections,
   specialInstructions,
+  courseNumber: z.int().min(1).max(5).optional(),
 });
 
 export const expectedVersionSchema = z.object({ expectedVersion });
@@ -62,6 +64,14 @@ export const expectedVersionSchema = z.object({ expectedVersion });
 export const sendOrderSchema = z.object({
   expectedVersion,
   idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+  /** Phase 17: ALL (default) fires everything; FIRST_COURSE holds later courses. */
+  fire: z.enum(["ALL", "FIRST_COURSE"]).default("ALL"),
+});
+
+export const fireCourseParamsSchema = z.object({ orderId: z.uuid(), course: z.coerce.number().int().min(1).max(5) });
+
+export const fireCourseSchema = z.object({
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN).optional(),
 });
 
 export const voidItemSchema = z.object({
@@ -100,4 +110,15 @@ export const updateDiscountDefinitionSchema = z.object({
   name: z.string().trim().min(1).max(80),
   value: decimal,
   active: z.boolean(),
+});
+
+/** Phase 17 split checks: move items to another check on the session, or a new one. */
+export const moveItemsSchema = z.object({
+  itemIds: z.array(z.uuid()).min(1).max(100),
+  expectedVersion,
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+  target: z.union([
+    z.object({ orderId: z.uuid(), expectedVersion }),
+    z.object({ newCheck: z.literal(true) }),
+  ]),
 });

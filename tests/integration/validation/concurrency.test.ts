@@ -78,7 +78,7 @@ describe("Phase 13: concurrency", () => {
         // Whichever commits first, the other sees it: the snapshot is the order's amount.
         expect(fulfilled(results).length).toBeGreaterThanOrEqual(1);
         expect(codes(results).every((code) => code === "SETTLEMENT_IN_PROGRESS")).toBe(true);
-        expect(settlement!.orderAmountSnapshot).toBe(after.subtotal);
+        expect(settlement!.orderAmountSnapshot).toBe(after.totalDue);
         expect(["10.00", "14.00"]).toContain(after.subtotal);
       }
     });

@@ -59,6 +59,10 @@ export type Totals = {
   discountTotal: string;
   subtotal: string;
   appliedAmounts: Map<string, string>;
+  /** Phase 17: each SUBMITTED item's line total after its item discounts. */
+  itemNetAmounts: Map<string, string>;
+  /** Phase 17: the sum of applied order-level discounts. */
+  orderDiscountAmount: string;
 };
 
 /** One discount against what remains eligible: fixed, or a ROUND_HALF_UP percent; capped. */
@@ -80,7 +84,7 @@ export function isComp(type: DiscountType, value: string): boolean {
  * The pre-tax totals of an order. Item discounts apply first, in application order, each
  * against what remains of its line. Order discounts then apply, in application order,
  * against what remains of the whole order. Every discount is capped at what remains, so the
- * subtotal is never negative. No tax, tip or fee.
+ * subtotal is never negative. Tax is `calculateOrderTax` (Phase 17); no tip or fee.
  */
 export function calculateOrderTotals(input: TotalsInput): Totals {
   const appliedAmounts = new Map<string, string>();
@@ -106,6 +110,7 @@ export function calculateOrderTotals(input: TotalsInput): Totals {
   }
 
   let remainingOrder = sumDecimals([...remainingByItem.values()], MONEY_SCALE);
+  const beforeOrderDiscounts = remainingOrder;
 
   for (const discount of bySequence(input.orderDiscounts)) {
     const amount = discountAmount(discount.type, discount.value, remainingOrder);
@@ -125,5 +130,7 @@ export function calculateOrderTotals(input: TotalsInput): Totals {
     discountTotal,
     subtotal: toScale(subtractDecimals(itemSubtotal, discountTotal), MONEY_SCALE),
     appliedAmounts,
+    itemNetAmounts: remainingByItem,
+    orderDiscountAmount: toScale(subtractDecimals(beforeOrderDiscounts, remainingOrder), MONEY_SCALE),
   };
 }

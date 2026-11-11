@@ -180,6 +180,7 @@ describe("runSeeds", () => {
       "security.kitchen-permissions",
       "security.settlement-permissions",
       "security.system-permissions",
+      "security.checks-closeout-permissions",
     ]);
   });
 });

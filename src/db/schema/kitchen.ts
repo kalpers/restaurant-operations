@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  smallint,
   text,
   unique,
   uniqueIndex,
@@ -58,6 +59,16 @@ export const kitchenTickets = pgTable(
     /** Takeout pickup label at SEND. */
     pickupLabelSnapshot: text("pickup_label_snapshot"),
     serverNameSnapshot: text("server_name_snapshot"),
+    /**
+     * Phase 17 courses and hold/fire. A ticket holds one course of one send batch. A held
+     * ticket has `held_at` and no `fired_at` until fired; every other ticket is fired when
+     * created (`fired_at = submitted_at`). Firing is the only change a ticket allows; the
+     * custom migration's guard and CHECK enforce it.
+     */
+    courseNumber: smallint("course_number").notNull().default(1),
+    heldAt: timestamptz("held_at"),
+    firedAt: timestamptz("fired_at"),
+    firedByUserId: uuid("fired_by_user_id").references(() => users.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
   },
   (table): PgTableExtraConfigValue[] => [
@@ -86,8 +97,8 @@ export const kitchenTickets = pgTable(
       columns: [table.remakeId],
       foreignColumns: [kitchenRemakes.id],
     }).onDelete("restrict"),
-    uniqueIndex("kitchen_tickets_batch_station_unique")
-      .on(table.sendBatchId, table.prepStationId)
+    uniqueIndex("kitchen_tickets_batch_station_course_unique")
+      .on(table.sendBatchId, table.prepStationId, table.courseNumber)
       .where(sql`${table.remakeId} IS NULL`),
     unique("kitchen_tickets_remake_station_unique").on(table.remakeId, table.prepStationId),
     check(
@@ -101,6 +112,7 @@ export const kitchenTickets = pgTable(
     ),
     index("kitchen_tickets_location_submitted_idx").on(table.locationId, table.submittedAt, table.id),
     index("kitchen_tickets_order_idx").on(table.orderId),
+    index("kitchen_tickets_order_held_idx").on(table.orderId, table.courseNumber).where(sql`${table.firedAt} IS NULL`),
   ],
 );
 

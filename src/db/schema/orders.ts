@@ -9,6 +9,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  smallint,
   text,
   unique,
   uuid,
@@ -27,6 +28,7 @@ import { menuItems, modifierGroups, modifiers } from "./menu";
 import { locations, organizations } from "./organization";
 import { recipes, recipeVersions, unitsOfMeasure } from "./recipes";
 import { tableSessions } from "./restaurant";
+import { taxCategories, taxRate } from "./tax";
 
 // Domain 10: Orders. An Order references a Table Session (DINE_IN, BAR) or none
 // (TAKEOUT), never a physical table. Draft items hold preview prices; SEND re-resolves and
@@ -89,8 +91,14 @@ export const orders = pgTable(
     /** Sum of SUBMITTED line totals. */
     itemSubtotal: money("item_subtotal").notNull().default("0.00"),
     discountTotal: money("discount_total").notNull().default("0.00"),
-    /** Post-discount, pre-tax amount: what Phase 11 settles. */
+    /** Post-discount, pre-tax amount: net sales. */
     subtotal: money("subtotal").notNull().default("0.00"),
+    /** Phase 17: tax on the post-discount amount of SUBMITTED items, from their snapshots. */
+    taxTotal: money("tax_total").notNull().default("0.00"),
+    /** Phase 17: what the guest owes and what Settlement reconciles to. Always computed. */
+    totalDue: money("total_due")
+      .notNull()
+      .generatedAlwaysAs(sql`subtotal + tax_total`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -145,6 +153,7 @@ export const orders = pgTable(
         AND ${table.discountTotal} <= ${table.itemSubtotal}
         AND ${table.subtotal} = ${table.itemSubtotal} - ${table.discountTotal}`,
     ),
+    check("orders_tax_total_non_negative", sql`${table.taxTotal} >= 0`),
     index("orders_table_session_status_idx").on(table.tableSessionId, table.status),
     index("orders_location_status_idx").on(table.locationId, table.status),
     index("orders_location_business_date_idx").on(table.locationId, table.businessDate),
@@ -240,6 +249,14 @@ export const orderItems = pgTable(
       onDelete: "restrict",
     }),
     voidReason: text("void_reason"),
+    /** Phase 17: course 1 to 5. Editable on drafts, frozen at SEND. */
+    courseNumber: smallint("course_number").notNull().default(1),
+    /** Phase 17 tax snapshot, set at SEND; all null when the Location doesn't tax. */
+    taxCategoryId: uuid("tax_category_id").references(() => taxCategories.id, {
+      onDelete: "restrict",
+    }),
+    taxCategoryCodeSnapshot: text("tax_category_code_snapshot"),
+    taxRateSnapshot: taxRate("tax_rate_snapshot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -250,10 +267,13 @@ export const orderItems = pgTable(
       columns: [table.orderId],
       foreignColumns: [orders.id],
     }).onDelete("restrict"),
+    // Phase 17: a sent item may move to another check, so its batch may belong to the
+    // order it came from. The custom migration's trigger allows that only for an item with
+    // a recorded transfer from the batch's order.
     foreignKey({
-      name: "order_items_send_batch_order_fk",
-      columns: [table.sendBatchId, table.orderId],
-      foreignColumns: [orderSendBatches.id, orderSendBatches.orderId],
+      name: "order_items_send_batch_fk",
+      columns: [table.sendBatchId],
+      foreignColumns: [orderSendBatches.id],
     }).onDelete("restrict"),
     check("order_items_status_valid", sql`${table.status} IN ('DRAFT', 'SUBMITTED', 'VOIDED')`),
     check("order_items_quantity_positive", sql`${table.quantity} > 0`),
@@ -279,6 +299,14 @@ export const orderItems = pgTable(
     check(
       "order_items_special_instructions_length",
       sql`${table.specialInstructions} IS NULL OR length(${table.specialInstructions}) <= 500`,
+    ),
+    check("order_items_course_range", sql`${table.courseNumber} BETWEEN 1 AND 5`),
+    check(
+      "order_items_tax_snapshot_fields",
+      sql`(${table.taxCategoryId} IS NULL) = (${table.taxCategoryCodeSnapshot} IS NULL)
+        AND (${table.taxCategoryId} IS NULL) = (${table.taxRateSnapshot} IS NULL)
+        AND (${table.status} <> 'DRAFT' OR ${table.taxCategoryId} IS NULL)
+        AND (${table.taxRateSnapshot} IS NULL OR (${table.taxRateSnapshot} >= 0 AND ${table.taxRateSnapshot} <= 100))`,
     ),
     index("order_items_order_status_idx").on(table.orderId, table.status),
     index("order_items_send_batch_idx").on(table.sendBatchId),
@@ -556,5 +584,72 @@ export const orderItemDiscounts = pgTable(
     ),
     unique("order_item_discounts_sequence_unique").on(table.sequence),
     index("order_item_discounts_item_idx").on(table.orderItemId),
+  ],
+);
+
+/**
+ * Phase 17 tax projection: one row per (Tax Category, rate snapshot) of an Order's
+ * SUBMITTED items, rewritten whenever the Order's totals are recomputed (like applied
+ * discount amounts). Its tax amounts add up to `orders.tax_total`. Reports read it.
+ */
+export const orderTaxLines = pgTable(
+  "order_tax_lines",
+  {
+    id: uuidPrimaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "restrict" }),
+    taxCategoryId: uuid("tax_category_id")
+      .notNull()
+      .references(() => taxCategories.id, { onDelete: "restrict" }),
+    taxCategoryCodeSnapshot: text("tax_category_code_snapshot").notNull(),
+    taxRateSnapshot: taxRate("tax_rate_snapshot").notNull(),
+    taxableAmount: money("taxable_amount").notNull(),
+    taxAmount: money("tax_amount").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("order_tax_lines_order_category_rate_unique").on(
+      table.orderId,
+      table.taxCategoryId,
+      table.taxRateSnapshot,
+    ),
+    check(
+      "order_tax_lines_amounts_valid",
+      sql`${table.taxableAmount} >= 0 AND ${table.taxAmount} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * Phase 17 split checks (policy C): one append-only row per item moved from one OPEN order
+ * to another on the same Table Session. An item's snapshots, consumption and kitchen work
+ * stay as they were; only its `order_id` changes, and only alongside one of these rows.
+ */
+export const orderItemTransfers = pgTable(
+  "order_item_transfers",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItems.id, { onDelete: "restrict" }),
+    fromOrderId: uuid("from_order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "restrict" }),
+    toOrderId: uuid("to_order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "restrict" }),
+    /** One move of several items shares a group. */
+    transferGroupId: uuid("transfer_group_id").notNull(),
+    movedByUserId: uuid("moved_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    movedAt: timestamptz("moved_at").notNull().defaultNow(),
+  },
+  (table) => [
+    check("order_item_transfers_different_orders", sql`${table.fromOrderId} <> ${table.toOrderId}`),
+    index("order_item_transfers_item_idx").on(table.orderItemId, table.movedAt),
+    index("order_item_transfers_group_idx").on(table.transferGroupId),
   ],
 );

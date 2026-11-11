@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 
+import { subtractDecimals } from "@/shared/decimal/decimal";
+
 import type { ReportColumn, ReportRow, ReportSection } from "../types";
 
 import { rowsOf, type ReportContext } from "./report-context";
@@ -15,6 +17,7 @@ type SalesRow = {
   discounts: string;
   comps: string;
   net_sales: string;
+  tax: string;
   average_check: string | null;
   open_checks: number;
   open_amount: string;
@@ -30,6 +33,7 @@ const FIGURES: ReportColumn[] = [
   { key: "discounts", label: "Discounts", kind: "money" },
   { key: "comps", label: "Of which comps", kind: "money" },
   { key: "netSales", label: "Net sales", kind: "money" },
+  { key: "tax", label: "Tax", kind: "money" },
   { key: "averageCheck", label: "Average check", kind: "money" },
   { key: "openChecks", label: "Open checks", kind: "count" },
   { key: "openAmount", label: "Open check amount", kind: "money" },
@@ -46,6 +50,7 @@ function figures(row: SalesRow): ReportRow {
     discounts: row.discounts,
     comps: row.comps,
     netSales: row.net_sales,
+    tax: row.tax,
     averageCheck: row.average_check,
     openChecks: row.open_checks,
     openAmount: row.open_amount,
@@ -73,7 +78,7 @@ export async function salesSections(context: ReportContext): Promise<ReportSecti
     sql`
       WITH scoped AS (
         SELECT o.id, o.business_date, o.order_type, o.status, o.item_subtotal, o.discount_total,
-               o.subtotal, o.table_session_id, o.opened_at
+               o.subtotal, o.tax_total, o.table_session_id, o.opened_at
         FROM orders o
         WHERE o.location_id = ${filters.locationId}
           AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
@@ -125,6 +130,7 @@ export async function salesSections(context: ReportContext): Promise<ReportSecti
              COALESCE(SUM(discount_total) FILTER (WHERE status = 'CLOSED'), 0)::numeric(14,2)::text AS discounts,
              COALESCE(SUM(comp_amount) FILTER (WHERE status = 'CLOSED'), 0)::numeric(14,2)::text AS comps,
              COALESCE(SUM(subtotal) FILTER (WHERE status = 'CLOSED'), 0)::numeric(14,2)::text AS net_sales,
+             COALESCE(SUM(tax_total) FILTER (WHERE status = 'CLOSED'), 0)::numeric(14,2)::text AS tax,
              ROUND(SUM(subtotal) FILTER (WHERE status = 'CLOSED')
                    / NULLIF(COUNT(*) FILTER (WHERE status = 'CLOSED'), 0), 2)::text AS average_check,
              (COUNT(*) FILTER (WHERE status = 'OPEN'))::int AS open_checks,
@@ -161,6 +167,129 @@ export async function salesSections(context: ReportContext): Promise<ReportSecti
       title: "By business date",
       columns: [{ key: "businessDate", label: "Business date", kind: "date" }, ...FIGURES],
       rows: byDate.map((row) => ({ businessDate: row.business_date, ...figures(row) })),
+    },
+    ...(await taxAndRefundSections(context)),
+  ];
+}
+
+/**
+ * Phase 17. Tax from the `order_tax_lines` projection of CLOSED orders, by business date and
+ * category/rate snapshot. Refunds by the business date they were recorded on, so a later
+ * refund never changes an earlier day's sales; net after refunds takes off the pre-tax part.
+ */
+async function taxAndRefundSections(context: ReportContext): Promise<ReportSection[]> {
+  const { filters } = context;
+  const orderTypeFilter = filters.orderType ? sql`AND o.order_type = ${filters.orderType}` : sql``;
+  const taxRows = await rowsOf<{
+    business_date: string;
+    code: string;
+    rate: string;
+    orders: number;
+    taxable: string;
+    tax: string;
+  }>(
+    context,
+    sql`
+      SELECT o.business_date::text AS business_date, l.tax_category_code_snapshot AS code,
+             l.tax_rate_snapshot::text AS rate, COUNT(DISTINCT o.id)::int AS orders,
+             SUM(l.taxable_amount)::numeric(14,2)::text AS taxable, SUM(l.tax_amount)::numeric(14,2)::text AS tax
+      FROM order_tax_lines l
+      JOIN orders o ON o.id = l.order_id
+      WHERE o.location_id = ${filters.locationId}
+        AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        AND o.status = 'CLOSED'
+        ${orderTypeFilter}
+      GROUP BY o.business_date, l.tax_category_code_snapshot, l.tax_rate_snapshot
+      ORDER BY o.business_date, l.tax_category_code_snapshot, l.tax_rate_snapshot
+    `,
+  );
+  const refundRows = await rowsOf<{
+    business_date: string;
+    refunds: number;
+    amount: string;
+    tax: string;
+    net_sales: string;
+  }>(
+    context,
+    sql`
+      WITH days AS (
+        SELECT d::date AS business_date
+        FROM generate_series(${filters.from}::date, ${filters.to}::date, interval '1 day') d
+      ),
+      refunded AS (
+        SELECT r.business_date, COUNT(*)::int AS refunds, SUM(r.amount) AS amount, SUM(r.tax_amount) AS tax
+        FROM order_refunds r
+        JOIN orders o ON o.id = r.order_id
+        WHERE r.location_id = ${filters.locationId}
+          AND r.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+          AND r.status = 'RECORDED'
+          ${orderTypeFilter}
+        GROUP BY r.business_date
+      ),
+      sold AS (
+        SELECT o.business_date, SUM(o.subtotal) AS net_sales
+        FROM orders o
+        WHERE o.location_id = ${filters.locationId}
+          AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+          AND o.status = 'CLOSED'
+          ${orderTypeFilter}
+        GROUP BY o.business_date
+      )
+      SELECT d.business_date::text AS business_date, COALESCE(r.refunds, 0)::int AS refunds,
+             COALESCE(r.amount, 0)::numeric(14,2)::text AS amount, COALESCE(r.tax, 0)::numeric(14,2)::text AS tax,
+             COALESCE(s.net_sales, 0)::numeric(14,2)::text AS net_sales
+      FROM days d
+      LEFT JOIN refunded r ON r.business_date = d.business_date
+      LEFT JOIN sold s ON s.business_date = d.business_date
+      WHERE r.refunds IS NOT NULL OR s.net_sales IS NOT NULL
+      ORDER BY d.business_date
+    `,
+  );
+
+  return [
+    {
+      key: "tax",
+      title: "Tax by category",
+      description:
+        "Tax on CLOSED orders, from each item's tax snapshot at SEND. Tax returned with refunds is in the refunds section.",
+      columns: [
+        { key: "businessDate", label: "Business date", kind: "date" },
+        { key: "category", label: "Tax category", kind: "text" },
+        { key: "rate", label: "Rate %", kind: "text" },
+        { key: "orders", label: "Orders", kind: "count" },
+        { key: "taxable", label: "Taxable amount", kind: "money" },
+        { key: "tax", label: "Tax", kind: "money" },
+      ],
+      rows: taxRows.map((row) => ({
+        businessDate: row.business_date,
+        category: row.code,
+        rate: row.rate,
+        orders: row.orders,
+        taxable: row.taxable,
+        tax: row.tax,
+      })),
+    },
+    {
+      key: "refunds",
+      title: "Refunds and net after refunds",
+      description:
+        "RECORDED refunds by the business date they were given. Net after refunds is net sales less the pre-tax part of refunds.",
+      columns: [
+        { key: "businessDate", label: "Business date", kind: "date" },
+        { key: "refunds", label: "Refunds", kind: "count" },
+        { key: "amount", label: "Refunded", kind: "money" },
+        { key: "tax", label: "Of which tax", kind: "money" },
+        { key: "netSales", label: "Net sales", kind: "money" },
+        { key: "netAfterRefunds", label: "Net after refunds", kind: "money" },
+      ],
+      rows: refundRows.map((row) => ({
+        businessDate: row.business_date,
+        refunds: row.refunds,
+        amount: row.amount,
+        tax: row.tax,
+        netSales: row.net_sales,
+        netAfterRefunds: subtractDecimals(row.net_sales, subtractDecimals(row.amount, row.tax)),
+      })),
     },
   ];
 }

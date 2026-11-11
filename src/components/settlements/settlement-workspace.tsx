@@ -23,8 +23,7 @@ import type { TenderType } from "@/modules/settlements/types";
 
 // The settlement screen. Record only: nothing here charges a card or talks to a payment
 // provider. It shows what the server returns; the server decides every amount, the
-// remaining balance, change and permissions. The order amount is pre-tax (tax isn't
-// calculated in this version).
+// remaining balance, change and permissions. The amount due includes tax (Phase 17).
 
 export type SettlementAbilities = {
   open: boolean;
@@ -33,6 +32,22 @@ export type SettlementAbilities = {
   voidTender: boolean;
   tenderTypes: TenderType[];
   viewOrder: boolean;
+  refund: boolean;
+  voidRefund: boolean;
+};
+
+export type DrawerChoice = { id: string; label: string };
+
+export type RefundLine = {
+  id: string;
+  refundNumber: number;
+  status: string;
+  tenderType: string;
+  amount: string;
+  taxAmount: string;
+  reason: string;
+  businessDate: string;
+  version: number;
 };
 
 const BUTTON = buttonClass("secondary");
@@ -55,6 +70,10 @@ const EVENTS = [
   "settlement.completed",
   "settlement.cancelled",
   "order.closed",
+  "settlement.refund-recorded",
+  "settlement.refund-voided",
+  "drawer.session-opened",
+  "drawer.session-closed",
 ];
 
 function newKey(prefix: string) {
@@ -191,8 +210,19 @@ function TenderLine({
   );
 }
 
-function TenderForm({ settlement, tenderTypes }: { settlement: SettlementDetail; tenderTypes: TenderType[] }) {
+function TenderForm({
+  settlement,
+  tenderTypes,
+  drawers,
+  drawerRequired,
+}: {
+  settlement: SettlementDetail;
+  tenderTypes: TenderType[];
+  drawers: DrawerChoice[];
+  drawerRequired: boolean;
+}) {
   const { run, pending, error } = useAction();
+  const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
   const [tenderType, setTenderType] = useState<TenderType>(tenderTypes[0]!);
   const [amount, setAmount] = useState(settlement.remainingAmount);
   const [tip, setTip] = useState("");
@@ -249,6 +279,7 @@ function TenderForm({ settlement, tenderTypes }: { settlement: SettlementDetail;
         externalReference: isCash ? null : externalReference,
         otherDescription: tenderType === "OTHER" ? otherDescription : null,
         failureReason: isCard && failed ? failureReason : null,
+        cashDrawerSessionId: isCash && drawerId ? drawerId : null,
       },
       { "Idempotency-Key": key.current },
     );
@@ -315,6 +346,25 @@ function TenderForm({ settlement, tenderTypes }: { settlement: SettlementDetail;
           <p className="text-base font-medium" aria-live="polite">
             Change due: {change === null ? "—" : formatMoney(change)}
           </p>
+          {drawers.length > 0 ? (
+            <label className={LABEL}>
+              Cash drawer
+              <select className={INPUT} value={drawerId} onChange={(event) => edited(setDrawerId)(event.target.value)}>
+                {!drawerRequired && <option value="">No drawer</option>}
+                {drawers.map((drawer) => (
+                  <option key={drawer.id} value={drawer.id}>
+                    {drawer.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            drawerRequired && (
+              <p className="rounded-md border border-warning-300 bg-warning-50 p-2 text-sm text-warning-900">
+                Cash needs an open cash drawer here, and none is open. Ask a manager to open one.
+              </p>
+            )
+          )}
         </>
       )}
       {isCard && (
@@ -385,10 +435,14 @@ function OpenSettlement({
   view,
   settlement,
   abilities,
+  drawers,
+  drawerRequired,
 }: {
   view: OrderSettlementView;
   settlement: SettlementDetail;
   abilities: SettlementAbilities;
+  drawers: DrawerChoice[];
+  drawerRequired: boolean;
 }) {
   const complete = useAction();
   const cancel = useAction();
@@ -436,6 +490,9 @@ function OpenSettlement({
       </div>
       <div className="grid gap-1 rounded-md border border-neutral-200 bg-surface p-3">
         <Row label="Order amount" value={formatMoney(settlement.orderAmountSnapshot)} />
+        {settlement.taxTotalSnapshot !== "0.00" && (
+          <Row label="Of which tax" value={formatMoney(settlement.taxTotalSnapshot)} />
+        )}
         <Row label="Applied" value={formatMoney(settlement.tenderedAmount)} />
         {settlement.tipAmount !== "0.00" && <Row label="Tips (separate)" value={formatMoney(settlement.tipAmount)} />}
         {settlement.changeDue !== "0.00" && <Row label="Cash change given" value={formatMoney(settlement.changeDue)} />}
@@ -450,7 +507,13 @@ function OpenSettlement({
       )}
 
       {settlement.remainingAmount !== "0.00" && abilities.tenderTypes.length > 0 && (
-        <TenderForm key={settlement.version} settlement={settlement} tenderTypes={abilities.tenderTypes} />
+        <TenderForm
+          key={settlement.version}
+          settlement={settlement}
+          tenderTypes={abilities.tenderTypes}
+          drawers={drawers}
+          drawerRequired={drawerRequired}
+        />
       )}
 
       {abilities.complete && (
@@ -504,6 +567,153 @@ function OpenSettlement({
   );
 }
 
+function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementView; drawers: DrawerChoice[]; drawerRequired: boolean }) {
+  const { run, pending, error } = useAction();
+  const [tenderType, setTenderType] = useState<TenderType>("EXTERNAL_CARD");
+  const [amount, setAmount] = useState("");
+  const [taxAmount, setTaxAmount] = useState("0.00");
+  const [reason, setReason] = useState("");
+  const [otherDescription, setOtherDescription] = useState("");
+  const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
+  const key = useRef<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    key.current ??= newKey("refund");
+
+    const result = await run(
+      `/api/orders/${view.order.id}/refunds`,
+      {
+        tenderType,
+        amount,
+        taxAmount: taxAmount || "0.00",
+        reason,
+        otherDescription: tenderType === "OTHER" ? otherDescription : null,
+        externalReference: null,
+        cashDrawerSessionId: tenderType === "CASH" && drawerId ? drawerId : null,
+      },
+      { "Idempotency-Key": key.current },
+    );
+
+    if (result.ok || (result.status >= 400 && result.status < 500)) {
+      key.current = null;
+    }
+
+    if (result.ok) {
+      setAmount("");
+      setTaxAmount("0.00");
+      setReason("");
+    }
+  }
+
+  return (
+    <form onSubmit={submit} aria-label="Record refund" className="grid gap-3 rounded-lg border border-neutral-200 bg-surface p-4 shadow-sm">
+      <h3 className="font-semibold">Record a refund</h3>
+      <p className="text-xs text-neutral-600">
+        Record only: give the money back outside this app first. The check stays closed and its sales stay on its own day.
+      </p>
+      <label className={LABEL}>
+        Refunded as
+        <select className={INPUT} value={tenderType} onChange={(event) => setTenderType(event.target.value as TenderType)}>
+          {(Object.keys(TENDER_LABELS) as TenderType[]).map((type) => (
+            <option key={type} value={type}>
+              {TENDER_LABELS[type]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className={LABEL}>
+          Amount refunded (with tax)
+          <input className={INPUT} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} required />
+        </label>
+        <label className={LABEL}>
+          Of which tax
+          <input className={INPUT} inputMode="decimal" value={taxAmount} onChange={(event) => setTaxAmount(event.target.value)} />
+        </label>
+      </div>
+      <label className={LABEL}>
+        Reason
+        <input className={INPUT} value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={300} />
+      </label>
+      {tenderType === "OTHER" && (
+        <label className={LABEL}>
+          How was it refunded?
+          <input className={INPUT} value={otherDescription} onChange={(event) => setOtherDescription(event.target.value)} required maxLength={200} />
+        </label>
+      )}
+      {tenderType === "CASH" && drawers.length > 0 && (
+        <label className={LABEL}>
+          Cash drawer
+          <select className={INPUT} value={drawerId} onChange={(event) => setDrawerId(event.target.value)}>
+            {!drawerRequired && <option value="">No drawer</option>}
+            {drawers.map((drawer) => (
+              <option key={drawer.id} value={drawer.id}>
+                {drawer.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button type="submit" className={PRIMARY} disabled={pending || !amount || !reason.trim()}>
+        Record refund
+      </button>
+      <ErrorText error={error} />
+    </form>
+  );
+}
+
+function RefundItem({ refund, canVoid }: { refund: RefundLine; canVoid: boolean }) {
+  const { run, pending, error } = useAction();
+  const [voiding, setVoiding] = useState(false);
+  const [reason, setReason] = useState("");
+  const voided = refund.status === "VOIDED";
+
+  return (
+    <li className="grid gap-1 rounded-md border border-neutral-200 bg-surface p-3" data-testid="refund">
+      <p className="flex justify-between gap-2">
+        <span className={voided ? "line-through" : "font-medium"}>
+          Refund {refund.refundNumber} · {TENDER_LABELS[refund.tenderType as TenderType] ?? refund.tenderType}
+        </span>
+        <span className="tabular">−{formatMoney(refund.amount)}</span>
+      </p>
+      <p className="text-sm text-neutral-700">
+        {refund.reason} · {refund.businessDate}
+        {refund.taxAmount !== "0.00" ? ` · tax ${formatMoney(refund.taxAmount)}` : ""}
+        {voided ? " · voided" : ""}
+      </p>
+      {canVoid && !voided && !voiding && (
+        <button type="button" className={BUTTON} onClick={() => setVoiding(true)}>
+          Void refund
+        </button>
+      )}
+      {voiding && (
+        <form
+          className="grid gap-2"
+          onSubmit={async (event) => {
+            event.preventDefault();
+
+            const result = await run(`/api/refunds/${refund.id}/void`, { expectedVersion: refund.version, reason });
+
+            if (result.ok) {
+              setVoiding(false);
+            }
+          }}
+        >
+          <label className={LABEL}>
+            Reason for voiding
+            <input className={INPUT} value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={300} />
+          </label>
+          <button type="submit" className={BUTTON} disabled={pending || !reason.trim()}>
+            Confirm void
+          </button>
+        </form>
+      )}
+      <ErrorText error={error} />
+    </li>
+  );
+}
+
 function CompletedSettlement({ view, settlement }: { view: OrderSettlementView; settlement: SettlementDetail }) {
   return (
     <section aria-label="Completed settlement" className="grid gap-3">
@@ -535,7 +745,19 @@ function CompletedSettlement({ view, settlement }: { view: OrderSettlementView; 
   );
 }
 
-export function SettlementWorkspace({ view, abilities }: { view: OrderSettlementView; abilities: SettlementAbilities }) {
+export function SettlementWorkspace({
+  view,
+  abilities,
+  drawers,
+  drawerRequired,
+  refunds,
+}: {
+  view: OrderSettlementView;
+  abilities: SettlementAbilities;
+  drawers: DrawerChoice[];
+  drawerRequired: boolean;
+  refunds: RefundLine[];
+}) {
   useRealtimeRefresh(EVENTS, 60_000);
   const open = useAction();
   const { order, current } = view;
@@ -577,8 +799,9 @@ export function SettlementWorkspace({ view, abilities }: { view: OrderSettlement
         <div className="grid gap-1 border-t border-neutral-200 pt-2">
           <Row label="Items" value={formatMoney(order.itemSubtotal)} />
           {order.discountTotal !== "0.00" && <Row label="Discounts" value={`−${formatMoney(order.discountTotal)}`} />}
-          <Row label="Amount due before tax" value={formatMoney(order.subtotal)} strong />
-          <p className="text-xs text-neutral-600">Tax isn&apos;t calculated in this version.</p>
+          <Row label="Subtotal" value={formatMoney(order.subtotal)} />
+          <Row label="Tax" value={formatMoney(order.taxTotal)} />
+          <Row label="Total due" value={formatMoney(order.totalDue)} strong />
           {order.fullyComped && (
             <p className="text-sm">Discounts and comps reduced the amount due to $0.00.</p>
           )}
@@ -613,8 +836,25 @@ export function SettlementWorkspace({ view, abilities }: { view: OrderSettlement
           </p>
         </div>
 
-        {current?.status === "OPEN" && <OpenSettlement view={view} settlement={current} abilities={abilities} />}
+        {current?.status === "OPEN" && (
+          <OpenSettlement view={view} settlement={current} abilities={abilities} drawers={drawers} drawerRequired={drawerRequired} />
+        )}
         {current?.status === "COMPLETED" && <CompletedSettlement view={view} settlement={current} />}
+        {order.status === "CLOSED" && (refunds.length > 0 || abilities.refund) && (
+          <section aria-label="Refunds" className="grid gap-2">
+            <h2 className="font-semibold">Refunds</h2>
+            {refunds.length > 0 ? (
+              <ul className="grid gap-2">
+                {refunds.map((refund) => (
+                  <RefundItem key={refund.id} refund={refund} canVoid={abilities.voidRefund} />
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-neutral-600">No refunds on this check.</p>
+            )}
+            {abilities.refund && <RefundForm view={view} drawers={drawers} drawerRequired={drawerRequired} />}
+          </section>
+        )}
 
         {!current && order.status === "OPEN" && (
           <div className="grid gap-2">
@@ -625,7 +865,7 @@ export function SettlementWorkspace({ view, abilities }: { view: OrderSettlement
                 disabled={open.pending}
                 onClick={() => open.run(`/api/orders/${order.id}/settlements`)}
               >
-                Open settlement for {formatMoney(order.subtotal)}
+                Open settlement for {formatMoney(order.totalDue)}
               </button>
             ) : (
               <p className="text-sm text-neutral-600">No settlement has been opened.</p>

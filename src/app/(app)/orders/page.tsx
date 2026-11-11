@@ -30,7 +30,7 @@ function OrderList({ orders, empty }: { orders: OrderSummary[]; empty: string })
           >
             <p className="flex justify-between font-semibold">
               <span>#{order.orderNumber}</span>
-              <span>{order.status === "OPEN" ? formatMoney(order.subtotal) : <StatusBadge domain="order" status={order.status} />}</span>
+              <span>{order.status === "OPEN" ? formatMoney(order.totalDue) : <StatusBadge domain="order" status={order.status} />}</span>
             </p>
             <p className="text-sm">
               {ORDER_TYPE_LABELS[order.orderType]}

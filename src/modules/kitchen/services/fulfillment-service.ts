@@ -5,7 +5,7 @@ import { kitchenTicketItems, kitchenTickets } from "@/db/schema";
 import { withTransaction } from "@/db/transactions/transaction-context";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import type { Actor } from "@/modules/auth/types";
-import { NotFoundError } from "@/shared/errors/app-error";
+import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import { appendItemStatusHistory, itemStatusEvent, notifyReadyTickets } from "../repositories/kitchen-repository";
@@ -59,6 +59,11 @@ export async function transitionTicketItem(
     const { item, ticket } = row;
 
     assertCanWorkStationType(actor, ticket.stationTypeSnapshot);
+
+    // Phase 17: a held course isn't worked until it is fired (the database also refuses it).
+    if (ticket.firedAt === null) {
+      throw new BusinessRuleError("TICKET_HELD", "This course is held. Fire it before starting it.");
+    }
 
     const plan = planTransition(item.status as KitchenItemStatus, action);
 

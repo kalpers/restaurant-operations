@@ -22,6 +22,7 @@ import {
 import { listGroups, listItemAttachments, listModifiers } from "@/modules/menu/services/modifier-service";
 import { listItemRouting, listStations } from "@/modules/menu/services/prep-station-service";
 import { listPriceHistory } from "@/modules/menu/services/pricing-service";
+import { listTaxCategories } from "@/modules/menu/services/tax-service";
 import { actorHolds } from "@/modules/menu/services/access";
 import { listRecipes } from "@/modules/recipes/services/recipe-service";
 import { NotFoundError } from "@/shared/errors/app-error";
@@ -64,6 +65,8 @@ export default async function MenuItemEditorPage({
       loadSelectionGroups(database, actor.organizationId, itemId),
     ]);
   const prices = canSeePricing ? await listPriceHistory(database, actor, itemId) : [];
+  // Phase 17: explicit taxability. Without tax.view the field is left out, so it stays as is.
+  const taxCategories = actorHolds(actor, "tax.view") ? await listTaxCategories(database, actor) : null;
   const recipe = actorHolds(actor, "recipes.view")
     ? (await listRecipes(database, actor)).find((entry) => entry.menuItemId === itemId)
     : undefined;
@@ -98,6 +101,22 @@ export default async function MenuItemEditorPage({
             { name: "displayOrder", label: "Display order", type: "number", defaultValue: item.displayOrder },
             { name: "active", label: "Active (in the catalog)", type: "checkbox", defaultValue: item.active },
             { name: "available", label: "Available (can be sold now)", type: "checkbox", defaultValue: item.available },
+            ...(taxCategories
+              ? [
+                  {
+                    name: "taxCategoryId",
+                    label: "Tax category",
+                    type: "select" as const,
+                    defaultValue: item.taxCategoryId ?? "",
+                    options: [
+                      { value: "", label: "None (not taxed)" },
+                      ...taxCategories
+                        .filter((category) => category.active || category.id === item.taxCategoryId)
+                        .map((category) => ({ value: category.id, label: `${category.name} (${category.code})` })),
+                    ],
+                  },
+                ]
+              : []),
           ]}
         />
       </section>

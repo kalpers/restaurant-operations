@@ -9,6 +9,7 @@ import {
   orderItemStatusHistory,
   orders,
   orderStatusHistory,
+  orderTaxLines,
 } from "@/db/schema";
 import type { DatabaseExecutor, DatabaseTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
@@ -17,6 +18,7 @@ import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 import { businessDateOf } from "@/shared/time/business-date-service";
 
+import { calculateOrderTax } from "../rules/order-tax";
 import { calculateOrderTotals } from "../rules/order-totals";
 import type { DiscountType } from "../types";
 
@@ -29,6 +31,8 @@ export async function readOrderLocation(executor: DatabaseExecutor, locationId: 
       timeZone: locations.timezone,
       businessDayCutoff: locationSettings.businessDayCutoff,
       allowTakeout: locationSettings.allowTakeout,
+      taxEnabled: locationSettings.taxEnabled,
+      cashDrawerRequired: locationSettings.cashDrawerRequired,
       active: locations.active,
     })
     .from(locations)
@@ -122,8 +126,9 @@ export async function lockOrder(
 
 /**
  * Recomputes the pre-tax totals and every applied discount amount from SUBMITTED item
- * snapshots and the immutable discount snapshots, then stores the projection and bumps the
- * order version. Called by every change that can move the eligible subtotal.
+ * snapshots and the immutable discount snapshots, then the tax from the items' tax
+ * snapshots (Phase 17), stores the projections (`order_tax_lines` is rewritten) and bumps
+ * the order version. Called by every change that can move the eligible subtotal.
  */
 export async function recomputeAndBumpOrder(
   transaction: DatabaseTransaction,
@@ -131,7 +136,14 @@ export async function recomputeAndBumpOrder(
   values: Partial<typeof orders.$inferInsert> = {},
 ): Promise<OrderRow> {
   const items = await transaction
-    .select({ id: orderItems.id, status: orderItems.status, lineTotal: orderItems.lineTotalSnapshot })
+    .select({
+      id: orderItems.id,
+      status: orderItems.status,
+      lineTotal: orderItems.lineTotalSnapshot,
+      taxCategoryId: orderItems.taxCategoryId,
+      taxCategoryCode: orderItems.taxCategoryCodeSnapshot,
+      taxRate: orderItems.taxRateSnapshot,
+    })
     .from(orderItems)
     .where(eq(orderItems.orderId, orderId));
   const itemIds = items.map((item) => item.id);
@@ -185,6 +197,27 @@ export async function recomputeAndBumpOrder(
     }
   }
 
+  const tax = calculateOrderTax({
+    items: items.filter((item) => item.status === "SUBMITTED"),
+    itemNetAmounts: totals.itemNetAmounts,
+    orderDiscountAmount: totals.orderDiscountAmount,
+  });
+
+  await transaction.delete(orderTaxLines).where(eq(orderTaxLines.orderId, orderId));
+
+  if (tax.lines.length > 0) {
+    await transaction.insert(orderTaxLines).values(
+      tax.lines.map((line) => ({
+        orderId,
+        taxCategoryId: line.taxCategoryId,
+        taxCategoryCodeSnapshot: line.taxCategoryCode,
+        taxRateSnapshot: line.taxRate,
+        taxableAmount: line.taxableAmount,
+        taxAmount: line.taxAmount,
+      })),
+    );
+  }
+
   const [updated] = await transaction
     .update(orders)
     .set({
@@ -192,6 +225,7 @@ export async function recomputeAndBumpOrder(
       itemSubtotal: totals.itemSubtotal,
       discountTotal: totals.discountTotal,
       subtotal: totals.subtotal,
+      taxTotal: tax.taxTotal,
       version: sql`${orders.version} + 1`,
       updatedAt: new Date(),
     })

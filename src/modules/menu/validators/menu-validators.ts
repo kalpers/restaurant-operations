@@ -71,6 +71,8 @@ export const createItemSchema = z.object({
   description: optionalText(500),
   itemType: z.enum(MENU_ITEM_TYPES),
   displayOrder,
+  /** Phase 17: omitted leaves it unchanged; null clears it. */
+  taxCategoryId: z.uuid().nullable().optional(),
 });
 
 export const updateItemSchema = createItemSchema.omit({ code: true }).extend({
@@ -196,3 +198,29 @@ export const addEffectSchema = z.object({
 });
 
 export const updateEffectSchema = z.object({ ...effectFields, expectedVersion });
+
+// Phase 17 tax configuration.
+export const taxCategoryIdParamsSchema = z.object({ categoryId: z.uuid() });
+
+export const createTaxCategorySchema = z.object({
+  code,
+  name: requiredText(100),
+  description: optionalText(500),
+});
+
+export const updateTaxCategorySchema = createTaxCategorySchema.omit({ code: true }).extend({
+  active: z.boolean(),
+  expectedVersion,
+});
+
+export const changeTaxRateSchema = z.object({
+  taxCategoryId: z.uuid(),
+  ratePercent: decimalString,
+  effectiveFrom: instant.nullable().default(null),
+  expectedCurrentRateId: z.uuid().nullable().optional(),
+});
+
+export const setLocationTaxSchema = z.object({
+  enabled: z.boolean(),
+  expectedVersion,
+});

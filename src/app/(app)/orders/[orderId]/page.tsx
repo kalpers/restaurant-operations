@@ -10,8 +10,9 @@ import {
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { fulfillmentForOrder } from "@/modules/kitchen/queries/kitchen-queries";
+import { heldCoursesForOrder } from "@/modules/kitchen/services/course-fire-service";
 import { getOperationalMenu } from "@/modules/menu/queries/operational-menu";
-import { getOrderDetail } from "@/modules/orders/queries/order-queries";
+import { getOrderDetail, listOrders } from "@/modules/orders/queries/order-queries";
 import { actorHolds } from "@/modules/orders/services/access";
 import { listDiscountDefinitions } from "@/modules/orders/services/discount-service";
 import { NotFoundError } from "@/shared/errors/app-error";
@@ -39,7 +40,18 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     discount: actorHolds(actor, "orders.discount.apply"),
     remake: actor.permissions.has("fulfillment.remake"),
     settle: actorHolds(actor, "settlements.view"),
+    fire: actorHolds(actor, "orders.fire"),
+    move: actorHolds(actor, "orders.move-items"),
+    newCheck: actorHolds(actor, "orders.move-items") && actorHolds(actor, "orders.create"),
   };
+  const heldCourses = order.status === "OPEN" ? await heldCoursesForOrder(database, order.id) : [];
+  // Other open checks at the same table, for moving items between them (Phase 17).
+  const otherChecks =
+    abilities.move && order.status === "OPEN" && order.tableSessionId
+      ? (await listOrders(database, actor, { tableSessionId: order.tableSessionId, status: "OPEN" }))
+          .filter((entry) => entry.id !== order.id)
+          .map((entry) => ({ id: entry.id, orderNumber: entry.orderNumber, version: entry.version }))
+      : [];
   const fulfillment = Object.fromEntries(await fulfillmentForOrder(database, order.id));
   const categories: MenuCategory[] = [];
 
@@ -91,6 +103,8 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
         abilities={abilities}
         discounts={discounts}
         fulfillment={fulfillment}
+        heldCourses={heldCourses}
+        otherChecks={otherChecks}
       />
     </>
   );

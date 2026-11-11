@@ -97,9 +97,10 @@ export async function createSecondLocation(): Promise<string> {
     })
     .returning({ id: locations.id });
 
+  // Phase 17: a second location doesn't require a cash drawer.
   await getDatabase()
     .insert(locationSettings)
-    .values({ locationId: location!.id });
+    .values({ locationId: location!.id, cashDrawerRequired: false });
 
   return location!.id;
 }

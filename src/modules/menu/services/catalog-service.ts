@@ -19,6 +19,7 @@ import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors
 
 import type { MenuItemType } from "../types";
 import { assertPermission } from "./access";
+import { resolveAssignableTaxCategory } from "./tax-service";
 
 type CodedInput = {
   code: string;
@@ -327,6 +328,8 @@ type ItemInput = {
   description: string | null;
   itemType: MenuItemType;
   displayOrder: number;
+  /** Phase 17 explicit taxability: undefined leaves it unchanged, null clears it. */
+  taxCategoryId?: string | null;
 };
 
 export async function listItems(executor: DatabaseExecutor, actor: Actor) {
@@ -363,6 +366,10 @@ export async function createItem(
 
   return insertCoded("menu item", () =>
     withTransaction(database, async (transaction) => {
+      if (input.taxCategoryId) {
+        await resolveAssignableTaxCategory(transaction, actor.organizationId, input.taxCategoryId);
+      }
+
       const [row] = await transaction
         .insert(menuItems)
         .values({ ...input, organizationId: actor.organizationId })
@@ -391,6 +398,10 @@ export async function updateItem(
   const { expectedVersion, ...values } = input;
 
   return withTransaction(database, async (transaction) => {
+    if (values.taxCategoryId) {
+      await resolveAssignableTaxCategory(transaction, actor.organizationId, values.taxCategoryId);
+    }
+
     const [before] = await transaction
       .select()
       .from(menuItems)

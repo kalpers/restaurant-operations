@@ -42,7 +42,9 @@ export type NavigationIcon =
   | "permissions"
   | "system"
   | "tables"
-  | "sections";
+  | "sections"
+  | "drawers"
+  | "taxes";
 
 export type NavigationItem = {
   href: string;
@@ -82,6 +84,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/bar", label: "Bar", permission: "bar.view", group: "service", icon: "bar" },
   { href: "/expo", label: "Expo", permission: "kitchen.view", group: "service", icon: "expo" },
   { href: "/orders/discounts", label: "Discounts", permission: "orders.discount.manage", group: "service", icon: "discounts" },
+  { href: "/cash-drawers", label: "Cash drawers", permission: "drawers.view", group: "service", icon: "drawers" },
 
   { href: "/menu", label: "Menu", permission: "menu.view", group: "back-of-house", icon: "menu" },
   { href: "/menu/manage", label: "Manage menu", permission: "menu.edit", group: "back-of-house", icon: "menu-manage" },
@@ -112,6 +115,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/admin/users", label: "Users", permission: "admin.users.view", group: "admin", icon: "users" },
   { href: "/admin/roles", label: "Roles", permission: "admin.roles.view", group: "admin", icon: "roles" },
   { href: "/admin/permissions", label: "Permissions", permission: "admin.roles.view", group: "admin", icon: "permissions" },
+  { href: "/admin/taxes", label: "Taxes", permission: "tax.view", group: "admin", icon: "taxes" },
   { href: "/admin/system", label: "System health", permission: "admin.system.view", group: "admin", icon: "system" },
 ];
 

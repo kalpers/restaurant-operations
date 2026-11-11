@@ -187,6 +187,12 @@ export const AUDIT_ACTIONS = {
     scope: "LOCATION",
     fields: ["discountId", "orderItemId", "definitionCode", "isComp", "amount", "reason"],
   },
+  "orders.items-moved": {
+    category: "ORDERS",
+    entityType: "order",
+    scope: "LOCATION",
+    fields: ["fromOrderNumber", "toOrderId", "toOrderNumber", "orderItemIds", "itemCount"],
+  },
   "orders.discount-removed": {
     category: "ORDERS",
     entityType: "order",
@@ -212,6 +218,31 @@ export const AUDIT_ACTIONS = {
     entityType: "menu_item",
     scope: "LOCATION",
     fields: ["itemCode", "name", "active", "available", "changedFields"],
+  },
+  // Phase 17 tax configuration. The rate percentage is configuration, not pay.
+  "tax.category-created": {
+    category: "MENU",
+    entityType: "tax_category",
+    scope: "ORGANIZATION",
+    fields: ["code", "name", "active"],
+  },
+  "tax.category-updated": {
+    category: "MENU",
+    entityType: "tax_category",
+    scope: "ORGANIZATION",
+    fields: ["code", "name", "active", "changedFields"],
+  },
+  "tax.rate-changed": {
+    category: "MENU",
+    entityType: "tax_category",
+    scope: "LOCATION",
+    fields: ["categoryCode", "recordId", "percent", "effectiveFrom"],
+  },
+  "tax.location-setting-changed": {
+    category: "MENU",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: ["enabled"],
   },
   "recipes.revision-created": {
     category: "MENU",
@@ -294,6 +325,62 @@ export const AUDIT_ACTIONS = {
     entityType: "settlement",
     scope: "LOCATION",
     fields: ["orderId", "status", "reason"],
+  },
+
+  // Phase 17 refunds (record only) and cash drawers. References are never copied.
+  "settlements.refund-recorded": {
+    category: "SETTLEMENTS",
+    entityType: "order_refund",
+    scope: "LOCATION",
+    fields: ["orderId", "orderNumber", "refundNumber", "tenderType", "amount", "taxAmount", "businessDate"],
+  },
+  "settlements.refund-voided": {
+    category: "SETTLEMENTS",
+    entityType: "order_refund",
+    scope: "LOCATION",
+    fields: ["status", "amount", "tenderType", "reason"],
+  },
+  "drawers.drawer-created": {
+    category: "SETTLEMENTS",
+    entityType: "cash_drawer",
+    scope: "LOCATION",
+    fields: ["code", "name", "active"],
+  },
+  "drawers.drawer-updated": {
+    category: "SETTLEMENTS",
+    entityType: "cash_drawer",
+    scope: "LOCATION",
+    fields: ["code", "name", "active"],
+  },
+  "drawers.setting-changed": {
+    category: "SETTLEMENTS",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: ["required"],
+  },
+  "drawers.session-opened": {
+    category: "SETTLEMENTS",
+    entityType: "cash_drawer_session",
+    scope: "LOCATION",
+    fields: ["drawerCode", "sessionNumber", "openingFloat"],
+  },
+  "drawers.session-closed": {
+    category: "SETTLEMENTS",
+    entityType: "cash_drawer_session",
+    scope: "LOCATION",
+    fields: ["sessionNumber", "openingFloat", "expectedAmount", "countedAmount", "variance"],
+  },
+  "drawers.paid-in": {
+    category: "SETTLEMENTS",
+    entityType: "cash_drawer_session",
+    scope: "LOCATION",
+    fields: ["movementId", "amount", "reason"],
+  },
+  "drawers.paid-out": {
+    category: "SETTLEMENTS",
+    entityType: "cash_drawer_session",
+    scope: "LOCATION",
+    fields: ["movementId", "amount", "reason"],
   },
 
   // Reporting

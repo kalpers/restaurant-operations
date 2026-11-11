@@ -190,9 +190,10 @@ describe("settlement authorization", () => {
 
     expect([...codesOf("SERVER")].sort()).toEqual([...server].sort());
     expect([...codesOf("BARTENDER")].sort()).toEqual([...server].sort());
-    expect(codesOf("MANAGER")).toHaveLength(10);
-    expect(codesOf("GENERAL_MANAGER")).toHaveLength(10);
-    expect(codesOf("OWNER")).toHaveLength(10);
+    // Phase 17 added settlements.refund and settlements.refund-void (managers and up).
+    expect(codesOf("MANAGER")).toHaveLength(12);
+    expect(codesOf("GENERAL_MANAGER")).toHaveLength(12);
+    expect(codesOf("OWNER")).toHaveLength(12);
 
     for (const role of ["HOST", "COOK", "WAIT_STAFF", "INVENTORY_MANAGER"]) {
       expect(codesOf(role)).toEqual([]);

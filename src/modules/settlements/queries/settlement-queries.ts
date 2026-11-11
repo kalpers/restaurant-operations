@@ -42,6 +42,8 @@ export type SettlementDetail = {
   id: string;
   status: SettlementStatus;
   orderAmountSnapshot: string;
+  /** Phase 17: the tax part of the snapshot. */
+  taxTotalSnapshot: string;
   tenderedAmount: string;
   tipAmount: string;
   changeDue: string;
@@ -68,8 +70,11 @@ export type OrderSettlementView = {
     serverName: string | null;
     itemSubtotal: string;
     discountTotal: string;
-    /** Post-discount, pre-tax: the amount settled. Tax isn't calculated. */
+    /** Post-discount, pre-tax. */
     subtotal: string;
+    /** Phase 17: tax, and subtotal plus tax (the amount settled). */
+    taxTotal: string;
+    totalDue: string;
     draftCount: number;
     fullyComped: boolean;
     items: {
@@ -158,6 +163,7 @@ export async function getOrderSettlementView(
       id: row.id,
       status: row.status as SettlementStatus,
       orderAmountSnapshot: row.orderAmountSnapshot,
+      taxTotalSnapshot: row.taxTotalSnapshot,
       tenderedAmount: row.tenderedAmount,
       tipAmount: row.tipAmount,
       changeDue: row.changeDue,
@@ -201,6 +207,8 @@ export async function getOrderSettlementView(
       itemSubtotal: order.itemSubtotal,
       discountTotal: order.discountTotal,
       subtotal: order.subtotal,
+      taxTotal: order.taxTotal,
+      totalDue: order.totalDue,
       draftCount: order.draftCount,
       fullyComped:
         compareDecimals(order.itemSubtotal, "0") > 0 && compareDecimals(order.subtotal, "0") === 0,

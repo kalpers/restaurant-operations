@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 
-import { kitchenTicketItems, kitchenTickets } from "@/db/schema";
+import { kitchenTicketItems, kitchenTickets, orderItems, orders } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 import { AuthorizationError } from "@/shared/errors/app-error";
@@ -51,8 +51,11 @@ export type QueueTicket = {
   batchNumber: number;
   attemptNumber: number;
   isRemake: boolean;
+  /** Phase 17: the course this ticket carries, and when it was fired (null while held). */
+  courseNumber: number;
+  firedAt: string | null;
   submittedAt: string;
-  /** Whole seconds since submission, from server time. Never stored. */
+  /** Whole seconds since the ticket was fired (Phase 17), from server time. Never stored. */
   ageSeconds: number;
   ageBand: AgeBand;
   status: KitchenItemStatus;
@@ -102,6 +105,11 @@ function toQueueItem(actor: Actor, ticket: TicketRow, item: ItemRow): QueueItem 
   };
 }
 
+/** Age counts from when the kitchen got the work (fired), not when it was sent. */
+function ageSecondsFrom(firedAt: Date | null, now: Date): number {
+  return firedAt ? Math.max(0, Math.floor((now.getTime() - firedAt.getTime()) / 1000)) : 0;
+}
+
 function toQueueTicket(actor: Actor, ticket: TicketRow, items: ItemRow[], now: Date): QueueTicket {
   const sorted = [...items].sort((a, b) =>
     compareQueue(
@@ -125,9 +133,11 @@ function toQueueTicket(actor: Actor, ticket: TicketRow, items: ItemRow[], now: D
     batchNumber: ticket.batchNumberSnapshot,
     attemptNumber: ticket.attemptNumber,
     isRemake: ticket.remakeId !== null,
+    courseNumber: ticket.courseNumber,
+    firedAt: ticket.firedAt?.toISOString() ?? null,
     submittedAt: ticket.submittedAt.toISOString(),
-    ageSeconds: Math.max(0, Math.floor((now.getTime() - ticket.submittedAt.getTime()) / 1000)),
-    ageBand: ageBand(ticket.submittedAt, now),
+    ageSeconds: ageSecondsFrom(ticket.firedAt, now),
+    ageBand: ticket.firedAt ? ageBand(ticket.firedAt, now) : "normal",
     status: deriveTicketStatus(items.map((item) => item.status as KitchenItemStatus)),
     items: sorted.map((item) => toQueueItem(actor, ticket, item)),
   };
@@ -140,6 +150,8 @@ function loadTickets(
 ) {
   const conditions = [
     eq(kitchenTickets.organizationId, actor.organizationId),
+    // Phase 17: held courses stay off the station queues until fired.
+    isNotNull(kitchenTickets.firedAt),
     eq(kitchenTickets.locationId, actor.locationId),
     inArray(kitchenTickets.stationTypeSnapshot, where.stationTypes),
   ];
@@ -188,7 +200,7 @@ export async function getStationQueue(
     .select()
     .from(kitchenTickets)
     .where(and(...conditions, inArray(kitchenTickets.id, activeTicketIds)))
-    .orderBy(asc(kitchenTickets.submittedAt), asc(kitchenTickets.id));
+    .orderBy(asc(kitchenTickets.firedAt), asc(kitchenTickets.id));
   const recentTickets = await executor
     .select()
     .from(kitchenTickets)
@@ -229,23 +241,30 @@ export type ExpoOrder = {
   pickupLabel: string | null;
   serverName: string | null;
   oldestSubmittedAt: string;
+  /** Seconds since the oldest fired ticket; 0 while everything is held. */
   ageSeconds: number;
   ageBand: AgeBand;
-  /** Overall readiness of the order's items across every station and attempt. */
+  /** Overall readiness of the order's fired items across every station and attempt. */
   status: KitchenItemStatus;
+  /** Phase 17: courses sent but not yet fired, lowest first. */
+  heldCourses: number[];
   items: {
     orderItemId: string;
     name: string;
     quantity: number;
     status: KitchenItemStatus;
+    /** Phase 17: the item's course is held (not yet fired). */
+    held: boolean;
+    courseNumber: number;
     stations: { code: string; name: string; status: KitchenItemStatus; attemptNumber: number }[];
   }[];
 };
 
 /**
- * EXPO: a read-only consolidation of the station work the actor may view, grouped by order,
- * with each item's overall readiness derived across all stations and attempts. It creates
- * no work and has no actions.
+ * EXPO: a read-only consolidation of the station work the actor may view, grouped by the
+ * order each item is on now (Phase 17: work follows a moved item), with each item's overall
+ * readiness derived across all stations and attempts. Held courses are listed apart. It
+ * creates no work and has no actions.
  */
 export async function getExpoView(
   executor: DatabaseExecutor,
@@ -258,66 +277,83 @@ export async function getExpoView(
     throw new AuthorizationError();
   }
 
-  const { conditions, activeTicketIds } = loadTickets(executor, actor, { stationTypes });
+  const scope = and(
+    eq(kitchenTickets.organizationId, actor.organizationId),
+    eq(kitchenTickets.locationId, actor.locationId),
+    inArray(kitchenTickets.stationTypeSnapshot, stationTypes),
+  );
   const activeOrderIds = executor
-    .selectDistinct({ id: kitchenTickets.orderId })
-    .from(kitchenTickets)
-    .where(and(...conditions, inArray(kitchenTickets.id, activeTicketIds)));
-  const tickets = await executor
-    .select()
-    .from(kitchenTickets)
-    .where(and(...conditions, inArray(kitchenTickets.orderId, activeOrderIds)))
-    .orderBy(asc(kitchenTickets.submittedAt), asc(kitchenTickets.id));
-  const items =
-    tickets.length === 0
-      ? []
-      : await executor
-          .select()
-          .from(kitchenTicketItems)
-          .where(inArray(kitchenTicketItems.ticketId, tickets.map((ticket) => ticket.id)))
-          .orderBy(asc(kitchenTicketItems.submittedAt), asc(kitchenTicketItems.id));
-  const byOrder = new Map<string, TicketRow[]>();
+    .selectDistinct({ id: orderItems.orderId })
+    .from(kitchenTicketItems)
+    .innerJoin(kitchenTickets, eq(kitchenTickets.id, kitchenTicketItems.ticketId))
+    .innerJoin(orderItems, eq(orderItems.id, kitchenTicketItems.orderItemId))
+    .where(and(scope, inArray(kitchenTicketItems.status, ACTIVE)));
+  const rows = await executor
+    .select({
+      item: kitchenTicketItems,
+      ticket: kitchenTickets,
+      orderId: orderItems.orderId,
+      orderNumber: orders.orderNumber,
+      orderType: orders.orderType,
+      courseNumber: orderItems.courseNumber,
+    })
+    .from(kitchenTicketItems)
+    .innerJoin(kitchenTickets, eq(kitchenTickets.id, kitchenTicketItems.ticketId))
+    .innerJoin(orderItems, eq(orderItems.id, kitchenTicketItems.orderItemId))
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(and(scope, inArray(orderItems.orderId, activeOrderIds)))
+    .orderBy(asc(kitchenTickets.submittedAt), asc(kitchenTicketItems.submittedAt), asc(kitchenTicketItems.id));
+  const byOrder = new Map<string, typeof rows>();
 
-  for (const ticket of tickets) {
-    byOrder.set(ticket.orderId, [...(byOrder.get(ticket.orderId) ?? []), ticket]);
+  for (const row of rows) {
+    byOrder.set(row.orderId, [...(byOrder.get(row.orderId) ?? []), row]);
   }
 
   const result: ExpoOrder[] = [];
 
-  for (const [orderId, orderTickets] of byOrder) {
-    const first = orderTickets[0]!;
-    const ticketById = new Map(orderTickets.map((ticket) => [ticket.id, ticket]));
-    const orderItemsWork = items.filter((item) => ticketById.has(item.ticketId));
-    const itemIds = [...new Set(orderItemsWork.map((item) => item.orderItemId))];
-    const rows = itemIds.map((orderItemId) => {
-      const work = orderItemsWork.filter((item) => item.orderItemId === orderItemId);
+  for (const [orderId, orderRows] of byOrder) {
+    const first = orderRows[0]!;
+    const fired = orderRows.filter((row) => row.ticket.firedAt !== null);
+    const oldestFired = fired
+      .map((row) => row.ticket.firedAt!)
+      .reduce<Date | null>((oldest, at) => (oldest === null || at < oldest ? at : oldest), null);
+    const itemIds = [...new Set(orderRows.map((row) => row.item.orderItemId))];
+    const items = itemIds.map((orderItemId) => {
+      const work = orderRows.filter((row) => row.item.orderItemId === orderItemId);
 
       return {
         orderItemId,
-        name: work[0]!.menuItemNameSnapshot,
-        quantity: work[0]!.quantity,
-        status: deriveTicketStatus(work.map((item) => item.status as KitchenItemStatus)),
-        stations: work.map((item) => ({
-          code: ticketById.get(item.ticketId)!.stationCodeSnapshot,
-          name: ticketById.get(item.ticketId)!.stationNameSnapshot,
-          status: item.status as KitchenItemStatus,
-          attemptNumber: item.attemptNumber,
+        name: work[0]!.item.menuItemNameSnapshot,
+        quantity: work[0]!.item.quantity,
+        status: deriveTicketStatus(work.map((row) => row.item.status as KitchenItemStatus)),
+        held: work.some((row) => row.ticket.firedAt === null && row.item.status === "NEW"),
+        courseNumber: work[0]!.courseNumber,
+        stations: work.map((row) => ({
+          code: row.ticket.stationCodeSnapshot,
+          name: row.ticket.stationNameSnapshot,
+          status: row.item.status as KitchenItemStatus,
+          attemptNumber: row.item.attemptNumber,
         })),
       };
     });
 
     result.push({
       orderId,
-      orderNumber: first.orderNumberSnapshot,
-      orderType: first.orderTypeSnapshot,
-      tableLabel: first.tableLabelSnapshot,
-      pickupLabel: first.pickupLabelSnapshot,
-      serverName: first.serverNameSnapshot,
-      oldestSubmittedAt: first.submittedAt.toISOString(),
-      ageSeconds: Math.max(0, Math.floor((now.getTime() - first.submittedAt.getTime()) / 1000)),
-      ageBand: ageBand(first.submittedAt, now),
-      status: deriveTicketStatus(orderItemsWork.map((item) => item.status as KitchenItemStatus)),
-      items: rows,
+      orderNumber: first.orderNumber,
+      orderType: first.orderType,
+      tableLabel: first.ticket.tableLabelSnapshot,
+      pickupLabel: first.ticket.pickupLabelSnapshot,
+      serverName: first.ticket.serverNameSnapshot,
+      oldestSubmittedAt: first.ticket.submittedAt.toISOString(),
+      ageSeconds: ageSecondsFrom(oldestFired, now),
+      ageBand: oldestFired ? ageBand(oldestFired, now) : "normal",
+      status: deriveTicketStatus(
+        (fired.length > 0 ? fired : orderRows).map((row) => row.item.status as KitchenItemStatus),
+      ),
+      heldCourses: [
+        ...new Set(orderRows.filter((row) => row.ticket.firedAt === null).map((row) => row.ticket.courseNumber)),
+      ].sort((a, b) => a - b),
+      items,
     });
   }
 
@@ -327,23 +363,31 @@ export async function getExpoView(
 export type OrderItemFulfillment = {
   status: KitchenItemStatus;
   attempts: number;
+  /** Phase 17: the item's course is held at its stations. */
+  held: boolean;
   /** The first-attempt station item a Remake would follow. */
   stations: { ticketItemId: string; code: string; status: KitchenItemStatus; attemptNumber: number }[];
 };
 
 /**
- * Fulfillment per Order Item, for the order screen. The order's own `orders.view` check is
- * the caller's; this exposes only statuses and station codes.
+ * Fulfillment per Order Item, for the order screen, found through the items on the order
+ * now (Phase 17: work follows a moved item). The order's own `orders.view` check is the
+ * caller's; this exposes only statuses and station codes.
  */
 export async function fulfillmentForOrder(
   executor: DatabaseExecutor,
   orderId: string,
 ): Promise<Map<string, OrderItemFulfillment>> {
   const rows = await executor
-    .select({ item: kitchenTicketItems, code: kitchenTickets.stationCodeSnapshot })
+    .select({
+      item: kitchenTicketItems,
+      code: kitchenTickets.stationCodeSnapshot,
+      firedAt: kitchenTickets.firedAt,
+    })
     .from(kitchenTicketItems)
     .innerJoin(kitchenTickets, eq(kitchenTickets.id, kitchenTicketItems.ticketId))
-    .where(eq(kitchenTicketItems.orderId, orderId))
+    .innerJoin(orderItems, eq(orderItems.id, kitchenTicketItems.orderItemId))
+    .where(eq(orderItems.orderId, orderId))
     .orderBy(asc(kitchenTicketItems.attemptNumber), asc(kitchenTickets.stationCodeSnapshot));
   const result = new Map<string, OrderItemFulfillment>();
 
@@ -353,6 +397,7 @@ export async function fulfillmentForOrder(
     result.set(orderItemId, {
       status: deriveTicketStatus(own.map((row) => row.item.status as KitchenItemStatus)),
       attempts: Math.max(...own.map((row) => row.item.attemptNumber)),
+      held: own.some((row) => row.firedAt === null && row.item.status === "NEW"),
       stations: own.map((row) => ({
         ticketItemId: row.item.id,
         code: row.code,

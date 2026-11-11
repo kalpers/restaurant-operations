@@ -87,7 +87,7 @@ export async function DashboardOverview({
         </div>
       ))}
       <p className="text-sm text-neutral-600">
-        Sales are closed orders before tax. Labor is scheduled hours from published schedules. Up and down arrows show
+        Sales are closed orders before tax; tax is shown separately. Labor is scheduled hours from published schedules. Up and down arrows show
         direction only; whether a change is good depends on the figure.
       </p>
     </div>

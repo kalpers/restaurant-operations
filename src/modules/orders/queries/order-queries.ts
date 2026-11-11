@@ -36,7 +36,12 @@ export type OrderSummary = {
   openedAt: string;
   itemSubtotal: string;
   discountTotal: string;
+  /** Post-discount, pre-tax. */
   subtotal: string;
+  /** Phase 17: tax on the submitted items. */
+  taxTotal: string;
+  /** Phase 17: subtotal plus tax, what the guest owes. */
+  totalDue: string;
   draftCount: number;
   sentCount: number;
   version: number;
@@ -112,6 +117,8 @@ export async function readOrderSummaries(
     itemSubtotal: order.itemSubtotal,
     discountTotal: order.discountTotal,
     subtotal: order.subtotal,
+    taxTotal: order.taxTotal,
+    totalDue: order.totalDue,
     draftCount,
     sentCount,
     version: order.version,
@@ -135,6 +142,9 @@ export type OrderDetail = OrderSummary & {
     specialInstructions: string | null;
     kitchenInstructions: string | null;
     batchNumber: number | null;
+    /** Phase 17: the item's course, and its tax rate snapshot (null when untaxed or a draft). */
+    courseNumber: number;
+    taxRate: string | null;
     submittedAt: string | null;
     voidedAt: string | null;
     voidReason: string | null;
@@ -262,6 +272,8 @@ export async function readOrderDetail(
       specialInstructions: item.specialInstructions,
       kitchenInstructions: item.kitchenInstructionsSnapshot,
       batchNumber: batchNumber ?? null,
+      courseNumber: item.courseNumber,
+      taxRate: item.taxRateSnapshot,
       submittedAt: item.submittedAt?.toISOString() ?? null,
       voidedAt: item.voidedAt?.toISOString() ?? null,
       voidReason: item.voidReason,

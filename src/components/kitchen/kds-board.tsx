@@ -25,6 +25,8 @@ const QUEUE_EVENTS = [
   "kitchen.item-status-changed",
   "kitchen.item-ready",
   "kitchen.ticket-ready",
+  // Phase 17: a fired course joins the queue.
+  "kitchen.course-fired",
 ];
 
 const ACTION_LABEL = { start: "Start", ready: "Ready", complete: "Bump" } as const;
@@ -142,6 +144,7 @@ function TicketCard({ ticket }: { ticket: QueueTicket }) {
           </p>
           <p className="text-sm opacity-90">
             {ticket.stationName} · Round {ticket.batchNumber}
+            {ticket.courseNumber > 1 && ` · Course ${ticket.courseNumber}`}
             {ticket.serverName && ` · ${ticket.serverName}`}
           </p>
         </div>

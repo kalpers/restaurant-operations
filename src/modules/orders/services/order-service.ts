@@ -55,7 +55,19 @@ export async function createOrder(
 ): Promise<{ id: string; orderNumber: number; version: number }> {
   assertPermission(actor, "orders.create");
 
-  return withTransaction(database, async (transaction) => {
+  return withTransaction(database, (transaction) => createOrderInTransaction(transaction, actor, input));
+}
+
+/**
+ * The body of `createOrder`, for a caller already inside a transaction (Phase 17: a "new
+ * check" opened while moving items). The caller checks `orders.create` itself.
+ */
+export async function createOrderInTransaction(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  input: CreateOrderInput,
+): Promise<{ id: string; orderNumber: number; version: number }> {
+  {
     const now = new Date();
     const location = await readOrderLocation(transaction, actor.locationId, now);
 
@@ -134,5 +146,5 @@ export async function createOrder(
     });
 
     return order!;
-  });
+  }
 }

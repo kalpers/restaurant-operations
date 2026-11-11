@@ -25,6 +25,8 @@ export type DraftItemInput = {
   quantity: number;
   selections: ProposedSelection[];
   specialInstructions: string | null;
+  /** Phase 17: course 1 to 5; omitted means course 1 (or unchanged on an edit). */
+  courseNumber?: number;
 };
 
 type Versioned = { id: string; version: number };
@@ -83,6 +85,10 @@ function normalize(input: DraftItemInput): DraftItemInput {
     throw new BusinessRuleError("INVALID_QUANTITY", "Enter a whole quantity from 1 to 99.");
   }
 
+  if (input.courseNumber !== undefined && (!Number.isInteger(input.courseNumber) || input.courseNumber < 1 || input.courseNumber > 5)) {
+    throw new BusinessRuleError("INVALID_COURSE", "Choose a course from 1 to 5.");
+  }
+
   return { ...input, specialInstructions: input.specialInstructions?.trim() || null };
 }
 
@@ -113,6 +119,7 @@ export async function addDraftItem(
         menuItemId: entry.menuItemId,
         quantity: entry.quantity,
         specialInstructions: entry.specialInstructions,
+        courseNumber: entry.courseNumber ?? 1,
         addedByUserId: actor.userId,
         ...draftColumns(sellable, entry.quantity),
       })
@@ -161,6 +168,7 @@ export async function updateDraftItem(
       .set({
         quantity: entry.quantity,
         specialInstructions: entry.specialInstructions,
+        ...(entry.courseNumber === undefined ? {} : { courseNumber: entry.courseNumber }),
         ...draftColumns(sellable, entry.quantity),
         version: sql`${orderItems.version} + 1`,
         updatedAt: new Date(),

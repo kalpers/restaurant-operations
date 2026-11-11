@@ -49,7 +49,8 @@ export async function createLocationFixture(
     })
     .returning({ id: locations.id });
 
-  await database.insert(locationSettings).values({ locationId: location!.id });
+  // Phase 17: fixtures opt out of the drawer requirement; drawer tests turn it on.
+  await database.insert(locationSettings).values({ locationId: location!.id, cashDrawerRequired: false });
 
   return location!.id;
 }

@@ -128,8 +128,8 @@ describe("Phase 13: opt-in validation seed", () => {
   });
 
   it("closes both canonical-burger checks, each settled for exactly the order amount", async () => {
-    const rows = await client<{ customer: string | null; status: string; subtotal: string; snapshot: string; tendered: string; settlement: string }[]>`
-      SELECT o.customer_name AS customer, o.status, o.subtotal::text, s.order_amount_snapshot::text AS snapshot,
+    const rows = await client<{ customer: string | null; status: string; subtotal: string; total_due: string; snapshot: string; tendered: string; settlement: string }[]>`
+      SELECT o.customer_name AS customer, o.status, o.subtotal::text, o.total_due::text, s.order_amount_snapshot::text AS snapshot,
              s.tendered_amount::text AS tendered, s.status AS settlement
       FROM orders o JOIN order_settlements s ON s.order_id = o.id
       ORDER BY o.order_type`;
@@ -139,8 +139,9 @@ describe("Phase 13: opt-in validation seed", () => {
 
     for (const row of rows) {
       expect(row).toMatchObject({ status: "CLOSED", settlement: "COMPLETED" });
-      expect(row.snapshot).toBe(row.subtotal);
-      expect(row.tendered).toBe(row.subtotal);
+      // Phase 17: settlement reconciles to the total due (subtotal plus tax).
+      expect(row.snapshot).toBe(row.total_due);
+      expect(row.tendered).toBe(row.total_due);
     }
 
     expect(instructions.map((row) => row.text)).toEqual([

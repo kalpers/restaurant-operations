@@ -19,7 +19,12 @@ export type SentItemForTickets = {
   /** The immutable routing snapshot written at SEND. */
   prepStationIds: readonly string[];
   modifiers: readonly ModifierSnapshot[];
+  /** Phase 17: the item's course, 1 to 5. */
+  courseNumber: number;
 };
+
+/** Phase 17 SEND option: fire everything now, or only the lowest course in the round. */
+export type FireMode = "ALL" | "FIRST_COURSE";
 
 export type TicketGenerationInput = {
   organizationId: string;
@@ -35,11 +40,13 @@ export type TicketGenerationInput = {
   };
   batch: { id: string; batchNumber: number; sentAt: Date; businessDate: string };
   items: readonly SentItemForTickets[];
+  fire?: FireMode;
 };
 
 /**
  * Creates the station work for one send batch, inside the SEND transaction (approved
- * policies 2, 3, 5 and 9): one ticket per batch and station, one NEW item per routed Order
+ * policies 2, 3, 5 and 9; Phase 17 D22-D23): one ticket per batch, station and course; with
+ * `FIRST_COURSE`, courses above the round's lowest are held. One NEW item per routed Order
  * Item, each with its initial history row, and a `kitchen.ticket-created` outbox event per
  * ticket. Routing comes only from the snapshot; EXPO stations and empty routes create no
  * work. Database uniqueness on (batch, station) and (item, station, attempt) makes a
@@ -78,8 +85,19 @@ export async function createTicketsForSendBatch(
   const at = input.batch.sentAt;
   const ticketIds: string[] = [];
   const events: OutboxEventInput[] = [];
+  const firstCourse = Math.min(...input.items.map((item) => item.courseNumber));
+  const tickets = [...groups].flatMap(([stationId, stationItems]) =>
+    [...new Set(stationItems.map((item) => item.courseNumber))]
+      .sort((a, b) => a - b)
+      .map((courseNumber) => ({
+        stationId,
+        courseNumber,
+        held: input.fire === "FIRST_COURSE" && courseNumber > firstCourse,
+        items: stationItems.filter((item) => item.courseNumber === courseNumber),
+      })),
+  );
 
-  for (const [stationId, items] of groups) {
+  for (const { stationId, courseNumber, held, items } of tickets) {
     const station = stations.get(stationId)!;
     const [ticket] = await transaction
       .insert(kitchenTickets)
@@ -101,6 +119,9 @@ export async function createTicketsForSendBatch(
         tableLabelSnapshot: tables.length > 0 ? tables.join("+") : null,
         pickupLabelSnapshot: input.order.customerName,
         serverNameSnapshot: server ? displayName(server.first, server.last, server.preferred) : null,
+        courseNumber,
+        heldAt: held ? at : null,
+        firedAt: held ? null : at,
         createdAt: at,
       })
       .returning({ id: kitchenTickets.id });
@@ -150,6 +171,8 @@ export async function createTicketsForSendBatch(
         prepStationId: stationId,
         stationType: station.stationType,
         attemptNumber: 1,
+        courseNumber,
+        held,
       },
       occurredAt: at,
     });

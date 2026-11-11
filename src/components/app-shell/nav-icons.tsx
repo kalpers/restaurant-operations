@@ -1,5 +1,7 @@
 import {
   Activity,
+  Percent,
+  Wallet,
   BadgePercent,
   BookOpen,
   Boxes,
@@ -79,6 +81,8 @@ export const NAV_ICONS: Record<NavigationIcon, LucideIcon> = {
   roles: UserCog,
   permissions: KeyRound,
   system: Activity,
+  drawers: Wallet,
+  taxes: Percent,
   tables: LayoutGrid,
   sections: Square,
 };

@@ -48,6 +48,12 @@ import { assignServerToSection } from "../src/modules/restaurant/services/sectio
 import { cleanTable } from "../src/modules/restaurant/services/table-service";
 import { addRecurringAvailability } from "../src/modules/scheduling/services/availability-service";
 import { assignEmployee, createPeriod, createShift, publishPeriod } from "../src/modules/scheduling/services/schedule-service";
+import {
+  createDrawer,
+  getDrawerSetting,
+  listDrawers,
+  openDrawerSession,
+} from "../src/modules/settlements/services/drawer-service";
 import { openSettlement, recordTender } from "../src/modules/settlements/services/settlement-service";
 import { addDays, localDateOf, localTimeOf } from "../src/shared/time/zoned-time";
 import { completeSettlement } from "../src/workflows/close-order/complete-settlement";
@@ -395,6 +401,25 @@ async function canonicalBurger(database: Database, actor: Actor): Promise<Burger
   };
 }
 
+/**
+ * Phase 17: where the location requires a drawer for cash, the fixture's cash goes into an
+ * open "VALIDATION" drawer session, created once and reused on a second run.
+ */
+async function validationDrawerSession(database: Database, actor: Actor): Promise<string | null> {
+  if (!(await getDrawerSetting(database, actor)).required) {
+    return null;
+  }
+
+  const drawer =
+    (await listDrawers(database, actor)).find((entry) => entry.code === "VALIDATION") ??
+    { ...(await createDrawer(database, actor, { code: "VALIDATION", name: "Validation register" })), openSession: null };
+
+  return (
+    drawer.openSession?.id ??
+    (await openDrawerSession(database, actor, drawer.id, { openingFloat: "100.00", idempotencyKey: key() })).id
+  );
+}
+
 /** Adds the canonical burger, sends it, runs it through the kitchen and settles in cash. */
 async function sellAndSettle(database: Database, actor: Actor, order: { id: string; version: number }, burger: Burger) {
   const drafted = await addDraftItem(database, actor, order.id, {
@@ -431,6 +456,7 @@ async function sellAndSettle(database: Database, actor: Actor, order: { id: stri
     authorizationReference: null,
     otherDescription: null,
     failureReason: null,
+    cashDrawerSessionId: await validationDrawerSession(database, actor),
   });
   const [settlement] = await database.select({ version: settlements.version }).from(settlements).where(eq(settlements.id, opened.settlementId));
 
