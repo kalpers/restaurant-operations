@@ -23,7 +23,7 @@ import { AuthorizationError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import { allergenList, type AllergenList } from "../../fixtures/allergen-fixtures";
-import { actorWith } from "../../fixtures/employee-fixtures";
+import { actorWith, clearRestaurantData } from "../../fixtures/employee-fixtures";
 import { clearOrderData, createOrderScenario, type OrderScenario } from "../../fixtures/order-fixtures";
 
 // Phase 21 policies 1-5, 7, 8, 19, 20: guest profiles, linking, visit allergies, merge, erase,
@@ -287,5 +287,22 @@ describe("guest profiles (Phase 21)", () => {
     expect(text).not.toContain("example.com");
     expect(text).not.toContain("0100199");
     expect(text).not.toContain("Prefers booth");
+  });
+
+  it("clears merged profiles without violating the merge constraint", async () => {
+    const manager = await actorWith(database(), scenario, ["guests.view", "guests.manage", "guests.merge"]);
+    const kept = await createGuestProfile(database(), host, fields());
+    const duplicate = await createGuestProfile(database(), host, fields({ displayName: "Ana G." }));
+
+    await mergeGuestProfiles(database(), manager, {
+      duplicateProfileId: duplicate.id,
+      duplicateVersion: 1,
+      keptProfileId: kept.id,
+      keptVersion: 1,
+      reason: "Same guest",
+    });
+
+    await expect(clearRestaurantData(database())).resolves.toBeUndefined();
+    expect(await database().select().from(guestProfiles)).toEqual([]);
   });
 });
