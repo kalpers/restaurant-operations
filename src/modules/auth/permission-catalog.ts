@@ -88,6 +88,8 @@ export const PERMISSION_CATALOG = [
   { code: "prep-stations.manage", name: "Manage preparation stations and routing", category: "Menu" },
   { code: "tax.view", name: "View tax categories and rates", category: "Menu" },
   { code: "tax.manage", name: "Manage tax categories, rates and the location tax switch", category: "Menu" },
+  // Phase 20 (policy 16, D15).
+  { code: "tax.exempt", name: "Mark a check tax exempt", category: "Menu" },
 
   { code: "recipes.view", name: "View recipes", category: "Recipes" },
   { code: "recipes.edit", name: "Edit and publish recipes", category: "Recipes" },

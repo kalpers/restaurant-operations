@@ -29,6 +29,7 @@ import { securitySystemPermissionsSeed } from "./security-system-permissions";
 import { securityChecksCloseoutPermissionsSeed } from "./checks-closeout-permissions";
 import { securityLaborTipsPermissionsSeed } from "./labor-tips-permissions";
 import { securityMenuStockPermissionsSeed } from "./menu-stock-permissions";
+import { securityServicePolishPermissionsSeed } from "./service-polish-permissions";
 
 /** Seeds run in this order. Later phases register their seeds here. */
 export const seeds: readonly Seed[] = [
@@ -54,4 +55,5 @@ export const seeds: readonly Seed[] = [
   securityChecksCloseoutPermissionsSeed,
   securityLaborTipsPermissionsSeed,
   securityMenuStockPermissionsSeed,
+  securityServicePolishPermissionsSeed,
 ];

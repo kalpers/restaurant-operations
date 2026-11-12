@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 
 import type { ReportSection } from "../types";
 
-import { minutes, rowsOf, type ReportContext } from "./report-context";
+import { minutes, rowsOf, SOLD_ITEM_STATUSES, type ReportContext } from "./report-context";
 
 const DISPOSITION_LABEL: Record<string, string> = {
   UNPREPARED: "Unprepared (stock returned)",
@@ -36,7 +36,7 @@ export async function orderSections(context: ReportContext): Promise<ReportSecti
       WITH scoped AS (
         SELECT o.id, o.order_type, o.status, o.opened_at, o.closed_at,
                (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi
-                 WHERE oi.order_id = o.id AND oi.status = 'SUBMITTED') AS items
+                 WHERE oi.order_id = o.id AND oi.status IN ${SOLD_ITEM_STATUSES}) AS items
         FROM orders o WHERE ${scope}
       )
       SELECT order_type,

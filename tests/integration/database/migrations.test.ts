@@ -82,12 +82,14 @@ const EXPECTED_TABLES = [
   "public.modifier_group_modifiers",
   "public.modifier_groups",
   "public.modifier_inventory_effects",
+  "public.modifier_outages",
   "public.modifiers",
   "public.notifications",
   "public.order_discounts",
   "public.order_item_discounts",
   "public.order_item_inventory_consumption",
   "public.order_item_modifiers",
+  "public.order_item_shares",
   "public.order_item_status_history",
   "public.order_item_transfers",
   "public.order_item_voids",
@@ -147,6 +149,7 @@ const EXPECTED_TABLES = [
   "public.time_entry_adjustments",
   "public.time_entry_breaks",
   "public.time_off_requests",
+  "public.tip_declarations",
   "public.tip_distribution_lines",
   "public.tip_distributions",
   "public.tip_pool_rule_positions",
@@ -163,7 +166,9 @@ const journal = JSON.parse(
   readFileSync(path.join(MIGRATIONS_FOLDER, "meta", "_journal.json"), "utf8"),
 ) as { entries: unknown[] };
 
-describe("reconstruction from checked-in migrations", () => {
+// Each upgrade test rebuilds a database and replays every migration, which takes
+// close to Vitest's 5 s default on a busy machine.
+describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () => {
   let databaseUrl: string;
 
   async function query<Row extends Record<string, unknown>>(
@@ -239,7 +244,9 @@ describe("reconstruction from checked-in migrations", () => {
       "employee_position_compensation_no_overlap",
       "employee_positions_no_overlap",
       "menu_availability_no_overlap",
+      "menu_item_outages_no_overlap",
       "menu_item_prices_no_overlap",
+      "modifier_outages_no_overlap",
       "recipe_versions_no_overlap",
       "schedule_periods_no_overlap",
       "tax_rates_no_overlap",
@@ -516,6 +523,36 @@ describe("reconstruction from checked-in migrations", () => {
       { tgname: "menu_item_outages_guard" },
       { tgname: "menu_item_stock_overrides_guard" },
       { tgname: "notifications_guard_trigger" },
+    ]);
+  });
+
+  it("upgrades a Phase 19 database in place: new Phase 20 tables start empty, defaults apply", async () => {
+    // 0000-0038 are Phase 19 and earlier; 0039-0047 are Phase 20.
+    await upgradeFromMigrationIndex(38);
+
+    for (const table of ["modifier_outages", "order_item_shares", "tip_declarations"]) {
+      expect(await query(`SELECT * FROM ${table}`)).toEqual([]);
+    }
+
+    expect(await query("SELECT running_low_portions FROM location_settings")).toEqual([{ running_low_portions: 5 }]);
+    expect(
+      await query(
+        "SELECT column_name, column_default FROM information_schema.columns WHERE (table_name, column_name) IN (('orders', 'included_tax_total'), ('orders', 'tax_exempt'), ('tax_rates', 'price_includes_tax'), ('order_refunds', 'tip_amount')) ORDER BY column_name",
+      ),
+    ).toEqual([
+      { column_name: "included_tax_total", column_default: "0.00" },
+      { column_name: "price_includes_tax", column_default: "false" },
+      { column_name: "tax_exempt", column_default: "false" },
+      { column_name: "tip_amount", column_default: "0.00" },
+    ]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname IN ('modifier_outages_guard', 'order_item_shares_guard_trigger', 'order_item_shares_order_open_trigger') ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "modifier_outages_guard" },
+      { tgname: "order_item_shares_guard_trigger" },
+      { tgname: "order_item_shares_order_open_trigger" },
     ]);
   });
 

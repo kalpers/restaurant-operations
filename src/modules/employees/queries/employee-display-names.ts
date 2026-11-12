@@ -64,3 +64,25 @@ export async function findDisplayNamesByUser(
       .map((row) => [row.userId!, `${row.preferredName ?? row.firstName} ${row.lastName}`]),
   );
 }
+
+/**
+ * Employee ID to linked user ID, for employees who have a login (Phase 20: notification
+ * recipients). Employees without a user are left out.
+ */
+export async function findLinkedUserIds(
+  executor: DatabaseExecutor,
+  input: { organizationId: string; employeeIds: readonly string[] },
+): Promise<Map<string, string>> {
+  const ids = [...new Set(input.employeeIds)];
+
+  if (ids.length === 0) {
+    return new Map();
+  }
+
+  const rows = await executor
+    .select({ id: employees.id, userId: employees.userId })
+    .from(employees)
+    .where(and(inArray(employees.id, ids), eq(employees.organizationId, input.organizationId)));
+
+  return new Map(rows.flatMap((row) => (row.userId ? [[row.id, row.userId] as const] : [])));
+}

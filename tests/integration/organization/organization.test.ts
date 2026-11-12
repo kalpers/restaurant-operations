@@ -8,6 +8,7 @@ import {
   locations,
   locationSettings,
   organizations,
+  auditEvents,
   restaurantAreas,
 } from "@/db/schema";
 import {
@@ -23,7 +24,7 @@ import {
 import { NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
-import { createOrganizationFixture } from "../../fixtures/auth-fixtures";
+import { actorAt, createOrganizationFixture, createUserFixture } from "../../fixtures/auth-fixtures";
 
 const ABSENT_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -121,9 +122,19 @@ describe("organization domain", () => {
     ]);
   });
 
-  it("updates settings, storing the cutoff as a time", async () => {
+  const ownerAt = async (locationId: string) => {
+    const owner = await createUserFixture(getDatabase(), {
+      assignments: [{ roleId: fixture.ownerRole, locationId }],
+    });
+
+    return actorAt(getDatabase(), owner.id, locationId, "locations.manage");
+  };
+
+  it("updates settings, storing the cutoff as a time, and audits only what changed", async () => {
+    const actor = await ownerAt(fixture.locationA);
     const updated = await updateLocationSettings(
       getDatabase(),
+      actor,
       fixture.locationA,
       { ...settingsChanges, expectedVersion: 1 },
     );
@@ -134,11 +145,26 @@ describe("organization domain", () => {
       allowReservations: false,
       version: 2,
     });
+
+    const [audit] = await getDatabase()
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.entityId, fixture.locationA));
+
+    expect(audit).toMatchObject({
+      action: "organization.location-settings-changed",
+      category: "ORGANIZATION",
+      locationId: fixture.locationA,
+    });
+    expect(audit!.after).toMatchObject({ businessDayCutoff: "03:30:00", allowReservations: false });
+    expect(Object.keys(audit!.after as object)).not.toContain("allowWalkIns");
   });
 
   it("rejects a stale settings version", async () => {
+    const actor = await ownerAt(fixture.locationA);
+
     await expect(
-      updateLocationSettings(getDatabase(), fixture.locationA, {
+      updateLocationSettings(getDatabase(), actor, fixture.locationA, {
         ...settingsChanges,
         expectedVersion: 2,
       }),

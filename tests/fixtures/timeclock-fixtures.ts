@@ -141,3 +141,41 @@ export async function insertClosedEntry(
     return entry!.id;
   });
 }
+
+/** Phase 20: an OPEN entry clocked in at a past instant, such as a missed clock-out. */
+export async function insertOpenEntry(
+  database: Database,
+  actor: Actor,
+  input: { employeeId: string; positionId: string; businessDate: string; clockInAt: Date },
+): Promise<string> {
+  return database.transaction(async (transaction) => {
+    const [record] = await transaction
+      .insert(idempotencyRecords)
+      .values({
+        organizationId: actor.organizationId,
+        scope: "timeclock.clock-in",
+        idempotencyKey: key(),
+        actorUserId: actor.userId,
+        requestFingerprint: "fixture",
+        response: {},
+      })
+      .returning({ id: idempotencyRecords.id });
+    const [entry] = await transaction
+      .insert(timeEntries)
+      .values({
+        organizationId: actor.organizationId,
+        locationId: actor.locationId,
+        employeeId: input.employeeId,
+        positionId: input.positionId,
+        businessDate: input.businessDate,
+        clockInAt: input.clockInAt,
+        clockInRecordedAt: input.clockInAt,
+        clockInSource: "MANAGER",
+        clockInByUserId: actor.userId,
+        clockInIdempotencyRecordId: record!.id,
+      })
+      .returning({ id: timeEntries.id });
+
+    return entry!.id;
+  });
+}

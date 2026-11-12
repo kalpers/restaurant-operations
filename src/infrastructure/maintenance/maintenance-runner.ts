@@ -25,12 +25,15 @@ export function startMaintenanceRunner(): void {
     try {
       const result = await runMaintenance(getDatabase());
 
-      if (!result.skipped && (result.outboxEventsDeleted > 0 || result.loginThrottlesDeleted > 0)) {
+      if (
+        !result.skipped &&
+        (result.outboxEventsDeleted > 0 || result.loginThrottlesDeleted > 0 || result.notificationsCreated > 0)
+      ) {
         writeLog({
           severity: "info",
           module: "maintenance",
           operation: "run",
-          message: `Maintenance purged ${result.outboxEventsDeleted} published outbox events and ${result.loginThrottlesDeleted} expired sign-in throttles.`,
+          message: `Maintenance purged ${result.outboxEventsDeleted} published outbox events and ${result.loginThrottlesDeleted} expired sign-in throttles, and sent ${result.notificationsCreated} notifications.`,
         });
       }
     } catch (error) {

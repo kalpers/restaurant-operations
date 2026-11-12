@@ -41,6 +41,8 @@ export type SchedulingRuleRow = {
   /** Phase 18 time clock settings. Not used by scheduling decisions. */
   overtimeMultiplier: string;
   lateClockInGraceMinutes: number;
+  /** Phase 20 (policy 19): daily overtime threshold in hours, or null when off. */
+  dailyOvertimeThreshold: string | null;
 };
 
 /** Used for a location that has no rules row yet. Matches the seeded defaults. */
@@ -60,6 +62,7 @@ export const DEFAULT_RULE_ROW: SchedulingRuleRow = {
   weekStartDay: 1,
   overtimeMultiplier: "1.50",
   lateClockInGraceMinutes: 5,
+  dailyOvertimeThreshold: null,
 };
 
 export function toRuleSet(row: SchedulingRuleRow): SchedulingRuleSet {

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
 import { AutoRefresh } from "@/components/timeclock/auto-refresh";
+import { BreakEditor } from "@/components/timeclock/break-editor";
 import { clockTime, hoursFrom, OVERTIME_LABEL, OVERTIME_TONE } from "@/components/timeclock/format";
 import { ManagerClockInForm } from "@/components/timeclock/manager-clock-in-form";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,7 @@ function who(entry: BoardEntry): string {
 function AdjustForm({ entry, positions }: { entry: BoardEntry; positions: { id: string; name: string }[] }) {
   return (
     <details>
-      <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium">Adjust or void</summary>
+      <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium">Adjust, edit breaks or void</summary>
       <div className="grid gap-4 md:grid-cols-2">
         <EntityForm
           key={`adjust-${entry.id}-${entry.version}`}
@@ -57,6 +58,9 @@ function AdjustForm({ entry, positions }: { entry: BoardEntry; positions: { id: 
           hidden={{ expectedVersion: entry.version }}
           fields={[{ name: "reason", label: "Why void it?", required: true }]}
         />
+        <div className="md:col-span-2">
+          <BreakEditor key={`breaks-${entry.id}-${entry.version}`} entry={entry} />
+        </div>
       </div>
     </details>
   );

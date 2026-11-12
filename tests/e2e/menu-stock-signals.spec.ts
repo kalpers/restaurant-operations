@@ -142,7 +142,8 @@ test("the new report sections render for the location", async ({ browser }) => {
   await expect(owner.getByRole("heading", { name: "Voids, comps and discounts by employee" })).toBeVisible();
   await owner.goto("/reports/inventory");
   await expect(owner.getByRole("heading", { name: "86 history" })).toBeVisible();
-  await expect(owner.getByText("Fryer down")).toBeVisible();
+  // A role query skips the hidden copy Next.js streams in while the report section loads.
+  await expect(owner.getByRole("cell", { name: "Fryer down" })).toBeVisible();
 
   const csv = await owner.request.get(
     `/api/reports/menu/export?locationId=${setup.locationId}&from=${new Date().toISOString().slice(0, 10)}&to=${new Date().toISOString().slice(0, 10)}`,

@@ -214,6 +214,32 @@ export const AUDIT_ACTIONS = {
     scope: "LOCATION",
     fields: ["discountId", "orderItemId", "definitionCode", "isComp", "amount", "reason"],
   },
+  // Phase 20 (policy 16): tax-exempt checks. The certificate reference is never recorded.
+  "tax.exemption-set": {
+    category: "ORDERS",
+    entityType: "order",
+    scope: "LOCATION",
+    fields: ["taxTotal", "totalDue", "orderNumber", "reason", "hasReference"],
+  },
+  "tax.exemption-cleared": {
+    category: "ORDERS",
+    entityType: "order",
+    scope: "LOCATION",
+    fields: ["taxTotal", "totalDue", "orderNumber"],
+  },
+  // Phase 20 (policy 17): one sent item shared between checks, and a share voided.
+  "orders.item-split": {
+    category: "ORDERS",
+    entityType: "order",
+    scope: "LOCATION",
+    fields: ["orderItemId", "fromOrderNumber", "shareCount", "lineTotal", "toOrderNumbers"],
+  },
+  "orders.share-voided": {
+    category: "ORDERS",
+    entityType: "order",
+    scope: "LOCATION",
+    fields: ["shareId", "orderItemId", "amount", "reason"],
+  },
   "orders.items-moved": {
     category: "ORDERS",
     entityType: "order",
@@ -251,7 +277,20 @@ export const AUDIT_ACTIONS = {
     category: "MENU",
     entityType: "menu_item",
     scope: "LOCATION",
-    fields: ["itemCode", "outageId", "reason"],
+    fields: ["itemCode", "outageId", "reason", "startsAt", "endsAt"],
+  },
+  // Phase 20 modifier 86 (policy 3).
+  "menu.modifier-marked-out": {
+    category: "MENU",
+    entityType: "modifier",
+    scope: "LOCATION",
+    fields: ["modifierCode", "outageId", "reason", "startsAt", "endsAt"],
+  },
+  "menu.modifier-restored": {
+    category: "MENU",
+    entityType: "modifier",
+    scope: "LOCATION",
+    fields: ["modifierCode", "outageId"],
   },
   "menu.item-restored": {
     category: "MENU",
@@ -275,7 +314,26 @@ export const AUDIT_ACTIONS = {
     category: "MENU",
     entityType: "location",
     scope: "LOCATION",
-    fields: ["enabled"],
+    fields: ["enabled", "runningLowPortions"],
+  },
+  // Phase 20 (policy 6): general location settings. Settings with their own action
+  // (tax, cash drawers, auto-86) keep it.
+  "organization.location-settings-changed": {
+    category: "ORGANIZATION",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: [
+      "businessDayCutoff",
+      "defaultTableTurnMinutes",
+      "defaultReservationDurationMinutes",
+      "defaultWaitQuoteMinutes",
+      "allowWalkIns",
+      "allowReservations",
+      "allowTakeout",
+      "inventoryEnabled",
+      "schedulingEnabled",
+      "kitchenDisplayEnabled",
+    ],
   },
   // Phase 17 tax configuration. The rate percentage is configuration, not pay.
   "tax.category-created": {
@@ -294,7 +352,7 @@ export const AUDIT_ACTIONS = {
     category: "MENU",
     entityType: "tax_category",
     scope: "LOCATION",
-    fields: ["categoryCode", "recordId", "percent", "effectiveFrom"],
+    fields: ["categoryCode", "recordId", "percent", "priceIncludesTax", "effectiveFrom"],
   },
   "tax.location-setting-changed": {
     category: "MENU",
@@ -322,6 +380,13 @@ export const AUDIT_ACTIONS = {
   },
 
   // Inventory
+  // Phase 20 (policy 6): stocking an item at a location, or changing its levels or supplier.
+  "inventory.item-location-changed": {
+    category: "INVENTORY",
+    entityType: "inventory_item",
+    scope: "LOCATION",
+    fields: ["itemCode", "parLevel", "reorderLevel", "reorderTarget", "preferredSupplierItemId", "active"],
+  },
   "inventory.adjusted": {
     category: "INVENTORY",
     entityType: "inventory_item",
@@ -397,7 +462,7 @@ export const AUDIT_ACTIONS = {
     category: "SETTLEMENTS",
     entityType: "order_refund",
     scope: "LOCATION",
-    fields: ["orderId", "orderNumber", "refundNumber", "tenderType", "amount", "taxAmount", "businessDate"],
+    fields: ["orderId", "orderNumber", "refundNumber", "tenderType", "amount", "taxAmount", "tipAmount", "businessDate"],
   },
   "settlements.refund-voided": {
     category: "SETTLEMENTS",
@@ -466,6 +531,13 @@ export const AUDIT_ACTIONS = {
     entityType: "tip_distribution",
     scope: "LOCATION",
     fields: ["businessDate", "poolTotal", "reason"],
+  },
+  // Phase 20 (policy 20): a manager's cash tip declaration. Never the amount.
+  "tips.declaration-recorded": {
+    category: "SETTLEMENTS",
+    entityType: "tip_declaration",
+    scope: "LOCATION",
+    fields: ["employeeId", "businessDate", "changed"],
   },
 
   // Reporting

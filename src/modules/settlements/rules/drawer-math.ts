@@ -13,7 +13,8 @@ export type DrawerFacts = {
   /** Cash tenders recorded into the session, any status; only RECORDED count. */
   tenders: readonly { status: string; amount: string; tipAmount: string }[];
   movements: readonly { movementType: string; amount: string }[];
-  refunds: readonly { status: string; amount: string }[];
+  /** Phase 20: `tipAmount` is a tip handed back; it leaves the drawer too. */
+  refunds: readonly { status: string; amount: string; tipAmount?: string }[];
 };
 
 export type DrawerTotals = {
@@ -43,7 +44,9 @@ export function expectedCash(facts: DrawerFacts): DrawerTotals {
     MONEY_SCALE,
   );
   const cashRefunds = sumDecimals(
-    facts.refunds.filter((refund) => refund.status === "RECORDED").map((refund) => refund.amount),
+    facts.refunds
+      .filter((refund) => refund.status === "RECORDED")
+      .map((refund) => addDecimals(refund.amount, refund.tipAmount ?? "0")),
     MONEY_SCALE,
   );
   const expected = toScale(
@@ -76,8 +79,32 @@ export type RefundLimits = {
 };
 
 /**
+ * Phase 20 (policy 18, D17): tips handed back can't exceed the order's recorded tender tips.
+ * Returns the tip left to refund after this one.
+ */
+export function assertTipRefundWithinLimits(
+  limits: { recordedTips: string; existing: readonly { status: string; tipAmount: string }[] },
+  tipAmount: string,
+): string {
+  const refunded = sumDecimals(
+    limits.existing.filter((refund) => refund.status === "RECORDED").map((refund) => refund.tipAmount),
+    MONEY_SCALE,
+  );
+  const remaining = toScale(subtractDecimals(limits.recordedTips, refunded), MONEY_SCALE);
+
+  if (compareDecimals(tipAmount, remaining) > 0) {
+    throw new BusinessRuleError("REFUND_EXCEEDS_TIPS", `At most ${remaining} more in tips can be refunded on this check.`, {
+      remainingTips: remaining,
+    });
+  }
+
+  return toScale(subtractDecimals(remaining, tipAmount), MONEY_SCALE);
+}
+
+/**
  * Refunds can't return more than the guest owed, nor more tax than was charged (policy B10).
- * Tips aren't refundable through this record. Returns what is left after this refund.
+ * Tips are limited separately (`assertTipRefundWithinLimits`). Returns what is left after this
+ * refund.
  */
 export function assertRefundWithinLimits(limits: RefundLimits, amount: string, taxAmount: string) {
   const recorded = limits.existing.filter((refund) => refund.status === "RECORDED");

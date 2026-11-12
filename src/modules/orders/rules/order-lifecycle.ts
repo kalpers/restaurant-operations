@@ -27,6 +27,11 @@ export function assertItemVoidable(status: string): void {
     throw new BusinessRuleError("ITEM_ALREADY_VOIDED", "That item has already been voided.");
   }
 
+  // Phase 20 (policy 17): a shared item is voided share by share, for money only.
+  if (status === "SPLIT") {
+    throw new BusinessRuleError("ITEM_SPLIT", "That item is shared between checks. Void its shares instead.");
+  }
+
   if (status !== "SUBMITTED") {
     throw new BusinessRuleError(
       "ITEM_NOT_SENT",

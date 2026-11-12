@@ -1,7 +1,12 @@
+import { asc, eq } from "drizzle-orm";
 import type { z } from "zod";
 
+import type { Database } from "@/db";
 import { assertVersionMatched } from "@/db/helpers/versioning";
-import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
+import { locations } from "@/db/schema";
+import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
+import type { Actor } from "@/modules/auth/types";
 import { NotFoundError } from "@/shared/errors/app-error";
 
 import {
@@ -50,6 +55,16 @@ export async function updateOrganization(
   );
 }
 
+/** The location's IANA time zone, for display (Phase 20 policy 9). UTC if not found. */
+export async function getLocationTimeZone(
+  executor: DatabaseExecutor,
+  locationId: string,
+): Promise<string> {
+  const [row] = await findLocationsWithSettings(executor, [locationId]);
+
+  return row?.location.timezone ?? "UTC";
+}
+
 /** Lists only the given locations, so a caller passes the ones the user may view. */
 export async function listLocationsWithSettings(
   executor: DatabaseExecutor,
@@ -71,20 +86,48 @@ export async function updateLocation(
   );
 }
 
+const AUDITED_SETTINGS = [
+  "businessDayCutoff",
+  "defaultTableTurnMinutes",
+  "defaultReservationDurationMinutes",
+  "defaultWaitQuoteMinutes",
+  "allowWalkIns",
+  "allowReservations",
+  "allowTakeout",
+  "inventoryEnabled",
+  "schedulingEnabled",
+  "kitchenDisplayEnabled",
+] as const;
+
+/** Phase 20 (policy 6): the change and its audit row commit together. */
 export async function updateLocationSettings(
-  executor: DatabaseExecutor,
+  database: Database,
+  actor: Actor,
   locationId: string,
   { expectedVersion, ...changes }: z.output<typeof updateLocationSettingsSchema>,
 ) {
-  return assertVersionMatched(
-    await updateLocationSettingsRow(
-      executor,
-      locationId,
-      expectedVersion,
-      changes,
-    ),
-    { type: "location settings record", id: locationId },
-  );
+  return withTransaction(database, async (transaction) => {
+    const [before] = await findLocationsWithSettings(transaction, [locationId]);
+    const updated = assertVersionMatched(
+      await updateLocationSettingsRow(transaction, locationId, expectedVersion, changes),
+      { type: "location settings record", id: locationId },
+    );
+    const pick = (row: Record<string, unknown>) =>
+      Object.fromEntries(
+        AUDITED_SETTINGS.filter((key) => before && before.settings[key] !== updated[key]).map((key) => [key, row[key]]),
+      );
+
+    if (before && Object.keys(pick(updated)).length > 0) {
+      await recordAudit(transaction, actor, {
+        action: "organization.location-settings-changed",
+        entityId: locationId,
+        before: pick(before.settings),
+        after: pick(updated),
+      });
+    }
+
+    return updated;
+  });
 }
 
 export function listAreas(executor: DatabaseExecutor, locationId: string) {
@@ -117,4 +160,13 @@ export async function updateArea(
   }
 
   return area;
+}
+
+/** Every active location, for system jobs such as the Phase 20 periodic notification check. */
+export async function listActiveLocations(executor: DatabaseExecutor) {
+  return executor
+    .select({ id: locations.id, organizationId: locations.organizationId, timeZone: locations.timezone })
+    .from(locations)
+    .where(eq(locations.active, true))
+    .orderBy(asc(locations.locationCode));
 }

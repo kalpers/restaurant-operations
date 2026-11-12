@@ -11,6 +11,7 @@ import { Table, TableFrame, TBody, Td, Th, THead, Tr } from "@/components/ui/tab
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { loadClockSettings } from "@/modules/scheduling/services/timeclock-service";
+import { listTipDeclarations } from "@/modules/settlements/services/tip-declaration-service";
 import { getTipRule, listDistributions } from "@/modules/settlements/services/tip-service";
 import { businessDateOf } from "@/shared/time/business-date-service";
 import { addDays } from "@/shared/time/zoned-time";
@@ -26,10 +27,11 @@ export default async function TipsPage({ searchParams }: { searchParams: Promise
   const { date: requested } = await searchParams;
   const today = businessDateOf(new Date(), await loadClockSettings(database, actor));
   const date = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : today;
-  const [{ rule, positions }, preview, history] = await Promise.all([
+  const [{ rule, positions }, preview, history, declarations] = await Promise.all([
     getTipRule(database, actor),
     previewTipDistribution(database, actor, date),
     listDistributions(database, actor, { from: addDays(today, -30), to: today }),
+    listTipDeclarations(database, actor, { from: date, to: date }),
   ]);
   const blocked =
     preview.blockers.openOrders > 0 || preview.blockers.openSettlements > 0 || preview.blockers.openTimeEntries;
@@ -184,6 +186,48 @@ export default async function TipsPage({ searchParams }: { searchParams: Promise
                 </TBody>
               </Table>
             </TableFrame>
+          )}
+        </Card>
+
+        <Card aria-label="Declared cash tips">
+          <CardTitle>Declared cash tips, {date}</CardTitle>
+          <p className="mb-3 text-sm text-neutral-700">
+            Cash tips people say they kept. Record only: not part of the pool above.
+          </p>
+          {declarations.length === 0 ? (
+            <p className="text-sm text-neutral-700">No declarations for this date.</p>
+          ) : (
+            <ul className="mb-3 grid gap-1 text-sm">
+              {declarations.map((entry) => (
+                <li key={entry.id}>
+                  {entry.employeeName}: <span className="tabular">{formatMoney(entry.amount)}</span>
+                  {entry.note ? ` · ${entry.note}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          {preview.lines.length > 0 && (
+            <EntityForm
+              method="POST"
+              url="/api/tips/declarations"
+              resetOnSuccess
+              hidden={{ businessDate: date }}
+              fields={[
+                {
+                  name: "employeeId",
+                  label: "Employee",
+                  type: "select",
+                  required: true,
+                  options: [...new Map(preview.lines.map((line) => [line.employeeId, line.employeeName])).entries()].map(
+                    ([value, label]) => ({ value, label }),
+                  ),
+                },
+                { name: "amount", label: "Cash tips kept", required: true },
+                { name: "note", label: "Note (optional)" },
+              ]}
+              submitLabel="Record declaration"
+              successMessage="Declaration recorded."
+            />
           )}
         </Card>
       </div>

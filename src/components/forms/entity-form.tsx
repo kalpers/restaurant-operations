@@ -5,7 +5,9 @@ import { useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { INPUT_STYLE } from "@/components/ui/field";
+import { useLocationTimeZone } from "@/components/time/location-time-zone";
 import { useToast } from "@/components/ui/toast";
+import { localToInstant } from "@/shared/time/zoned-time";
 
 import { ApiErrorMessage } from "./api-error-message";
 import { sendApiRequest, type ApiFailure } from "./api-request";
@@ -46,7 +48,7 @@ type EntityFormProps = {
 
 const INPUT_CLASS = INPUT_STYLE;
 
-function readField(field: FormField, data: FormData): unknown {
+function readField(field: FormField, data: FormData, timeZone: string): unknown {
   const raw = data.get(field.name);
 
   if (field.type === "checkbox") {
@@ -59,9 +61,17 @@ function readField(field: FormField, data: FormData): unknown {
     return value === "" ? null : Number(value);
   }
 
-  // The browser gives local wall-clock time; the API takes an exact instant.
+  // The input is a wall-clock time at the location (Phase 20 policy 9), whatever the
+  // device's own zone; the API takes an exact instant. A time the clocks skip is sent
+  // as typed, so the API refuses it as invalid.
   if (field.type === "datetime-local") {
-    return value === "" ? null : new Date(value).toISOString();
+    if (value === "") {
+      return null;
+    }
+
+    const [date = "", time = ""] = value.split("T");
+
+    return localToInstant(date, time, timeZone)?.toISOString() ?? value;
   }
 
   // Passwords are sent exactly as typed. Blank optional text is stored as null.
@@ -83,6 +93,7 @@ export function EntityForm({
 }: EntityFormProps) {
   const router = useRouter();
   const toast = useToast();
+  const timeZone = useLocationTimeZone();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiFailure | null>(null);
 
@@ -91,7 +102,7 @@ export function EntityForm({
     const form = event.currentTarget;
     const data = new FormData(form);
     const body = Object.fromEntries(
-      fields.map((field) => [field.name, readField(field, data)]),
+      fields.map((field) => [field.name, readField(field, data, timeZone)]),
     );
 
     setPending(true);

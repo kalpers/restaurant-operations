@@ -43,6 +43,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     fire: actorHolds(actor, "orders.fire"),
     move: actorHolds(actor, "orders.move-items"),
     newCheck: actorHolds(actor, "orders.move-items") && actorHolds(actor, "orders.create"),
+    taxExempt: actorHolds(actor, "tax.exempt"),
   };
   const heldCourses = order.status === "OPEN" ? await heldCoursesForOrder(database, order.id) : [];
   // Other open checks at the same table, for moving items between them (Phase 17).

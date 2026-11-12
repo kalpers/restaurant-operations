@@ -56,6 +56,7 @@ import {
   loadLocationContext,
   withoutShift,
 } from "./scheduling-input";
+import { notifySchedulePublished } from "./schedule-notifications";
 
 export async function listPeriods(executor: DatabaseExecutor, actor: Actor) {
   assertPermission(actor, "schedule.view");
@@ -707,6 +708,13 @@ export async function publishPeriod(
         before: { status: period.status },
         after: published,
       });
+      // Phase 20 (policy 13): each scheduled employee with a login hears about it.
+      await notifySchedulePublished(
+        transaction,
+        actor,
+        { id: periodId, name: published.name, startDate: published.startDate, endDate: published.endDate },
+        assignments.map((row) => row.employeeId),
+      );
 
       return published;
     });

@@ -48,6 +48,7 @@ import {
   requestTimeOffForEmployee,
 } from "../../src/modules/scheduling/services/time-off-service";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
+import { clearNotificationsFor } from "../fixtures/notification-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -338,6 +339,21 @@ export async function removeSchedulingE2eData(): Promise<void> {
         .where(inArray(shiftAssignments.shiftId, shiftIds))
     : [];
   const assignmentIds = assignmentRows.map((row) => row.id);
+  const scheduledEmployees = await database
+    .select({ id: employees.id })
+    .from(employees)
+    .where(like(employees.employeeNumber, `${EMPLOYEE_PREFIX}%`));
+  const scheduledUsers = await database
+    .select({ id: users.id })
+    .from(users)
+    .where(like(users.normalizedEmail, `%@${EMAIL_DOMAIN}`));
+
+  // Phase 20: notifications reference periods, swaps and time off.
+  await clearNotificationsFor(database, {
+    schedulePeriodIds: periodIds,
+    employeeIds: scheduledEmployees.map((row) => row.id),
+    userIds: scheduledUsers.map((row) => row.id),
+  });
 
   if (assignmentIds.length) {
     await database.delete(shiftSwapRequests).where(inArray(shiftSwapRequests.shiftAssignmentId, assignmentIds));

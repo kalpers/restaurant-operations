@@ -24,7 +24,7 @@ import { employees } from "./employees";
 import { guestParties } from "./guest-parties";
 import { idempotencyRecords } from "./infrastructure";
 import { inventoryItems, inventoryTransactions } from "./inventory";
-import { menuItems, modifierGroups, modifiers } from "./menu";
+import { menuCategories, menuItems, modifierGroups, modifiers } from "./menu";
 import { locations, organizations } from "./organization";
 import { recipes, recipeVersions, unitsOfMeasure } from "./recipes";
 import { tableSessions } from "./restaurant";
@@ -95,6 +95,18 @@ export const orders = pgTable(
     subtotal: money("subtotal").notNull().default("0.00"),
     /** Phase 17: tax on the post-discount amount of SUBMITTED items, from their snapshots. */
     taxTotal: money("tax_total").notNull().default("0.00"),
+    /**
+     * Phase 20 (policy 15, D14): the part of the item prices that is tax included in them.
+     * `subtotal` stays pre-tax: item subtotal − discounts − included tax. `tax_total` holds
+     * both kinds, so `total_due` = `subtotal` + `tax_total` is still what the guest pays.
+     */
+    includedTaxTotal: money("included_tax_total").notNull().default("0.00"),
+    /** Phase 20 (policy 16, D15): a tax-exempt check pays no tax. Set only while OPEN. */
+    taxExempt: boolean("tax_exempt").notNull().default(false),
+    taxExemptReason: text("tax_exempt_reason"),
+    taxExemptReference: text("tax_exempt_reference"),
+    taxExemptByUserId: uuid("tax_exempt_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    taxExemptAt: timestamptz("tax_exempt_at"),
     /** Phase 17: what the guest owes and what Settlement reconciles to. Always computed. */
     totalDue: money("total_due")
       .notNull()
@@ -151,9 +163,23 @@ export const orders = pgTable(
       "orders_totals_valid",
       sql`${table.itemSubtotal} >= 0 AND ${table.discountTotal} >= 0
         AND ${table.discountTotal} <= ${table.itemSubtotal}
-        AND ${table.subtotal} = ${table.itemSubtotal} - ${table.discountTotal}`,
+        AND ${table.subtotal} = ${table.itemSubtotal} - ${table.discountTotal} - ${table.includedTaxTotal}`,
     ),
     check("orders_tax_total_non_negative", sql`${table.taxTotal} >= 0`),
+    check(
+      "orders_included_tax_valid",
+      sql`${table.includedTaxTotal} >= 0 AND (${table.taxExempt} OR ${table.includedTaxTotal} <= ${table.taxTotal})`,
+    ),
+    check(
+      "orders_tax_exempt_fields",
+      sql`(${table.taxExempt} = (${table.taxExemptReason} IS NOT NULL))
+        AND (${table.taxExempt} = (${table.taxExemptByUserId} IS NOT NULL))
+        AND (${table.taxExempt} = (${table.taxExemptAt} IS NOT NULL))
+        AND (${table.taxExemptReference} IS NULL OR ${table.taxExempt})
+        AND (NOT ${table.taxExempt} OR ${table.taxTotal} = 0)
+        AND (${table.taxExemptReason} IS NULL OR length(trim(${table.taxExemptReason})) > 0)
+        AND (${table.taxExemptReference} IS NULL OR ${table.taxExemptReference} !~ '[0-9]{13}')`,
+    ),
     index("orders_table_session_status_idx").on(table.tableSessionId, table.status),
     index("orders_location_status_idx").on(table.locationId, table.status),
     index("orders_location_business_date_idx").on(table.locationId, table.businessDate),
@@ -257,6 +283,16 @@ export const orderItems = pgTable(
     }),
     taxCategoryCodeSnapshot: text("tax_category_code_snapshot"),
     taxRateSnapshot: taxRate("tax_rate_snapshot"),
+    /** Phase 20 (policy 15): the rate's "price includes tax", snapshotted at SEND. */
+    taxIncludedSnapshot: boolean("tax_included_snapshot").notNull().default(false),
+    /**
+     * Phase 20 (policy 1): the menu category the item was sold under, from the placement
+     * the operational menu resolved at SEND. Null for drafts and for items sent before.
+     */
+    menuCategoryId: uuid("menu_category_id").references(() => menuCategories.id, {
+      onDelete: "restrict",
+    }),
+    menuCategoryNameSnapshot: text("menu_category_name_snapshot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -275,7 +311,8 @@ export const orderItems = pgTable(
       columns: [table.sendBatchId],
       foreignColumns: [orderSendBatches.id],
     }).onDelete("restrict"),
-    check("order_items_status_valid", sql`${table.status} IN ('DRAFT', 'SUBMITTED', 'VOIDED')`),
+    // Phase 20 (policy 17): SPLIT is a sent item shared between checks; its shares carry the money.
+    check("order_items_status_valid", sql`${table.status} IN ('DRAFT', 'SUBMITTED', 'VOIDED', 'SPLIT')`),
     check("order_items_quantity_positive", sql`${table.quantity} > 0`),
     check(
       "order_items_amounts_valid",
@@ -306,7 +343,13 @@ export const orderItems = pgTable(
       sql`(${table.taxCategoryId} IS NULL) = (${table.taxCategoryCodeSnapshot} IS NULL)
         AND (${table.taxCategoryId} IS NULL) = (${table.taxRateSnapshot} IS NULL)
         AND (${table.status} <> 'DRAFT' OR ${table.taxCategoryId} IS NULL)
-        AND (${table.taxRateSnapshot} IS NULL OR (${table.taxRateSnapshot} >= 0 AND ${table.taxRateSnapshot} <= 100))`,
+        AND (${table.taxRateSnapshot} IS NULL OR (${table.taxRateSnapshot} >= 0 AND ${table.taxRateSnapshot} <= 100))
+        AND (${table.taxRateSnapshot} IS NOT NULL OR NOT ${table.taxIncludedSnapshot})`,
+    ),
+    check(
+      "order_items_category_snapshot_fields",
+      sql`(${table.menuCategoryId} IS NULL) = (${table.menuCategoryNameSnapshot} IS NULL)
+        AND (${table.status} <> 'DRAFT' OR ${table.menuCategoryId} IS NULL)`,
     ),
     index("order_items_order_status_idx").on(table.orderId, table.status),
     index("order_items_send_batch_idx").on(table.sendBatchId),
@@ -606,6 +649,8 @@ export const orderTaxLines = pgTable(
     taxRateSnapshot: taxRate("tax_rate_snapshot").notNull(),
     taxableAmount: money("taxable_amount").notNull(),
     taxAmount: money("tax_amount").notNull(),
+    /** Phase 20 (policy 15): tax included in the prices rather than added on top. */
+    taxIncluded: boolean("tax_included").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [
@@ -613,6 +658,7 @@ export const orderTaxLines = pgTable(
       table.orderId,
       table.taxCategoryId,
       table.taxRateSnapshot,
+      table.taxIncluded,
     ),
     check(
       "order_tax_lines_amounts_valid",
@@ -651,5 +697,67 @@ export const orderItemTransfers = pgTable(
     check("order_item_transfers_different_orders", sql`${table.fromOrderId} <> ${table.toOrderId}`),
     index("order_item_transfers_item_idx").on(table.orderItemId, table.movedAt),
     index("order_item_transfers_group_idx").on(table.transferGroupId),
+  ],
+);
+
+export const ORDER_ITEM_SHARE_STATUSES = ["ACTIVE", "VOIDED"] as const;
+
+/**
+ * Phase 20 (policy 17, D16): one sent item shared between checks. The original item becomes
+ * SPLIT and leaves the totals; its shares carry the money (equal parts, cents by largest
+ * remainder) on the checks they were given to, with the original's tax snapshot. Kitchen
+ * work, consumption and modifier snapshots stay with the original, so nothing is made or
+ * counted twice. A share can be voided for money only; it never touches stock.
+ */
+export const orderItemShares = pgTable(
+  "order_item_shares",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItems.id, { onDelete: "restrict" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "restrict" }),
+    splitGroupId: uuid("split_group_id").notNull(),
+    shareNumber: smallint("share_number").notNull(),
+    shareCount: smallint("share_count").notNull(),
+    status: text("status").notNull().default("ACTIVE"),
+    amount: money("amount").notNull(),
+    taxCategoryId: uuid("tax_category_id").references(() => taxCategories.id, { onDelete: "restrict" }),
+    taxCategoryCodeSnapshot: text("tax_category_code_snapshot"),
+    taxRateSnapshot: taxRate("tax_rate_snapshot"),
+    taxIncludedSnapshot: boolean("tax_included_snapshot").notNull().default(false),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+    voidedAt: timestamptz("voided_at"),
+    voidedByUserId: uuid("voided_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    voidReason: text("void_reason"),
+    version: versionColumn(),
+  },
+  (table) => [
+    unique("order_item_shares_item_number_unique").on(table.orderItemId, table.shareNumber),
+    check("order_item_shares_status_valid", sql`${table.status} IN ('ACTIVE', 'VOIDED')`),
+    check(
+      "order_item_shares_numbers_valid",
+      sql`${table.shareCount} BETWEEN 2 AND 10 AND ${table.shareNumber} BETWEEN 1 AND ${table.shareCount}`,
+    ),
+    check("order_item_shares_amount_non_negative", sql`${table.amount} >= 0`),
+    check(
+      "order_item_shares_void_fields",
+      sql`(${table.status} = 'VOIDED') = (${table.voidedAt} IS NOT NULL)
+        AND (${table.voidedAt} IS NULL) = (${table.voidedByUserId} IS NULL)
+        AND (${table.voidedAt} IS NULL OR length(trim(coalesce(${table.voidReason}, ''))) > 0)`,
+    ),
+    check(
+      "order_item_shares_tax_fields",
+      sql`(${table.taxCategoryId} IS NULL) = (${table.taxRateSnapshot} IS NULL)
+        AND (${table.taxCategoryId} IS NULL) = (${table.taxCategoryCodeSnapshot} IS NULL)
+        AND (${table.taxRateSnapshot} IS NOT NULL OR NOT ${table.taxIncludedSnapshot})`,
+    ),
+    index("order_item_shares_order_idx").on(table.orderId, table.status),
   ],
 );

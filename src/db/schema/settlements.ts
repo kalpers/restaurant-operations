@@ -285,6 +285,11 @@ export const orderRefunds = pgTable(
     /** What went back to the guest, tax included. */
     amount: money("amount").notNull(),
     taxAmount: money("tax_amount").notNull().default("0.00"),
+    /**
+     * Phase 20 (policy 18, D17): tip handed back, apart from `amount`. CASH and EXTERNAL_CARD
+     * only, never more than the order's recorded tender tips in total.
+     */
+    tipAmount: money("tip_amount").notNull().default("0.00"),
     reason: text("reason").notNull(),
     otherDescription: text("other_description"),
     externalReference: text("external_reference"),
@@ -324,7 +329,9 @@ export const orderRefunds = pgTable(
     check("order_refunds_status_valid", sql`${table.status} IN ('RECORDED', 'VOIDED')`),
     check(
       "order_refunds_amounts_valid",
-      sql`${table.amount} > 0 AND ${table.taxAmount} >= 0 AND ${table.taxAmount} <= ${table.amount}`,
+      sql`${table.amount} >= 0 AND ${table.taxAmount} >= 0 AND ${table.taxAmount} <= ${table.amount}
+        AND ${table.tipAmount} >= 0 AND ${table.amount} + ${table.tipAmount} > 0
+        AND (${table.tipAmount} = 0 OR ${table.tenderType} IN ('CASH', 'EXTERNAL_CARD'))`,
     ),
     check("order_refunds_reason", sql`length(trim(${table.reason})) > 0`),
     check(

@@ -148,3 +148,47 @@ describe("entryFlags", () => {
     ).toEqual({ unscheduled: true, late: false, earlyOut: false, long: true });
   });
 });
+
+// Phase 20 policy 19 (D18): daily overtime first, then weekly on what stayed regular.
+describe("daily and weekly overtime together", () => {
+  const H = 3600;
+  const day = (date: string, hour: number, hours: number, id = `${date}-${hour}`) => ({
+    id,
+    businessDate: date,
+    clockInAt: new Date(`${date}T${String(hour).padStart(2, "0")}:00:00Z`),
+    workedSeconds: hours * H,
+  });
+
+  it("counts hours past the daily line as overtime, latest work first", () => {
+    const split = allocateOvertime([day("2026-11-09", 8, 6, "a"), day("2026-11-09", 15, 4, "b")], 40 * H, 8 * H);
+
+    expect(split.get("a")).toEqual({ regularSeconds: 6 * H, overtimeSeconds: 0 });
+    expect(split.get("b")).toEqual({ regularSeconds: 2 * H, overtimeSeconds: 2 * H });
+  });
+
+  it("never counts an hour twice: weekly overtime uses only the hours still regular", () => {
+    // Five 10-hour days: 2 h daily overtime each (10 h), 40 h regular, so no weekly overtime.
+    const week = ["09", "10", "11", "12", "13"].map((d) => day(`2026-11-${d}`, 8, 10));
+    const split = allocateOvertime(week, 40 * H, 8 * H);
+    const total = [...split.values()].reduce((sum, value) => sum + value.overtimeSeconds, 0);
+
+    expect(total).toBe(10 * H);
+
+    // A sixth day of 8 hours is all weekly overtime (40 regular hours were used).
+    const six = allocateOvertime([...week, day("2026-11-14", 8, 8, "sat")], 40 * H, 8 * H);
+
+    expect(six.get("sat")).toEqual({ regularSeconds: 0, overtimeSeconds: 8 * H });
+  });
+
+  it("is weekly only when the daily line is off", () => {
+    const split = allocateOvertime([day("2026-11-09", 8, 12, "a")], 40 * H, null);
+
+    expect(split.get("a")).toEqual({ regularSeconds: 12 * H, overtimeSeconds: 0 });
+  });
+
+  it("warns near and past the daily line", () => {
+    expect(overtimeState(7.5 * H, 40 * H, { todaySeconds: 7.5 * H, thresholdSeconds: 8 * H })).toBe("APPROACHING");
+    expect(overtimeState(9 * H, 40 * H, { todaySeconds: 9 * H, thresholdSeconds: 8 * H })).toBe("OVERTIME");
+    expect(overtimeState(6 * H, 40 * H, { todaySeconds: 6 * H, thresholdSeconds: 8 * H })).toBe("NONE");
+  });
+});

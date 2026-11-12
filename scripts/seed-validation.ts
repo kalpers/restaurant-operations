@@ -4,12 +4,14 @@ import {
   VALIDATION_LABOR_SEED_KEY,
   VALIDATION_MENU_STOCK_SEED_KEY,
   VALIDATION_SEED_KEY,
+  VALIDATION_SERVICE_POLISH_SEED_KEY,
 } from "../src/db/demo/validation-fixture";
 
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 import { seedValidationFixture } from "./validation-fixture";
 import { seedValidationLaborTips } from "./validation-labor";
 import { seedValidationMenuStock } from "./validation-menu-stock";
+import { seedValidationServicePolish } from "./validation-service-polish";
 
 /**
  * `npm run db:seed:validation`: the opt-in Phase 13 validation fixture, for a local
@@ -57,6 +59,15 @@ async function main(): Promise<void> {
           `${signals.drafts} suggested draft order(s). Recorded as ${VALIDATION_MENU_STOCK_SEED_KEY}.`,
       );
     }
+
+    // Phase 20, under its own key, so a database seeded before Phase 20 gets it too.
+    const polish = await seedValidationServicePolish(getDatabase(), await mainOwnerActor("menu.availability.manage"));
+
+    console.log(
+      polish.skipped
+        ? `Service polish: ${VALIDATION_SERVICE_POLISH_SEED_KEY} already applied; nothing to do.`
+        : `Service polish: Extra Bacon ${polish.modifierOut ? "86'd" : "already 86'd"}. Recorded as ${VALIDATION_SERVICE_POLISH_SEED_KEY}.`,
+    );
   } finally {
     await closeDatabase();
   }

@@ -5,6 +5,8 @@ import { notifications } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 
+import { notificationLink, type NotificationLink } from "./notification-links";
+
 // In-app notifications (README section 22). A notification belongs to one recipient at one
 // location: only that user can list or mark it, so being the recipient is the authorization
 // and no permission code is involved. Kitchen writes the server-ready kinds.
@@ -15,6 +17,8 @@ export type NotificationView = {
   title: string;
   body: string;
   orderId: string | null;
+  /** Phase 20: where the notification leads, if anywhere the recipient may go. */
+  link: NotificationLink | null;
   createdAt: string;
   readAt: string | null;
 };
@@ -51,6 +55,7 @@ export async function listNotifications(
       title: row.title,
       body: row.body,
       orderId: row.orderId,
+      link: notificationLink(row.notificationType, row, actor.permissions),
       createdAt: row.createdAt.toISOString(),
       readAt: row.readAt?.toISOString() ?? null,
     })),

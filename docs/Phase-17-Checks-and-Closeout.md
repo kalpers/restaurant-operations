@@ -137,6 +137,10 @@ Before implementation:
     - **Settlements:** refunds by tender type. A new **Cash drawers** section lists sessions in the range with float, cash in, paid in, paid out, cash refunds, expected, counted and variance.
     - CSV export covers the new sections. No materialized view.
 
+## Amendments decided later
+
+- **2026-11-11, Phase 20 (owner decision):** tax included in prices, per-check tax exemption, sharing one item between checks and refunding tips, listed as out of scope in section 2, were built in Phase 20. See `docs/Phase-20-Service-Polish-and-Deferred-Features.md`.
+
 ## Amendments decided at planning
 
 Decided on 2026-11-10, when Phase 17 was planned:

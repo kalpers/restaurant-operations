@@ -1,4 +1,4 @@
-import { getTableName, inArray } from "drizzle-orm";
+import { getTableName, inArray, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import {
@@ -20,6 +20,7 @@ import {
   orderItemInventoryConsumption,
   orderItemModifiers,
   orderItems,
+  orderItemShares,
   orderItemStatusHistory,
   orderItemVoids,
   orderNumberCounters,
@@ -34,6 +35,7 @@ import {
   timeEntries,
   timeEntryAdjustments,
   timeEntryBreaks,
+  tipDeclarations,
   tipDistributionLines,
   tipDistributions,
   tipPoolRulePositions,
@@ -61,6 +63,7 @@ const APPEND_ONLY = [
 const GUARDED: readonly [table: string, trigger: string][] = [
   ["kitchen_tickets", "kitchen_tickets_guard_trigger"],
   ["order_items", "order_items_freeze_trigger"],
+  ["order_item_shares", "order_item_shares_guard_trigger"],
   ["order_item_modifiers", "order_item_modifiers_freeze_trigger"],
   ["kitchen_ticket_items", "kitchen_ticket_items_guard_trigger"],
   ["notifications", "notifications_guard_trigger"],
@@ -131,6 +134,7 @@ export async function clearOrderData(database: Database): Promise<void> {
     await transaction.delete(orderItemInventoryConsumption);
     await transaction.delete(orderItemStatusHistory);
     await transaction.delete(orderItemModifiers).where(inArray(orderItemModifiers.orderItemId, itemIds));
+    await transaction.delete(orderItemShares);
     await transaction.delete(orderItems);
     await transaction.delete(orderSendBatches);
     await transaction.delete(orderStatusHistory);
@@ -138,10 +142,13 @@ export async function clearOrderData(database: Database): Promise<void> {
     await transaction.delete(orders);
     await transaction.delete(orderNumberCounters);
     // Phase 18: time entries and tip distributions reference idempotency records.
+    await transaction.delete(tipDeclarations);
     await transaction.delete(tipDistributionLines);
     await transaction.delete(tipDistributions);
     await transaction.delete(tipPoolRulePositions);
     await transaction.delete(tipPoolRules);
+    // Phase 20: time-clock notifications reference entries; the guard is lifted above.
+    await transaction.execute(sql`DELETE FROM notifications WHERE time_entry_id IS NOT NULL`);
     await transaction.delete(timeEntryAdjustments);
     await transaction.delete(timeEntryBreaks);
     await transaction.delete(timeEntries);

@@ -1,8 +1,8 @@
 import { getDatabase } from "@/db";
 import { requireApiActor } from "@/modules/auth/guards";
-import { addTableToSession } from "@/modules/restaurant/services/session-service";
 import { addSessionTableSchema, sessionIdParamsSchema } from "@/modules/restaurant/validators/restaurant-validators";
 import { apiRoute, parseJsonBody, parseWith } from "@/shared/http/api-route";
+import { combineTableIntoSession } from "@/workflows/move-table-session/move-table-session";
 
 export const POST = apiRoute<{ sessionId: string }>(
   { module: "restaurant", operation: "add-session-table" },
@@ -11,6 +11,6 @@ export const POST = apiRoute<{ sessionId: string }>(
     const p = parseWith(sessionIdParamsSchema, params);
     const body = await parseJsonBody(request, addSessionTableSchema);
 
-    return { body: await addTableToSession(getDatabase(), actor, p.sessionId, body) };
+    return { body: await combineTableIntoSession(getDatabase(), actor, p.sessionId, body) };
   },
 );

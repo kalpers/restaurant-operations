@@ -16,7 +16,6 @@ const { APP_BASE_URL: baseURL } = getEnv();
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  globalSetup: "./tests/helpers/global-setup.ts",
   forbidOnly: isCi(),
   retries: isCi() ? 2 : 0,
   // `next dev` compiles each route on its first request. With more workers, those
@@ -38,10 +37,15 @@ export default defineConfig({
     // ships and has no on-demand route compiles; under `next dev` a busy runner let
     // assertions after a save time out. Locally, `next dev` needs no build first. To run
     // the CI mode locally: `npm run build`, then `CI=1 npm run test:e2e`.
-    command: isCi() ? "npm run start" : "npm run dev",
+    //
+    // The command recreates, migrates and seeds the test database before it starts the
+    // app (Playwright starts the web server before any globalSetup), then runs the app
+    // with DATABASE_URL pointing at the test database.
+    command: `npx tsx tests/helpers/e2e-web-server.ts ${isCi() ? "start" : "dev"}`,
     url: baseURL,
     env: {
-      DATABASE_URL: requireTestDatabaseUrl(),
+      // Checked here so a missing TEST_DATABASE_URL fails before anything starts.
+      TEST_DATABASE_URL: requireTestDatabaseUrl(),
       // Generated per run, so tests never depend on a developer's or a known secret.
       NEXTAUTH_SECRET: randomBytes(32).toString("base64url"),
       EMPLOYEE_DOCUMENT_STORAGE_PATH: E2E_DOCUMENT_STORAGE_PATH,

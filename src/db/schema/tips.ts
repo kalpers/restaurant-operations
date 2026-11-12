@@ -159,3 +159,43 @@ export const tipDistributionLines = pgTable(
     index("tip_distribution_lines_employee_idx").on(table.employeeId),
   ],
 );
+
+/**
+ * Phase 20 (policy 20, D19): cash tips an employee says they kept, per employee, location
+ * and business date. Record only: never part of the pool, never paid out. A row can be
+ * corrected (version) until the date's tips are finalized.
+ */
+export const tipDeclarations = pgTable(
+  "tip_declarations",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    locationId: uuid("location_id").notNull(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "restrict" }),
+    businessDate: businessDate().notNull(),
+    amount: money("amount").notNull(),
+    note: text("note"),
+    declaredByUserId: uuid("declared_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    declaredAt: timestamptz("declared_at").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    version: versionColumn(),
+  },
+  (table) => [
+    foreignKey({
+      name: "tip_declarations_location_org_fk",
+      columns: [table.locationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    unique("tip_declarations_employee_date_unique").on(table.employeeId, table.locationId, table.businessDate),
+    check("tip_declarations_amount_non_negative", sql`${table.amount} >= 0`),
+    check("tip_declarations_note_length", sql`${table.note} IS NULL OR length(${table.note}) <= 300`),
+    index("tip_declarations_location_date_idx").on(table.locationId, table.businessDate),
+  ],
+);

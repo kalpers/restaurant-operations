@@ -1,6 +1,12 @@
 import type { ReportResult } from "@/modules/reporting/types";
 
+import { BarChart } from "./bar-chart";
 import { formatCell, isNumericKind } from "./format";
+
+/** Phase 20 (policy 7): sections drawn as a chart above their table, and the column charted. */
+const CHARTED: Record<string, { label: string; value: string }> = {
+  salesByHour: { label: "hour", value: "netSales" },
+};
 import { EmptyState } from "@/components/ui/empty-state";
 
 /** Renders a report's sections as read-only tables. */
@@ -39,6 +45,18 @@ export function ReportView({
             )}
           </div>
           {section.description && <p className="mb-2 text-sm text-neutral-600">{section.description}</p>}
+
+          {CHARTED[section.key] && section.rows.length > 0 && (
+            <BarChart
+              title={`${section.title}, net sales`}
+              data={section.rows.map((row) => {
+                const chart = CHARTED[section.key]!;
+                const value = String(row[chart.value] ?? "0");
+
+                return { label: String(row[chart.label] ?? ""), value, display: formatCell("money", value) };
+              })}
+            />
+          )}
 
           {section.rows.length === 0 ? (
             <EmptyState title="Nothing in this range." />

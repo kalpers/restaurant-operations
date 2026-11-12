@@ -102,12 +102,20 @@ function totalsRow(totals: Totals, canViewCost: boolean): ReportRow {
 
 export async function actualLaborSections(context: ReportContext): Promise<ReportSection[]> {
   const { filters } = context;
-  const [rules] = await rowsOf<{ threshold: string; week_start_day: number; multiplier: string; grace: number }>(
+  const [rules] = await rowsOf<{
+    threshold: string;
+    daily: string | null;
+    week_start_day: number;
+    multiplier: string;
+    grace: number;
+  }>(
     context,
-    sql`SELECT weekly_overtime_threshold::text AS threshold, week_start_day,
+    sql`SELECT weekly_overtime_threshold::text AS threshold, daily_overtime_threshold::text AS daily, week_start_day,
                overtime_multiplier::text AS multiplier, late_clock_in_grace_minutes AS grace
         FROM scheduling_rules WHERE location_id = ${filters.locationId}`,
   );
+  // Phase 20 (policy 19): optional daily overtime, counted before the weekly line.
+  const dailySeconds = rules?.daily ? hoursToSeconds(rules.daily) : null;
   const threshold = rules?.threshold ?? DEFAULT_RULE_ROW.weeklyOvertimeThreshold;
   const weekStartDay = rules?.week_start_day ?? DEFAULT_RULE_ROW.weekStartDay;
   const multiplier = rules?.multiplier ?? DEFAULT_RULE_ROW.overtimeMultiplier;
@@ -136,7 +144,7 @@ export async function actualLaborSections(context: ReportContext): Promise<Repor
   const split = new Map<string, { regularSeconds: number; overtimeSeconds: number }>();
 
   for (const entries of weeks.values()) {
-    for (const [id, value] of allocateOvertime(entries, thresholdSeconds)) {
+    for (const [id, value] of allocateOvertime(entries, thresholdSeconds, dailySeconds)) {
       split.set(id, value);
     }
   }
@@ -338,7 +346,8 @@ export async function actualLaborSections(context: ReportContext): Promise<Repor
         weekStart,
         workedHours: secondsToHours(worked),
         thresholdHours: secondsToHours(thresholdSeconds),
-        overtimeHours: secondsToHours(Math.max(0, worked - thresholdSeconds)),
+        // Phase 20: daily and weekly overtime together, as allocated (each hour once).
+        overtimeHours: secondsToHours(entries.reduce((sum, entry) => sum + (split.get(entry.id)?.overtimeSeconds ?? 0), 0)),
       };
     })
     .sort(

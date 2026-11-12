@@ -3,6 +3,7 @@ import { and, asc, between, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "@/db";
 import {
   employees,
+  orderRefunds,
   orders,
   positions,
   settlements,
@@ -21,6 +22,7 @@ import { recordAudit } from "@/modules/auditing";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
 import { AuthorizationError, BusinessRuleError, NotFoundError, ValidationError } from "@/shared/errors/app-error";
+import { addDecimals, subtractDecimals, toScale } from "@/shared/decimal/decimal";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import { looksLikeCardNumber } from "../rules/settlement-math";
@@ -221,7 +223,26 @@ export async function readPoolTotals(
       ),
     );
 
-  return { cashTips: row!.cash, cardTips: row!.card, poolTotal: row!.total };
+  // Phase 20 (policy 18, D17): tips handed back with a RECORDED refund leave the pool of the
+  // order's business date (a tip refund is refused once that date is finalized).
+  const [back] = await executor
+    .select({
+      cash: sql<string>`COALESCE(SUM(${orderRefunds.tipAmount}) FILTER (WHERE ${orderRefunds.tenderType} = 'CASH'), 0)::numeric(12,2)::text`,
+      card: sql<string>`COALESCE(SUM(${orderRefunds.tipAmount}) FILTER (WHERE ${orderRefunds.tenderType} = 'EXTERNAL_CARD'), 0)::numeric(12,2)::text`,
+    })
+    .from(orderRefunds)
+    .innerJoin(orders, eq(orders.id, orderRefunds.orderId))
+    .where(
+      and(
+        eq(orders.locationId, input.locationId),
+        eq(orders.businessDate, input.businessDate),
+        eq(orderRefunds.status, "RECORDED"),
+      ),
+    );
+  const cashTips = toScale(subtractDecimals(row!.cash, back!.cash), 2);
+  const cardTips = toScale(subtractDecimals(row!.card, back!.card), 2);
+
+  return { cashTips, cardTips, poolTotal: toScale(addDecimals(cashTips, cardTips), 2) };
 }
 
 /** Policy D25: what still blocks finalizing a date. */

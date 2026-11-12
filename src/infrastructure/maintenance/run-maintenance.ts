@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { getEnv } from "@/config/env";
 import type { Database } from "@/db";
+import { notifyTimeBasedSignals } from "@/workflows/notify-time-based-signals/notify-time-based-signals";
 
 // Retention (Phase 16 policies 15-17). Purges only:
 // - published outbox events older than OUTBOX_RETENTION_DAYS (never unpublished or
@@ -9,6 +10,9 @@ import type { Database } from "@/db";
 // - sign-in throttle rows whose window and lock have both expired.
 // Idempotency records, audit events, ledgers, snapshots and every other history are never
 // touched. Deletes run in bounded batches, outside any long transaction.
+// Phase 20 (policy 14): the same run, under the same lock, writes the time-based
+// notifications (expiring certifications, approaching overtime, missed clock-outs). Each has
+// a dedupe key, so an hourly run sends each one once.
 
 export const MAINTENANCE_BATCH_SIZE = 1000;
 
@@ -19,11 +23,13 @@ export type MaintenanceOptions = {
   retentionDays?: number;
   throttleWindowMs?: number;
   batchSize?: number;
+  /** Phase 20: false skips the time-based notification pass (retention-only runs and tests). */
+  notify?: boolean;
 };
 
 export type MaintenanceResult =
   | { skipped: true }
-  | { skipped: false; outboxEventsDeleted: number; loginThrottlesDeleted: number };
+  | { skipped: false; outboxEventsDeleted: number; loginThrottlesDeleted: number; notificationsCreated: number };
 
 export async function runMaintenance(
   database: Database,
@@ -88,7 +94,10 @@ export async function runMaintenance(
           )`,
       );
 
-      return { skipped: false, outboxEventsDeleted, loginThrottlesDeleted };
+      const { notificationsCreated } =
+        options.notify === false ? { notificationsCreated: 0 } : await notifyTimeBasedSignals(database, now);
+
+      return { skipped: false, outboxEventsDeleted, loginThrottlesDeleted, notificationsCreated };
     } finally {
       await connection`SELECT pg_advisory_unlock(${MAINTENANCE_LOCK_KEY})`;
     }

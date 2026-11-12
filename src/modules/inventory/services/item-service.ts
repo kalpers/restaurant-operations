@@ -15,6 +15,7 @@ import {
   unitsOfMeasure,
 } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
@@ -272,6 +273,18 @@ export async function setItemLocation(
         ),
       );
 
+    const audited = (row: typeof inventoryItemLocations.$inferSelect) => ({
+      parLevel: row.parLevel,
+      reorderLevel: row.reorderLevel,
+      reorderTarget: row.reorderTarget,
+      preferredSupplierItemId: row.preferredSupplierItemId,
+      active: row.active,
+    });
+    const [itemCode] = await transaction
+      .select({ code: inventoryItems.code })
+      .from(inventoryItems)
+      .where(eq(inventoryItems.id, itemId));
+
     if (!existing) {
       const [row] = await transaction
         .insert(inventoryItemLocations)
@@ -286,6 +299,13 @@ export async function setItemLocation(
         })
         .returning();
 
+      await recordAudit(transaction, actor, {
+        action: "inventory.item-location-changed",
+        entityId: itemId,
+        details: { itemCode: itemCode?.code },
+        after: audited(row!),
+      });
+
       return row!;
     }
 
@@ -293,13 +313,23 @@ export async function setItemLocation(
       throw new ConcurrencyError("stock configuration", existing.id);
     }
 
-    return updateVersioned(transaction, inventoryItemLocations, {
+    const updated = await updateVersioned(transaction, inventoryItemLocations, {
       id: existing.id,
       organizationId: actor.organizationId,
       expectedVersion: input.expectedVersion,
       values: { ...levels, ...preferred, storageNote: input.storageNote, active: input.active },
       label: "stock configuration",
     });
+
+    await recordAudit(transaction, actor, {
+      action: "inventory.item-location-changed",
+      entityId: itemId,
+      details: { itemCode: itemCode?.code },
+      before: audited(existing),
+      after: audited(updated),
+    });
+
+    return updated;
   });
 }
 

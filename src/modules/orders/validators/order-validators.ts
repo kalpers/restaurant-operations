@@ -122,3 +122,31 @@ export const moveItemsSchema = z.object({
     z.object({ newCheck: z.literal(true) }),
   ]),
 });
+
+/** Phase 20 (policy 16): shape only; the service checks the reason and the digit rule. */
+export const setTaxExemptionSchema = z.object({
+  reason: z.string().trim().min(1).max(200),
+  reference: z.string().trim().max(60).nullish(),
+  expectedVersion,
+});
+
+export const clearTaxExemptionSchema = z.object({ expectedVersion });
+
+/** Phase 20 (policy 17): one target per share; the workflow checks counts and checks. */
+export const splitItemSchema = z.object({
+  shareCount: z.int().min(2).max(10),
+  targets: z
+    .array(z.union([z.object({ orderId: z.uuid(), expectedVersion }), z.object({ newCheck: z.literal(true) })]))
+    .min(2)
+    .max(10),
+  expectedVersion,
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+});
+
+export const orderShareParamsSchema = z.object({ orderId: z.uuid(), shareId: z.uuid() });
+
+export const voidShareSchema = z.object({
+  reason: z.string().trim().min(1).max(300),
+  expectedVersion,
+  shareVersion: expectedVersion,
+});

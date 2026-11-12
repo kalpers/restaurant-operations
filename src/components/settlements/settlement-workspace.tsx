@@ -10,6 +10,7 @@ import { ApiErrorMessage } from "@/components/forms/api-error-message";
 import { StatusBadge } from "@/components/format/status-badge";
 import { callOrderApi, formatMoney, ORDER_TYPE_LABELS } from "@/components/orders/order-api";
 import { useRealtimeRefresh } from "@/components/realtime/realtime-provider";
+import { useLocationTimeZone } from "@/components/time/location-time-zone";
 import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { INPUT_STYLE } from "@/components/ui/field";
@@ -19,6 +20,7 @@ import type {
   TenderDetail,
 } from "@/modules/settlements/queries/settlement-queries";
 import { previewChange } from "@/modules/settlements/rules/settlement-math";
+import { formatInstant } from "@/shared/time/format-instant";
 import type { TenderType } from "@/modules/settlements/types";
 
 // The settlement screen. Record only: nothing here charges a card or talks to a payment
@@ -45,6 +47,8 @@ export type RefundLine = {
   tenderType: string;
   amount: string;
   taxAmount: string;
+  /** Phase 20: a tip handed back with the refund. */
+  tipAmount?: string;
   reason: string;
   businessDate: string;
   version: number;
@@ -572,7 +576,10 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
   const [tenderType, setTenderType] = useState<TenderType>("EXTERNAL_CARD");
   const [amount, setAmount] = useState("");
   const [taxAmount, setTaxAmount] = useState("0.00");
+  const [tipAmount, setTipAmount] = useState("0.00");
   const [reason, setReason] = useState("");
+  // Phase 20 (policy 18): tips come back only in cash or to an external card.
+  const tipsAllowed = tenderType === "CASH" || tenderType === "EXTERNAL_CARD";
   const [otherDescription, setOtherDescription] = useState("");
   const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
   const key = useRef<string | null>(null);
@@ -585,8 +592,9 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
       `/api/orders/${view.order.id}/refunds`,
       {
         tenderType,
-        amount,
+        amount: amount || "0.00",
         taxAmount: taxAmount || "0.00",
+        tipAmount: tipsAllowed ? tipAmount || "0.00" : "0.00",
         reason,
         otherDescription: tenderType === "OTHER" ? otherDescription : null,
         externalReference: null,
@@ -602,6 +610,7 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
     if (result.ok) {
       setAmount("");
       setTaxAmount("0.00");
+      setTipAmount("0.00");
       setReason("");
     }
   }
@@ -625,12 +634,18 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
       <div className="grid gap-2 sm:grid-cols-2">
         <label className={LABEL}>
           Amount refunded (with tax)
-          <input className={INPUT} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} required />
+          <input className={INPUT} inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
         </label>
         <label className={LABEL}>
           Of which tax
           <input className={INPUT} inputMode="decimal" value={taxAmount} onChange={(event) => setTaxAmount(event.target.value)} />
         </label>
+        {tipsAllowed && (
+          <label className={LABEL}>
+            Tip refunded (separate)
+            <input className={INPUT} inputMode="decimal" value={tipAmount} onChange={(event) => setTipAmount(event.target.value)} />
+          </label>
+        )}
       </div>
       <label className={LABEL}>
         Reason
@@ -655,7 +670,7 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
           </select>
         </label>
       )}
-      <button type="submit" className={PRIMARY} disabled={pending || !amount || !reason.trim()}>
+      <button type="submit" className={PRIMARY} disabled={pending || (!amount && !(tipsAllowed && tipAmount && tipAmount !== "0.00" && tipAmount !== "0")) || !reason.trim()}>
         Record refund
       </button>
       <ErrorText error={error} />
@@ -680,6 +695,7 @@ function RefundItem({ refund, canVoid }: { refund: RefundLine; canVoid: boolean 
       <p className="text-sm text-neutral-700">
         {refund.reason} · {refund.businessDate}
         {refund.taxAmount !== "0.00" ? ` · tax ${formatMoney(refund.taxAmount)}` : ""}
+        {refund.tipAmount && refund.tipAmount !== "0.00" ? ` · tip ${formatMoney(refund.tipAmount)}` : ""}
         {voided ? " · voided" : ""}
       </p>
       {canVoid && !voided && !voiding && (
@@ -715,10 +731,11 @@ function RefundItem({ refund, canVoid }: { refund: RefundLine; canVoid: boolean 
 }
 
 function CompletedSettlement({ view, settlement }: { view: OrderSettlementView; settlement: SettlementDetail }) {
+  const timeZone = useLocationTimeZone();
   return (
     <section aria-label="Completed settlement" className="grid gap-3">
       <p role="status" className="rounded-md border border-success-300 bg-success-50 p-3 text-success-800">
-        Settled and closed{settlement.completedAt ? ` at ${new Date(settlement.completedAt).toLocaleString()}` : ""}.
+        Settled and closed{settlement.completedAt ? ` at ${formatInstant(settlement.completedAt, timeZone)}` : ""}.
         {view.order.tableNumbers.length > 0 &&
           " The table session stays active until the guests leave: complete it on the floor, then the table is marked dirty."}
       </p>

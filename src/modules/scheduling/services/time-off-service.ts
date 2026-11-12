@@ -3,6 +3,7 @@ import { assertVersionMatched } from "@/db/helpers/versioning";
 import {
   withTransaction,
   type DatabaseExecutor,
+  type DatabaseTransaction,
 } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 import {
@@ -10,13 +11,14 @@ import {
   lockEmployeesForScheduling,
 } from "@/modules/employees/queries/scheduling-facts";
 import { requireEmployee } from "@/modules/employees/services/access";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
 import {
   BusinessRuleError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from "@/shared/errors/app-error";
-import { addDays, localToInstantLenient } from "@/shared/time/zoned-time";
+import { addDays, localDateOf, localToInstantLenient } from "@/shared/time/zoned-time";
 
 import { findAssignmentConflicts } from "../repositories/employee-input-repository";
 import {
@@ -28,6 +30,7 @@ import {
 } from "../repositories/request-repository";
 import type { TimeOffType } from "../types";
 import { actorHolds, assertPermission, resolveSelfEmployeeId } from "./access";
+import { notifyTimeOffDecided } from "./schedule-notifications";
 import { loadLocationContext } from "./scheduling-input";
 
 export type TimeOffInput = {
@@ -200,7 +203,7 @@ export async function approveTimeOff(
       );
     }
 
-    return assertVersionMatched(
+    const updated = assertVersionMatched(
       await updateTimeOffRow(transaction, requestId, input.expectedVersion, {
         status: "APPROVED",
         managerNote: input.managerNote,
@@ -209,6 +212,27 @@ export async function approveTimeOff(
       }),
       { type: "time-off request", id: requestId },
     );
+
+    await notifyDecision(transaction, actor, request, "APPROVED");
+
+    return updated;
+  });
+}
+
+/** Phase 20 (policy 13): the requester hears the decision, by local dates at the location. */
+async function notifyDecision(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  request: { id: string; employeeId: string; startAt: Date; endAt: Date },
+  status: "APPROVED" | "DENIED",
+) {
+  const timeZone = await getLocationTimeZone(transaction, actor.locationId);
+  // The end is exclusive, so the last day off is the one just before it.
+  const lastInstant = new Date(Math.max(request.startAt.getTime(), request.endAt.getTime() - 1));
+
+  await notifyTimeOffDecided(transaction, actor, request, status, {
+    from: localDateOf(request.startAt, timeZone),
+    to: localDateOf(lastInstant, timeZone),
   });
 }
 
@@ -220,19 +244,25 @@ export async function denyTimeOff(
 ) {
   assertPermission(actor, "schedule.time-off.approve");
 
-  const request = await requireReviewable(database, actor, requestId);
+  return withTransaction(database, async (transaction) => {
+    const request = await requireReviewable(transaction, actor, requestId);
 
-  assertPending(request.status);
+    assertPending(request.status);
 
-  return assertVersionMatched(
-    await updateTimeOffRow(database, requestId, input.expectedVersion, {
-      status: "DENIED",
-      managerNote: input.managerNote,
-      reviewedByUserId: actor.userId,
-      reviewedAt: new Date(),
-    }),
-    { type: "time-off request", id: requestId },
-  );
+    const updated = assertVersionMatched(
+      await updateTimeOffRow(transaction, requestId, input.expectedVersion, {
+        status: "DENIED",
+        managerNote: input.managerNote,
+        reviewedByUserId: actor.userId,
+        reviewedAt: new Date(),
+      }),
+      { type: "time-off request", id: requestId },
+    );
+
+    await notifyDecision(transaction, actor, request, "DENIED");
+
+    return updated;
+  });
 }
 
 /** The requester can cancel their own; someone who reviews requests can cancel any here. */

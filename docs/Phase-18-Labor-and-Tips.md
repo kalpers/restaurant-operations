@@ -112,6 +112,10 @@ Before implementation:
 29. **Rule 4.** Hours come from time entries, costs from the compensation history in effect on each date, and tip shares from finalized snapshots. Nothing is recalculated from current configuration, apart from the live overtime warning.
 30. **Not payroll.** No pay periods, pay stubs, gross-to-net, withholding, tip credit or minimum-wage calculations, payroll export, or tip payout records. Overtime multiplier and pool points are business configuration, and the UI says so.
 
+## Amendments decided later
+
+- **2026-11-11, Phase 20 (owner decision):** daily overtime, cash tip declarations and notifications for overtime and missed clock-outs, listed as out of scope in section 2, were built in Phase 20. Policy D22's "no separate cash tip declaration" and policy B17's "no notification is sent" are superseded. See `docs/Phase-20-Service-Polish-and-Deferred-Features.md`.
+
 ## Amendments decided at planning
 
 Decided on 2026-11-10, when Phase 18 was planned:

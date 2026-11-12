@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 
 import type { ReportColumn, ReportSection } from "../types";
 
-import { rowsOf, type ReportContext } from "./report-context";
+import { rowsOf, SOLD_ITEM_STATUSES, soldLineTotal, type ReportContext } from "./report-context";
 
 type ItemRow = {
   code: string;
@@ -33,7 +33,7 @@ export async function menuSections(context: ReportContext): Promise<ReportSectio
     o.location_id = ${filters.locationId}
     AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
     AND o.status = 'CLOSED'
-    AND oi.status = 'SUBMITTED'
+    AND oi.status IN ${SOLD_ITEM_STATUSES}
     ${filters.orderType ? sql`AND o.order_type = ${filters.orderType}` : sql``}
   `;
 
@@ -42,7 +42,7 @@ export async function menuSections(context: ReportContext): Promise<ReportSectio
     sql`
       WITH lines AS (
         SELECT oi.menu_item_code_snapshot AS code, oi.menu_item_name_snapshot AS name, oi.quantity,
-               oi.line_total_snapshot,
+               ${soldLineTotal} AS line_total_snapshot,
                (SELECT SUM(d.applied_amount) FROM order_item_discounts d
                  WHERE d.order_item_id = oi.id AND d.status = 'APPLIED') AS item_discounts,
                (SELECT SUM(t.total_cost) FROM order_item_inventory_consumption c

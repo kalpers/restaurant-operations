@@ -30,3 +30,12 @@ export const voidTipDistributionSchema = z.object({
 });
 
 export const distributionIdParamsSchema = z.object({ distributionId: z.uuid() });
+
+/** Phase 20 (policy 20): shape only; the service checks who may declare and when. */
+export const declareTipsSchema = z.object({
+  employeeId: z.uuid().optional(),
+  businessDate: z.iso.date(),
+  amount: z.string().trim().min(1).max(16),
+  note: z.string().trim().max(300).nullish(),
+  expectedVersion: z.int().positive().nullish(),
+});

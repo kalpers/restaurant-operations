@@ -19,10 +19,12 @@ const optionalText = (max: number) =>
     .transform((value) => (value === "" ? null : value));
 
 /** A stable code. Not editable after creation, because other records refer to it. */
+/** Lowercase is accepted and stored in capitals ("food" becomes "FOOD"). */
 const code = z
   .string()
   .trim()
-  .regex(/^[A-Z0-9][A-Z0-9_]{0,39}$/, "Use capital letters, digits and underscores.");
+  .toUpperCase()
+  .regex(/^[A-Z0-9][A-Z0-9_]{0,39}$/, "Use letters, digits and underscores, with no spaces (for example FOOD or SALES_TAX).");
 const displayOrder = z.int().min(0).max(100000).default(0);
 /** A decimal string, never coerced to a number. The services check its scale. */
 const decimalString = z.string().trim().regex(/^-?\d+(\.\d+)?$/);
@@ -216,6 +218,8 @@ export const updateTaxCategorySchema = createTaxCategorySchema.omit({ code: true
 export const changeTaxRateSchema = z.object({
   taxCategoryId: z.uuid(),
   ratePercent: decimalString,
+  /** Phase 20 (policy 15): menu prices already include this tax. */
+  priceIncludesTax: z.boolean().default(false),
   effectiveFrom: instant.nullable().default(null),
   expectedCurrentRateId: z.uuid().nullable().optional(),
 });
@@ -225,18 +229,37 @@ export const setLocationTaxSchema = z.object({
   expectedVersion,
 });
 
-// Phase 19: the 86 board.
+// Phase 19: the 86 board. Phase 20 (policy 4): an optional window; times are exact instants.
+const outageWindow = {
+  startsAt: z.iso.datetime({ offset: true }).transform((value) => new Date(value)).nullish(),
+  endsAt: z.iso.datetime({ offset: true }).transform((value) => new Date(value)).nullish(),
+  untilClose: z.boolean().optional(),
+};
+
 export const markItemOutSchema = z.object({
+  menuItemId: z.uuid(),
+  reason: requiredText(200),
+  ...outageWindow,
+});
+
+export const sellAnywaySchema = z.object({
   menuItemId: z.uuid(),
   reason: requiredText(200),
 });
 
-export const sellAnywaySchema = markItemOutSchema;
+/** Phase 20 (policy 3). */
+export const markModifierOutSchema = z.object({
+  modifierId: z.uuid(),
+  reason: requiredText(200),
+  ...outageWindow,
+});
 
 export const versionOnlySchema = z.object({ expectedVersion });
 
 export const auto86SettingSchema = z.object({
   enabled: z.boolean(),
+  /** Phase 20 (policy 5). */
+  runningLowPortions: z.int().min(1).max(99).optional(),
   expectedVersion,
 });
 

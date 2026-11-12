@@ -61,6 +61,7 @@ export async function loadLocationContext(
     weekStartDay: row.weekStartDay,
     overtimeMultiplier: row.overtimeMultiplier,
     lateClockInGraceMinutes: row.lateClockInGraceMinutes,
+    dailyOvertimeThreshold: row.dailyOvertimeThreshold,
   };
 
   return { timeZone: location.timezone, rules: toRuleSet(ruleRow), ruleRow };

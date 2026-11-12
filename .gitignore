@@ -2,17 +2,17 @@
 node_modules/
 
 # Next.js
-.next/
-out/
-next-env.d.ts
+/.next/
+/out/
+/next-env.d.ts
 *.tsbuildinfo
 
 # Test output
 /coverage/
-playwright-report/
-test-results/
-blob-report/
-playwright/.cache/
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
 
 # Local environment files (never commit real credentials)
 .env
@@ -20,8 +20,8 @@ playwright/.cache/
 !.env.example
 
 # Local uploaded files
-.local/
-uploads/
+/.local/
+/uploads/
 
 # Runtime, editor and OS temporary files
 *.log
@@ -30,7 +30,7 @@ uploads/
 Thumbs.db
 .idea/
 .vscode/
-.claude/settings.local.json
+/.claude/settings.local.json
 
 # Stray Vitest output
-.vitest/
+/.vitest/

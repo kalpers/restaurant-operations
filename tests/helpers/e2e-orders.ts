@@ -14,6 +14,7 @@ import {
   orderItemInventoryConsumption,
   orderItemModifiers,
   orderItems,
+  orderItemShares,
   orderItemStatusHistory,
   orderItemVoids,
   orders,
@@ -538,6 +539,7 @@ export async function removeOrdersE2eData(scope: E2eScope = ORDERS_SCOPE): Promi
     }
 
     await transaction.execute("ALTER TABLE order_items DISABLE TRIGGER order_items_freeze_trigger" as never);
+    await transaction.execute("ALTER TABLE order_item_shares DISABLE TRIGGER order_item_shares_guard_trigger" as never);
     await transaction.execute("ALTER TABLE order_item_modifiers DISABLE TRIGGER order_item_modifiers_freeze_trigger" as never);
     await transaction.execute("ALTER TABLE order_settlements DISABLE TRIGGER order_settlements_guard_trigger" as never);
     await transaction.execute("ALTER TABLE settlement_tenders DISABLE TRIGGER settlement_tenders_guard_trigger" as never);
@@ -561,6 +563,8 @@ export async function removeOrdersE2eData(scope: E2eScope = ORDERS_SCOPE): Promi
 
       if (itemIds.length) {
         await transaction.delete(orderItemDiscounts).where(inArray(orderItemDiscounts.orderItemId, itemIds));
+        // Phase 20: shares of these items, wherever they sit.
+        await transaction.delete(orderItemShares).where(inArray(orderItemShares.orderItemId, itemIds));
         await transaction.delete(orderItemVoids).where(inArray(orderItemVoids.orderItemId, itemIds));
         await transaction.delete(orderItemInventoryConsumption).where(inArray(orderItemInventoryConsumption.orderItemId, itemIds));
         await transaction.delete(orderItemStatusHistory).where(inArray(orderItemStatusHistory.orderItemId, itemIds));
@@ -581,6 +585,7 @@ export async function removeOrdersE2eData(scope: E2eScope = ORDERS_SCOPE): Promi
     }
 
     await transaction.execute("ALTER TABLE order_items ENABLE TRIGGER order_items_freeze_trigger" as never);
+    await transaction.execute("ALTER TABLE order_item_shares ENABLE TRIGGER order_item_shares_guard_trigger" as never);
     await transaction.execute("ALTER TABLE order_item_modifiers ENABLE TRIGGER order_item_modifiers_freeze_trigger" as never);
     await transaction.execute("ALTER TABLE order_settlements ENABLE TRIGGER order_settlements_guard_trigger" as never);
     await transaction.execute("ALTER TABLE settlement_tenders ENABLE TRIGGER settlement_tenders_guard_trigger" as never);

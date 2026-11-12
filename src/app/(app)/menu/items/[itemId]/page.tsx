@@ -175,7 +175,7 @@ export default async function MenuItemEditorPage({
                     { value: location.locationId, label: `${location.locationName} only` },
                   ],
                 },
-                { name: "effectiveFrom", label: "Starts (your local time; blank is now)", type: "datetime-local" },
+                { name: "effectiveFrom", label: "Starts (location time; blank is now)", type: "datetime-local" },
               ]}
             />
           )}

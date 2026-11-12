@@ -77,12 +77,15 @@ export const seatPartySchema = z.object({
 export const moveSessionSchema = z.object({
   tableIds,
   capacityOverrideReason: optionalReason,
+  /** Phase 20 (policy 8): for a table held for another party's reservation. */
+  holdOverrideReason: optionalReason,
   expectedVersion,
 });
 
 export const addSessionTableSchema = z.object({
   tableId: z.uuid(),
   capacityOverrideReason: optionalReason,
+  holdOverrideReason: optionalReason,
   expectedVersion,
 });
 

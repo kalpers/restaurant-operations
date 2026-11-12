@@ -176,7 +176,7 @@ describe("tip pools", () => {
     });
 
     expect(tips.sections.find((candidate) => candidate.key === "byDate")!.rows).toEqual([
-      { businessDate, cashTips: "3.00", cardTips: "6.00", tips: "9.00", distributed: "9.00", status: "Finalized" },
+      { businessDate, cashTips: "3.00", cardTips: "6.00", tips: "9.00", refunded: "0.00", pool: "9.00", distributed: "9.00", status: "Finalized" },
     ]);
     expect(tips.sections.find((candidate) => candidate.key === "shares")!.rows.map((row) => row.share).sort()).toEqual([
       "2.25",

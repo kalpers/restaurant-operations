@@ -5,13 +5,17 @@ import { formatCost, formatQuantity } from "@/components/inventory/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { listLowStock } from "@/modules/inventory/queries/stock-queries";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
+import { formatInstant } from "@/shared/time/format-instant";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /** A recommendation only. Suggested orders (Phase 19) turn it into drafts, never submitted. */
 export default async function LowStockPage() {
   const { location, actor } = await requirePageActor("inventory.view");
-  const rows = await listLowStock(getDatabase(), actor);
+  const database = getDatabase();
+  const rows = await listLowStock(database, actor);
+  const timeZone = await getLocationTimeZone(database, location.locationId);
 
   return (
     <>
@@ -43,7 +47,7 @@ export default async function LowStockPage() {
               <p className="flex flex-wrap items-center gap-2 font-medium">
                 {row.name}
                 {row.alertOpenSince && (
-                  <Badge tone="warning">Alert since {new Date(row.alertOpenSince).toLocaleString()}</Badge>
+                  <Badge tone="warning">Alert since {formatInstant(row.alertOpenSince, timeZone)}</Badge>
                 )}
               </p>
               <p className="text-sm">

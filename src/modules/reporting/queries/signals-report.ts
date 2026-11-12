@@ -6,7 +6,7 @@ import { hourLabel, hoursFromCutoff } from "../rules/hour-buckets";
 import { classifyMenuItems, ENGINEERING_LABEL } from "../rules/menu-engineering";
 import type { ReportColumn, ReportSection } from "../types";
 
-import { minutes, rowsOf, type ReportContext } from "./report-context";
+import { minutes, rowsOf, SOLD_ITEM_STATUSES, soldLineTotal, type ReportContext } from "./report-context";
 
 // Phase 19 report sections (policies 19-24), added to the existing Sales, Menu, Orders and
 // Inventory areas under their existing permissions. Everything reads CLOSED-order snapshots,
@@ -100,7 +100,7 @@ export async function itemMixSections(context: ReportContext): Promise<ReportSec
     sql`
       WITH lines AS (
         SELECT oi.menu_item_code_snapshot AS code, oi.menu_item_name_snapshot AS name, oi.quantity,
-               oi.line_total_snapshot
+               ${soldLineTotal}
                  - COALESCE((SELECT SUM(d.applied_amount) FROM order_item_discounts d
                               WHERE d.order_item_id = oi.id AND d.status = 'APPLIED'), 0) AS net,
                (SELECT SUM(t.total_cost) FROM order_item_inventory_consumption c
@@ -108,7 +108,7 @@ export async function itemMixSections(context: ReportContext): Promise<ReportSec
                  WHERE c.order_item_id = oi.id) AS cost,
                EXISTS (SELECT 1 FROM order_item_inventory_consumption c WHERE c.order_item_id = oi.id) AS has_consumption
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE ${closedScope(context)} AND oi.status = 'SUBMITTED'
+        WHERE ${closedScope(context)} AND oi.status IN ${SOLD_ITEM_STATUSES}
       ),
       grouped AS (
         SELECT code, name, SUM(quantity)::int AS quantity, SUM(net) AS net,
@@ -149,7 +149,7 @@ export async function itemMixSections(context: ReportContext): Promise<ReportSec
   };
 
   if (!context.canViewCost) {
-    return [mix];
+    return [mix, (await itemMixByCategorySections(context)).mix];
   }
 
   const classes = classifyMenuItems(
@@ -161,8 +161,11 @@ export async function itemMixSections(context: ReportContext): Promise<ReportSec
     { key: "class", label: "Class", kind: "text" },
   ];
 
+  const byCategory = await itemMixByCategorySections(context);
+
   return [
     mix,
+    byCategory.mix,
     {
       key: "menuEngineering",
       title: "Menu engineering",
@@ -185,7 +188,118 @@ export async function itemMixSections(context: ReportContext): Promise<ReportSec
         class: ENGINEERING_LABEL[classes.get(`${row.code}\u0000${row.name}`)!],
       })),
     },
+    byCategory.engineering,
   ];
+}
+
+const UNCATEGORIZED = "Uncategorized";
+
+type CategoryMixRow = MixRow & { category: string };
+
+/**
+ * Phase 20 (policies 1 and 2): item mix and menu engineering within the category each item was
+ * sold under, from the SEND snapshot. Items sent before Phase 20 have none: "Uncategorized".
+ */
+async function itemMixByCategorySections(
+  context: ReportContext,
+): Promise<{ mix: ReportSection; engineering: ReportSection }> {
+  const rows = await rowsOf<CategoryMixRow>(
+    context,
+    sql`
+      WITH lines AS (
+        SELECT COALESCE(oi.menu_category_name_snapshot, ${UNCATEGORIZED}) AS category,
+               oi.menu_item_code_snapshot AS code, oi.menu_item_name_snapshot AS name, oi.quantity,
+               ${soldLineTotal}
+                 - COALESCE((SELECT SUM(d.applied_amount) FROM order_item_discounts d
+                              WHERE d.order_item_id = oi.id AND d.status = 'APPLIED'), 0) AS net,
+               (SELECT SUM(t.total_cost) FROM order_item_inventory_consumption c
+                  JOIN inventory_transactions t ON t.id = c.inventory_transaction_id
+                 WHERE c.order_item_id = oi.id) AS cost,
+               EXISTS (SELECT 1 FROM order_item_inventory_consumption c WHERE c.order_item_id = oi.id) AS has_consumption
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE ${closedScope(context)} AND oi.status IN ${SOLD_ITEM_STATUSES}
+      ),
+      grouped AS (
+        SELECT category, code, name, SUM(quantity)::int AS quantity, SUM(net) AS net,
+               CASE WHEN bool_and(has_consumption) THEN SUM(cost) END AS cost
+        FROM lines GROUP BY category, code, name
+      )
+      SELECT category, code, name, quantity,
+             net::numeric(14,2)::text AS net_sales,
+             ROUND(quantity * 100.0 / NULLIF(SUM(quantity) OVER (PARTITION BY category), 0), 2)::text AS quantity_percent,
+             ROUND(net * 100 / NULLIF(SUM(net) OVER (PARTITION BY category), 0), 2)::text AS sales_percent,
+             cost::numeric(14,4)::text AS cost,
+             CASE WHEN cost IS NULL THEN NULL ELSE ROUND(net - cost, 2)::text END AS margin
+      FROM grouped
+      ORDER BY category = ${UNCATEGORIZED}, category, quantity DESC, code, name
+    `,
+  );
+  const keyOf = (row: CategoryMixRow) => `${row.category}\u0000${row.code}\u0000${row.name}`;
+  const classes = new Map<string, string>();
+
+  for (const category of new Set(rows.map((row) => row.category))) {
+    const inCategory = rows.filter((row) => row.category === category);
+
+    for (const [key, value] of classifyMenuItems(
+      inCategory.map((row) => ({ key: keyOf(row), quantity: row.quantity, marginTotal: row.margin })),
+    )) {
+      classes.set(key, ENGINEERING_LABEL[value]);
+    }
+  }
+
+  const base: ReportColumn[] = [
+    { key: "category", label: "Category", kind: "text" },
+    { key: "code", label: "Item code", kind: "text" },
+    { key: "name", label: "Item", kind: "text" },
+    { key: "quantity", label: "Quantity sold", kind: "count" },
+  ];
+
+  return {
+    mix: {
+      key: "itemMixByCategory",
+      title: "Item mix by category",
+      description:
+        "Share of the items sold and of net item sales within the category each item was sold under (snapshotted at SEND). Items sent before categories were recorded show as Uncategorized.",
+      columns: [
+        ...base,
+        { key: "quantityPercent", label: "% of category items", kind: "percent" },
+        { key: "netSales", label: "Net item sales", kind: "money" },
+        { key: "salesPercent", label: "% of category sales", kind: "percent" },
+      ],
+      rows: rows.map((row) => ({
+        category: row.category,
+        code: row.code,
+        name: row.name,
+        quantity: row.quantity,
+        quantityPercent: row.quantity_percent,
+        netSales: row.net_sales,
+        salesPercent: row.sales_percent,
+      })),
+    },
+    engineering: {
+      key: "menuEngineeringByCategory",
+      title: "Menu engineering by category",
+      description:
+        "The same Star, Plowhorse, Puzzle and Dog rule, comparing each item only with the others sold in its category.",
+      columns: [
+        ...base,
+        { key: "netSales", label: "Net item sales", kind: "money" },
+        { key: "theoreticalCost", label: "Theoretical food cost", kind: "cost" },
+        { key: "margin", label: "Contribution margin", kind: "money" },
+        { key: "class", label: "Class", kind: "text" },
+      ],
+      rows: rows.map((row) => ({
+        category: row.category,
+        code: row.code,
+        name: row.name,
+        quantity: row.quantity,
+        netSales: row.net_sales,
+        theoreticalCost: row.cost,
+        margin: row.margin,
+        class: classes.get(keyOf(row))!,
+      })),
+    },
+  };
 }
 
 // ------------------------------------------------------------------ server performance
@@ -226,7 +340,7 @@ export async function serverPerformanceSection(context: ReportContext): Promise<
         SELECT c.*,
                COALESCE(cv.covers, 0) AS covers,
                (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi
-                 WHERE oi.order_id = c.id AND oi.status = 'SUBMITTED') AS items,
+                 WHERE oi.order_id = c.id AND oi.status IN ${SOLD_ITEM_STATUSES}) AS items,
                (SELECT COALESCE(SUM(oi.line_total_snapshot), 0) FROM order_items oi
                  WHERE oi.order_id = c.id AND oi.status = 'VOIDED' AND oi.submitted_at IS NOT NULL) AS voided,
                (SELECT COALESCE(SUM(x.applied_amount) FILTER (WHERE x.is_comp), 0) FROM (

@@ -64,7 +64,7 @@ test("a manager punches for staff without a login, fixes a missed clock-out and 
   const missed = page.getByRole("region", { name: "Missed clock-outs" });
 
   await expect(missed).toContainText(forgetful.name);
-  await missed.getByText("Adjust or void").click();
+  await missed.getByText("Adjust, edit breaks or void").click();
   await missed.getByLabel("Clock-out (leave blank to keep)").fill(detroitLocal(new Date(clockInAt.getTime() + 6 * 3_600_000)));
   await missed.getByLabel("Reason").fill("Forgot to clock out");
   await missed.getByRole("button", { name: "Save correction" }).click();
@@ -91,6 +91,19 @@ test("a manager punches for staff without a login, fixes a missed clock-out and 
   await expect(entry).toContainText("Adjusted");
   await expect(entry).toContainText("6.00 h");
 
+  // 3b. Phase 20 (policy 10): a 30-minute unpaid break is added on the time clock.
+  await entry.getByText("Adjust, edit breaks or void").click();
+
+  const breaks = entry.getByRole("form", { name: "Edit breaks" });
+
+  await breaks.getByRole("button", { name: "Add a break" }).click();
+  await breaks.getByLabel("Start").fill(detroitLocal(new Date(clockInAt.getTime() + 2 * 3_600_000)));
+  await breaks.getByLabel("End").fill(detroitLocal(new Date(clockInAt.getTime() + 2.5 * 3_600_000)));
+  await breaks.getByLabel("Why change the breaks?").fill("Lunch was missed off");
+  await breaks.getByRole("button", { name: "Save breaks" }).click();
+  await expect(page.getByTestId("time-entry").filter({ hasText: forgetful.name })).toContainText("5.50 h");
+  await expect(page.getByTestId("time-entry").filter({ hasText: forgetful.name })).toContainText("1 break(s)");
+
   // 4. The pool is set up, and that day's tips are finalized (no checks there: shares are $0.00).
   await page.goto(`/tips?date=${missedDate}`);
 
@@ -102,7 +115,7 @@ test("a manager punches for staff without a login, fixes a missed clock-out and 
 
   const distribute = page.getByRole("region", { name: "Distribute tips" });
 
-  await expect(distribute.getByRole("row").filter({ hasText: forgetful.name })).toContainText("6.0000");
+  await expect(distribute.getByRole("row").filter({ hasText: forgetful.name })).toContainText("5.5000");
   await distribute.getByRole("button", { name: "Finalize tips" }).click();
   await confirmDialog(page, "Finalize");
   await expect(distribute).toContainText("Finalized");
@@ -113,7 +126,7 @@ test("a manager punches for staff without a login, fixes a missed clock-out and 
 
   const frozen = page.getByTestId("time-entry").filter({ hasText: forgetful.name });
 
-  await frozen.getByText("Adjust or void").click();
+  await frozen.getByText("Adjust, edit breaks or void").click();
   await frozen.getByLabel("Reason", { exact: true }).fill("Try again");
   await frozen.getByLabel("Clock-out (leave blank to keep)").fill(detroitLocal(new Date(clockInAt.getTime() + 5 * 3_600_000)));
   await frozen.getByRole("button", { name: "Save correction" }).click();

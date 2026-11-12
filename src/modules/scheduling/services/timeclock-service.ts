@@ -64,12 +64,17 @@ type EntryRow = typeof timeEntries.$inferSelect;
 
 export type ClockSettings = BusinessDateSettings & {
   thresholdSeconds: number;
+  /** Phase 20 (policy 19): null when daily overtime is off. */
+  dailyThresholdSeconds: number | null;
   weekStartDay: number;
   overtimeMultiplier: string;
   lateClockInGraceMinutes: number;
 };
 
-export async function loadClockSettings(executor: DatabaseExecutor, actor: Actor): Promise<ClockSettings> {
+/** A location, as the actor's or as the periodic check names it (Phase 20). */
+type LocationRef = Pick<Actor, "organizationId" | "locationId">;
+
+export async function loadClockSettings(executor: DatabaseExecutor, actor: LocationRef): Promise<ClockSettings> {
   const [row] = await executor
     .select({ timeZone: locations.timezone, businessDayCutoff: locationSettings.businessDayCutoff })
     .from(locations)
@@ -86,6 +91,7 @@ export async function loadClockSettings(executor: DatabaseExecutor, actor: Actor
     timeZone: row.timeZone,
     businessDayCutoff: row.businessDayCutoff,
     thresholdSeconds: hoursToSeconds(rules.weeklyOvertimeThreshold),
+    dailyThresholdSeconds: rules.dailyOvertimeThreshold ? hoursToSeconds(rules.dailyOvertimeThreshold) : null,
     weekStartDay: rules.weekStartDay,
     overtimeMultiplier: rules.overtimeMultiplier,
     lateClockInGraceMinutes: rules.lateClockInGraceMinutes,
@@ -210,12 +216,13 @@ export type WeekSummary = {
 /** Policy B17: closed hours this week plus the open entry's elapsed time. */
 async function weekSummary(
   executor: DatabaseExecutor,
-  actor: Actor,
+  actor: LocationRef,
   settings: ClockSettings,
   employeeId: string,
   now: Date,
 ): Promise<WeekSummary> {
-  const weekStart = weekStartOf(businessDateOf(now, settings), settings.weekStartDay);
+  const today = businessDateOf(now, settings);
+  const weekStart = weekStartOf(today, settings.weekStartDay);
   const weekEnd = addDays(weekStart, 6);
   const entries = await findWorkedEntries(executor, {
     locationId: actor.locationId,
@@ -223,17 +230,53 @@ async function weekSummary(
     to: weekEnd,
     employeeIds: [employeeId],
   });
-  const total = entries.reduce(
-    (sum, entry) => sum + (entry.status === "OPEN" ? workedSeconds(entry, entry.breaks, now) : entry.workedSeconds),
-    0,
-  );
+  const secondsOf = (entry: (typeof entries)[number]) =>
+    entry.status === "OPEN" ? workedSeconds(entry, entry.breaks, now) : entry.workedSeconds;
+  const total = entries.reduce((sum, entry) => sum + secondsOf(entry), 0);
+  const todaySeconds = entries
+    .filter((entry) => entry.businessDate === today)
+    .reduce((sum, entry) => sum + secondsOf(entry), 0);
 
   return {
     weekStart,
     weekEnd,
     workedSeconds: total,
     thresholdSeconds: settings.thresholdSeconds,
-    state: overtimeState(total, settings.thresholdSeconds),
+    state: overtimeState(total, settings.thresholdSeconds, {
+      todaySeconds,
+      thresholdSeconds: settings.dailyThresholdSeconds,
+    }),
+  };
+}
+
+/**
+ * Phase 20 (policy 14, D12): what the periodic check notifies about at one location. On-clock
+ * employees at or past the approaching-overtime line this work week, and OPEN entries from an
+ * earlier business date (missed clock-outs). Read only.
+ */
+export async function findTimeClockSignals(executor: DatabaseExecutor, location: LocationRef, now: Date) {
+  const settings = await loadClockSettings(executor, location);
+  const today = businessDateOf(now, settings);
+  const open = await executor
+    .select({ id: timeEntries.id, employeeId: timeEntries.employeeId, businessDate: timeEntries.businessDate })
+    .from(timeEntries)
+    .where(and(eq(timeEntries.locationId, location.locationId), eq(timeEntries.status, "OPEN")));
+  const approaching: { entryId: string; employeeId: string; weekStart: string; state: OvertimeState }[] = [];
+
+  for (const entry of open.filter((row) => row.businessDate === today)) {
+    const summary = await weekSummary(executor, location, settings, entry.employeeId, now);
+
+    if (summary.state !== "NONE") {
+      approaching.push({ entryId: entry.id, employeeId: entry.employeeId, weekStart: summary.weekStart, state: summary.state });
+    }
+  }
+
+  return {
+    today,
+    approaching,
+    missedClockOuts: open
+      .filter((row) => row.businessDate < today)
+      .map((row) => ({ entryId: row.id, employeeId: row.employeeId, businessDate: row.businessDate })),
   };
 }
 

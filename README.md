@@ -515,7 +515,7 @@ time_entry_breaks
 time_entry_adjustments
 ```
 
-A time entry is one stretch of work in one Position, on the business date of its clock-in. Employees punch on their own login (`/my-time`, `timeclock.punch`); a manager (`timeclock.manage`) can punch for anyone eligible, including staff with no login. There is no PIN or kiosk mode. A clock-in is matched to the employee's published shift for that Position starting within 60 minutes either way; otherwise it is unscheduled, which is allowed and flagged. Effective times can be corrected later with a reason, but the original punch instants never change, and every correction is kept in `time_entry_adjustments`. A forgotten clock-out stays OPEN and counts no hours until a manager closes it. Weekly overtime uses `scheduling_rules.weekly_overtime_threshold`, `week_start_day` and `overtime_multiplier`; it only warns, never blocks. See "Phase 18 Labor and Tips" in section 33.
+A time entry is one stretch of work in one Position, on the business date of its clock-in. Employees punch on their own login (`/my-time`, `timeclock.punch`); a manager (`timeclock.manage`) can punch for anyone eligible, including staff with no login. There is no PIN or kiosk mode. A clock-in is matched to the employee's published shift for that Position starting within 60 minutes either way; otherwise it is unscheduled, which is allowed and flagged. Effective times can be corrected later with a reason, but the original punch instants never change, and every correction is kept in `time_entry_adjustments`. A forgotten clock-out stays OPEN and counts no hours until a manager closes it. Weekly overtime uses `scheduling_rules.weekly_overtime_threshold`, `week_start_day` and `overtime_multiplier`; it only warns, never blocks. Since Phase 20 an optional `daily_overtime_threshold` counts each business date's hours past it first, and weekly overtime counts only the rest; managers edit breaks on the time clock. See "Phase 18 Labor and Tips" and "Phase 20" in section 33.
 
 ## 12. Domain 05: Restaurant and Seating
 
@@ -668,6 +668,8 @@ Phase 19 adds per-location sellability next to `available`, which stays organiza
 
 An item is sellable at a location when it is active, available, not 86'd there, and not auto-86'd without an override. `getOperationalMenu` applies this, so draft add and SEND share one check.
 
+Phase 20 adds `modifier_outages` (a modifier 86'd at one location, left out of the operational menu; an item whose required group then has too few choices isn't sellable), a window on every 86 (`starts_at`, optional `ends_at`, in effect only inside it), and `location_settings.running_low_portions`. SEND snapshots the menu category each item was sold under. See section 33.
+
 Prep stations initially include concepts such as:
 
 ```text
@@ -813,7 +815,7 @@ BAR
 TAKEOUT
 ```
 
-Table session to orders is one-to-many to support split checks. Since Phase 17, draft and sent items can move between OPEN orders on one session (or into a new check there); each move is recorded in `order_item_transfers`, and an item's snapshots, consumption and kitchen work move with it. Items carry a course number (1 to 5); see section 18 for hold and fire.
+Table session to orders is one-to-many to support split checks. Since Phase 17, draft and sent items can move between OPEN orders on one session (or into a new check there); each move is recorded in `order_item_transfers`, and an item's snapshots, consumption and kitchen work move with it. Since Phase 20 one sent item can be shared between checks on its session: it becomes `SPLIT` and its `order_item_shares` carry the money, while its kitchen work and consumption stay with it. Items carry a course number (1 to 5); see section 18 for hold and fire.
 
 An order has a UUID primary key plus a separate human-readable order number.
 
@@ -930,7 +932,7 @@ OTHER
 
 The application **records settlement only**. It does not authorize or process card payments, gift-card balances, house-account receivables, or external-provider payments. These tender types are financial classifications, not processing integrations. `OTHER` requires a description/reason identifying what was recorded.
 
-Settlement reconciles against the Order's amount due: since Phase 17, `orders.total_due`, the post-discount subtotal plus tax. Tax comes only from the Tax Category explicitly assigned to a Menu Item and the rate in force at the location, snapshotted at SEND; taxability is never inferred from the item, location, Order type, or food/alcohol category. A location with tax switched off charges none. Tips are separate from the Order obligation and may be recorded only for CASH and EXTERNAL_CARD. Cash change is calculated after the Order amount applied and cash tip; no cash rounding is performed.
+Settlement reconciles against the Order's amount due: since Phase 17, `orders.total_due`, the post-discount subtotal plus tax. Tax comes only from the Tax Category explicitly assigned to a Menu Item and the rate in force at the location, snapshotted at SEND; taxability is never inferred from the item, location, Order type, or food/alcohol category. A location with tax switched off charges none. Since Phase 20 a rate may be included in the menu price (taken out of the subtotal, so total due is still subtotal plus tax), and a check can be tax exempt. Tips are separate from the Order obligation and may be recorded only for CASH and EXTERNAL_CARD. Cash change is calculated after the Order amount applied and cash tip; no cash rounding is performed.
 
 Support:
 - Multiple historical settlements per order, with at most one OPEN settlement
@@ -943,7 +945,7 @@ Support:
 - Refund records on CLOSED orders (Phase 17), record only
 - Tip pools (Phase 18), record only: one pool per location and business date (`tip_pool_rules`, `tip_pool_rule_positions`, `tip_distributions`, `tip_distribution_lines`), shared by worked hours × position points and finalized as an immutable snapshot
 
-Do not represent one Order obligation as multiple partially completed Settlements. A fully reconciled Settlement closes the Order atomically; a CLOSED Order is terminal. Money returned afterwards is a separate refund record (Phase 17): the Order, its Settlement and tenders never change, nothing reopens a check, and a refund counts on the business date it is recorded. Settlement completion does not change Inventory, fulfillment, or Table Session status. Table Sessions still complete only through the explicit physical departure workflow after associated Orders are CLOSED.
+Do not represent one Order obligation as multiple partially completed Settlements. A fully reconciled Settlement closes the Order atomically; a CLOSED Order is terminal. Money returned afterwards is a separate refund record (Phase 17): the Order, its Settlement and tenders never change, nothing reopens a check, and a refund counts on the business date it is recorded. Since Phase 20 a refund may return a tip, which leaves that business date's tip pool. Settlement completion does not change Inventory, fulfillment, or Table Session status. Table Sessions still complete only through the explicit physical departure workflow after associated Orders are CLOSED.
 
 Before order closure, valid settlements must cover the amount due, except where legitimate discounts/comps reduce the amount.
 
@@ -1025,7 +1027,7 @@ Reporting areas include:
 - Table turnover and utilization
 - Kitchen and bar performance
 
-Phase 19 adds, inside the existing areas and permissions: sales by hour (Sales), item mix and menu engineering (Menu), server performance and voids, comps and discounts by employee (Orders), and 86 history (Inventory). See section 33.
+Phase 19 adds, inside the existing areas and permissions: sales by hour (Sales), item mix and menu engineering (Menu), server performance and voids, comps and discounts by employee (Orders), and 86 history (Inventory). Phase 20 adds a sales-by-hour chart, item mix and menu engineering by category, tax included in prices and tax-exempt checks (Sales), tip refunds and declared cash tips (Tips), and daily overtime in actual labor. See section 33.
 
 ### Reporting Filters
 
@@ -1126,7 +1128,7 @@ CERTIFICATION_EXPIRING
 
 Do not introduce SMS/email/push integration during the POC unless intentionally added later.
 
-As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` (see section 33). Phase 19 adds `INVENTORY_LOW`, linked to its low-stock alert. The other kinds arrive with the phases that need them.
+As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` (see section 33). Phase 19 adds `INVENTORY_LOW`, linked to its low-stock alert. Phase 20 adds the other example kinds and `TIME_OFF_DENIED`, `OVERTIME_APPROACHING` and `MISSED_CLOCK_OUT`: the schedule and time-off kinds are written with the change they report, and the time-based kinds by the hourly maintenance run, once per dedupe key and recipient.
 
 ## 23. Infrastructure Reliability Tables
 
@@ -1890,6 +1892,20 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 20 Service Polish and Deferred Features
+
+Phase 20 closed the work left open by Phases 6 to 19, by owner decision on 2026-11-11 (plan approved with D1–D23 as recommended). Reopening a CLOSED check, payments, the section 39 capabilities and cloud deployment stay out. Plan: `docs/Phase-20-Service-Polish-and-Deferred-Features.md`. Report: `docs/Phase-20-Completion-Report.md`.
+
+- **Menu and stock.** SEND snapshots the item's menu category (`order_items.menu_category_id`, `menu_category_name_snapshot`) from the placement the operational menu resolved; older items report as "Uncategorized", and item mix and menu engineering also run within each category. `modifier_outages` 86es a modifier at one location; an item whose required group is left with fewer choices than its minimum isn't sellable there, and SEND refuses an 86'd choice (`MODIFIER_UNAVAILABLE`). Item and modifier 86es take `starts_at` and an optional `ends_at` ("until close" ends at the next business-day cutoff); they're in effect only inside that window, worked out on read, and an exclusion constraint replaces the one-ACTIVE index. `location_settings.running_low_portions` (default 5) sets "running low". Stocked-item level changes and general location settings changes are audited (`inventory.item-location-changed`, `organization.location-settings-changed`, new audit category `ORGANIZATION`). Sales by hour has an inline SVG bar chart above its table.
+- **Floor.** Moving or combining a seated party onto another party's held table runs the seating hold rule in the move's own transaction (`src/workflows/move-table-session`): refused, or allowed with `reservations.override-hold` and a reason, which is recorded.
+- **Time.** Every screen shows instants in the location's time zone (`formatInstant`), and `datetime-local` inputs are read in it. The manager's time clock edits breaks through the Phase 18 adjust API.
+- **Notifications.** `SCHEDULE_PUBLISHED`, `SHIFT_CHANGED`, `TIME_OFF_APPROVED` and `TIME_OFF_DENIED` are written in the transaction of the change; `CERTIFICATION_EXPIRING`, `OVERTIME_APPROACHING` and `MISSED_CLOCK_OUT` come from the hourly maintenance run, once per dedupe key and recipient. Each kind has its own link column, checked by a constraint; recipients are active users at the location.
+- **Checks.** A tax rate may say the menu price includes it (`tax_rates.price_includes_tax`, snapshotted on the item): the tax inside is price × rate ÷ (100 + rate), half up, and comes out of `subtotal` through `orders.included_tax_total`, so `total_due = subtotal + tax_total` still holds. A check can be tax exempt (`tax.exempt`, Owner, General Manager, Manager; OPEN with no OPEN settlement; reason and an optional reference that refuses card-like digits): it pays no tax. One sent item can be shared 2 to 10 ways between checks on its session: it becomes `SPLIT`, `order_item_shares` carry equal amounts (cents by largest remainder) with its tax snapshot, and kitchen work, consumption and modifiers stay on the original; reports count the item once. A refund may return a tip (`order_refunds.tip_amount`, CASH or EXTERNAL_CARD, up to the recorded tips; refused while the date's tips are finalized); the pool and expected drawer cash subtract it.
+- **Labor and tips.** `scheduling_rules.daily_overtime_threshold` (null is off): hours past it on a business date are overtime first, and weekly overtime counts only the hours that stayed regular. `tip_declarations` record cash tips an employee says they kept (self under `timeclock.punch` for a worked date, anyone under `tips.manage`); never in the pool; frozen while the date is finalized; shown in the Tips report.
+- **Loading and tooling.** Report areas and the audit trail stream their data inside `Suspense` with a skeleton. The E2E web server command prepares the test database before starting the app. `migrations.test.ts` runs with a 30 s timeout; root-only `.gitignore` rules are anchored.
+- **Permission** (139 in all): `tax.exempt`, seeded by `security.service-polish-permissions`.
+- **Migrations:** `0039` to `0047` (generated and custom pairs per area: menu, notifications, tax, shared items; then labor and tips).
+
 ## 34. Cloud Deployment (On Hold)
 
 Cloud deployment is on hold by owner decision (2026-11-10). No deployment phase is scheduled. `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure.
@@ -2064,6 +2080,12 @@ Added by owner decision on 2026-11-10. It adds actual labor next to the Phase 12
 Turn recorded stock and sales into signals for service. Four areas: a per-location 86 board (manual 86 with a reason and restore, read-time portions remaining, opt-in auto-86 from stock, and a "sell anyway" override for the business date), checked in one place for both draft add and SEND; low-stock alerts opened and resolved by inventory postings, with in-app `INVENTORY_LOW` notifications; suggested DRAFT purchase orders per preferred supplier, never submitted; and report sections for sales by hour, item mix and menu engineering, server performance, voids/comps/discounts by employee, and 86 history. Nothing in this phase moves inventory. Plan: `docs/Phase-19-Menu-and-Stock-Signals.md`.
 
 Approved by the owner on 2026-11-11, with decisions D1–D10 as recommended in the plan. Item mix and menu engineering compare items across the whole menu (amendment 7: order items carry no category snapshot).
+
+### Phase 20: Service Polish and Deferred Features
+
+Close the work left open by Phases 6 to 19. Menu and stock: a category snapshot at SEND for item mix and menu engineering by category, modifier 86 and scheduled 86, a per-location running-low threshold, audited stocked-item and location settings changes, and a sales-by-hour chart. Floor: the seating hold rule on move and combine. Time and notifications: location time zones everywhere, break editing, and the schedule, time-off, certification, overtime and missed clock-out notifications. Checks: tax included in prices, tax-exempt checks, one item shared between checks, and tip refunds. Labor and tips: daily overtime and cash tip declarations. Plus loading boundaries and test tooling fixes. Plan: `docs/Phase-20-Service-Polish-and-Deferred-Features.md`.
+
+Approved by the owner on 2026-11-11, with decisions D1–D23 as recommended in the plan. It supersedes the Phase 17 and 18 scope lines for tax-inclusive pricing, exemptions, shared items, tip refunds, daily overtime, cash tip declarations and overtime/missed clock-out notifications.
 
 ### Cloud Deployment: On Hold
 

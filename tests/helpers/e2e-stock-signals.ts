@@ -29,6 +29,7 @@ export async function clearStockSignalRows(transaction: DatabaseExecutor, scope:
     ["notifications", "notifications_guard_trigger"],
     ["inventory_stock_alerts", "inventory_stock_alerts_guard"],
     ["menu_item_outages", "menu_item_outages_guard"],
+    ["modifier_outages", "modifier_outages_guard"],
     ["menu_item_stock_overrides", "menu_item_stock_overrides_guard"],
   ];
 
@@ -50,6 +51,9 @@ export async function clearStockSignalRows(transaction: DatabaseExecutor, scope:
   await transaction.execute(sql`DELETE FROM inventory_stock_alerts WHERE id IN ${alerts}`);
   await transaction.execute(
     sql`DELETE FROM menu_item_outages WHERE menu_item_id = ANY(${menuItems}) OR marked_out_by_user_id = ANY(${users}) OR restored_by_user_id = ANY(${users})`,
+  );
+  await transaction.execute(
+    sql`DELETE FROM modifier_outages WHERE marked_out_by_user_id = ANY(${users}) OR restored_by_user_id = ANY(${users})`,
   );
   await transaction.execute(
     sql`DELETE FROM menu_item_stock_overrides WHERE menu_item_id = ANY(${menuItems}) OR set_by_user_id = ANY(${users}) OR cleared_by_user_id = ANY(${users})`,

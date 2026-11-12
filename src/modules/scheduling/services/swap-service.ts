@@ -38,6 +38,7 @@ import {
 } from "../repositories/schedule-repository";
 import { assertPermission, resolveSelfEmployeeId } from "./access";
 import { assertEmployeeEligible } from "./schedule-service";
+import { notifyShiftSwapped } from "./schedule-notifications";
 
 // The only way a published assignment changes. PENDING -> ACCEPTED -> COMPLETED, with
 // DENIED and CANCELLED. A holder of schedule.swap.approve can open a swap or record
@@ -458,6 +459,13 @@ export async function approveSwap(
 
     // Anything prepared against the previous state of this schedule is now stale.
     await updatePeriodRow(transaction, swap.periodId);
+    // Phase 20 (policy 13): both employees hear about the change.
+    await notifyShiftSwapped(
+      transaction,
+      actor,
+      { id: swapId, requestingEmployeeId: swap.requestingEmployeeId, targetEmployeeId: swap.targetEmployeeId },
+      shift,
+    );
     await recordAudit(transaction, actor, {
       action: "scheduling.swap-approved",
       entityId: swapId,

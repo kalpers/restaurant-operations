@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { callOrderApi } from "@/components/orders/order-api";
 import { useRealtime } from "@/components/realtime/realtime-provider";
+import { useLocationTimeZone } from "@/components/time/location-time-zone";
+import { formatInstant } from "@/shared/time/format-instant";
 
 // The signed-in user's own in-app notifications (README section 22), such as food or drinks
 // ready for their table. The server returns only the caller's notifications.
@@ -16,6 +18,7 @@ type Notice = {
   title: string;
   body: string;
   orderId: string | null;
+  link: { href: string; label: string } | null;
   createdAt: string;
   readAt: string | null;
 };
@@ -30,6 +33,7 @@ async function fetchListing(): Promise<Listing | null> {
 
 export function NotificationBell() {
   const { subscribe } = useRealtime();
+  const timeZone = useLocationTimeZone();
   const [listing, setListing] = useState<Listing>({ unreadCount: 0, notifications: [] });
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
@@ -143,20 +147,12 @@ export function NotificationBell() {
                   <p className="font-semibold">{notice.title}</p>
                   <p>{notice.body}</p>
                   <p className="text-xs text-neutral-600">
-                    {new Date(notice.createdAt).toLocaleTimeString()}
-                    {notice.orderId && (
+                    {formatInstant(notice.createdAt, timeZone, "time")}
+                    {notice.link && (
                       <>
                         {" · "}
-                        <Link href={`/orders/${notice.orderId}`} className="underline">
-                          Open order
-                        </Link>
-                      </>
-                    )}
-                    {notice.type === "INVENTORY_LOW" && (
-                      <>
-                        {" · "}
-                        <Link href="/inventory/low-stock" className="underline">
-                          See low stock
+                        <Link href={notice.link.href} className="underline">
+                          {notice.link.label}
                         </Link>
                       </>
                     )}

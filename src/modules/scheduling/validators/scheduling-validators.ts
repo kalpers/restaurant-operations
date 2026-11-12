@@ -219,6 +219,8 @@ export const rulesSchema = z.object({
     .regex(/^\d(\.\d{1,2})?$/, "Enter a multiplier such as 1.50.")
     .default("1.50"),
   lateClockInGraceMinutes: z.coerce.number().int().min(0).max(120).default(5),
+  /** Phase 20 (policy 19): blank is off. */
+  dailyOvertimeThreshold: optionalHours,
   expectedVersion: expectedVersion.nullable(),
 });
 

@@ -4,6 +4,7 @@ import {
   check,
   integer,
   pgTable,
+  smallint,
   text,
   time,
   unique,
@@ -118,6 +119,8 @@ export const locationSettings = pgTable(
      * on-hand stock isn't sellable here. Changed only through the menu stock-settings endpoint.
      */
     auto86FromStock: boolean("auto_86_from_stock").notNull().default(false),
+    /** Phase 20 (policy 5): "running low" means 1 to this many portions left. */
+    runningLowPortions: smallint("running_low_portions").notNull().default(5),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -130,6 +133,10 @@ export const locationSettings = pgTable(
     check(
       "location_settings_reservation_hold_non_negative",
       sql`${table.reservationPreHoldMinutes} >= 0 AND ${table.reservationPostGraceMinutes} >= 0`,
+    ),
+    check(
+      "location_settings_running_low_range",
+      sql`${table.runningLowPortions} BETWEEN 1 AND 99`,
     ),
   ],
 );

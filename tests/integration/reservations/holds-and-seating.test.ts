@@ -20,6 +20,10 @@ import {
   seatReservationParty,
   seatWalkIn,
 } from "@/workflows/seat-guest-party/seat-guest-party";
+import {
+  combineTableIntoSession,
+  moveTableSession,
+} from "@/workflows/move-table-session/move-table-session";
 import { seatParty } from "@/workflows/seat-party/seat-party";
 
 import { clearEmployeeData } from "../../fixtures/employee-fixtures";
@@ -559,6 +563,68 @@ describe("reservation holds and seating", () => {
           expectedVersion: row.version,
           tableIds: [table],
         }),
+      ).resolves.toBeDefined();
+    });
+  });
+  // Phase 20 (policy 8, D7): moving or combining onto a held table follows the seating rule.
+  describe("moving and combining onto a held table", () => {
+    it("refuses a move onto another party's held table, and allows it with an override", async () => {
+      const from = await tableFixture(database(), scenario);
+      const held = await tableFixture(database(), scenario);
+      const reservation = await reserve(database(), host, 5, { tableIds: [held] });
+      const seated = await walkIn(host, [from]);
+
+      await expect(
+        moveTableSession(database(), host, seated.id, { tableIds: [held], expectedVersion: seated.version }),
+      ).rejects.toMatchObject({ code: "RESERVATION_HOLD_ACTIVE" });
+      await expect(
+        moveTableSession(database(), host, seated.id, {
+          tableIds: [held],
+          holdOverrideReason: "Please",
+          expectedVersion: seated.version,
+        }),
+      ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+
+      await moveTableSession(database(), manager, seated.id, {
+        tableIds: [held],
+        holdOverrideReason: "Party asked for the window",
+        expectedVersion: seated.version,
+      });
+
+      expect(await holdOverrideRows(database(), reservation.id)).toMatchObject([
+        { tableSessionId: seated.id, restaurantTableId: held, reason: "Party asked for the window" },
+      ]);
+    });
+
+    it("refuses combining a held table without an override", async () => {
+      const from = await tableFixture(database(), scenario);
+      const held = await tableFixture(database(), scenario);
+
+      await reserve(database(), host, 5, { tableIds: [held] });
+
+      const seated = await walkIn(host, [from]);
+
+      await expect(
+        combineTableIntoSession(database(), host, seated.id, { tableId: held, expectedVersion: seated.version }),
+      ).rejects.toMatchObject({ code: "RESERVATION_HOLD_ACTIVE" });
+      expect((await sessionMemberships(database(), seated.id)).filter((row) => row.leftAt === null)).toHaveLength(1);
+    });
+
+    it("lets the reservation's own party move onto its held table", async () => {
+      const held = await tableFixture(database(), scenario);
+      const other = await tableFixture(database(), scenario);
+      const reservation = await reserve(database(), host, 5, { tableIds: [held] });
+
+      await checkInReservation(database(), host, reservation.id, { expectedVersion: 1 });
+
+      const seated = await seatReservationParty(database(), host, {
+        reservationId: reservation.id,
+        expectedVersion: 2,
+        tableIds: [other],
+      });
+
+      await expect(
+        moveTableSession(database(), host, seated.id, { tableIds: [held], expectedVersion: seated.version }),
       ).resolves.toBeDefined();
     });
   });

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, numeric, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, numeric, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
 
 import { activeColumn, uuidPrimaryKey } from "../helpers/columns";
 import { createdAt, timestamptz, updatedAt } from "../helpers/timestamps";
@@ -51,6 +51,11 @@ export const taxRates = pgTable(
     taxCategoryId: uuid("tax_category_id").notNull(),
     locationId: uuid("location_id").notNull(),
     ratePercent: taxRate("rate_percent").notNull(),
+    /**
+     * Phase 20 (policy 15, D13): the menu price already includes this tax. Set with the rate,
+     * so it is effective-dated with it; snapshotted on each item at SEND.
+     */
+    priceIncludesTax: boolean("price_includes_tax").notNull().default(false),
     effectiveFrom: timestamptz("effective_from").notNull(),
     effectiveTo: timestamptz("effective_to"),
     createdByUserId: uuid("created_by_user_id")

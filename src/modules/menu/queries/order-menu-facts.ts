@@ -10,6 +10,7 @@ import { BusinessRuleError } from "@/shared/errors/app-error";
 import type { ProposedSelection } from "../rules/modifier-selection";
 import { assertValidSelection } from "../rules/modifier-selection";
 import { loadSelectionGroups } from "../services/selection-service";
+import { loadModifierOutagesInEffect } from "./stock-signals";
 import {
   getOperationalMenu,
   type OperationalMenu,
@@ -29,6 +30,8 @@ export type SellableSelection = {
 
 export type SellableItem = {
   item: OperationalMenuItem;
+  /** Phase 20 (policy 1): the category of the placement it resolved to, snapshotted at SEND. */
+  category: { id: string; name: string };
   selections: SellableSelection[];
 };
 
@@ -49,14 +52,21 @@ export async function resolveSellableItem(
 ): Promise<SellableItem> {
   const menu = input.menu ?? (await getOperationalMenu(executor, actor, input.at));
   let item: OperationalMenuItem | undefined;
+  let category: { id: string; name: string } | undefined;
 
+  // The first placement wins: menus in their order, then category display order.
   for (const offered of menu.menus) {
-    for (const category of offered.categories) {
-      item ??= category.items.find((entry) => entry.menuItemId === input.menuItemId);
+    for (const candidate of offered.categories) {
+      const found = item ? undefined : candidate.items.find((entry) => entry.menuItemId === input.menuItemId);
+
+      if (found) {
+        item = found;
+        category = { id: candidate.id, name: candidate.name };
+      }
     }
   }
 
-  if (!item) {
+  if (!item || !category) {
     throw new BusinessRuleError("ITEM_NOT_SELLABLE", "That item isn't available to order right now.");
   }
 
@@ -69,13 +79,32 @@ export async function resolveSellableItem(
     const modifier = group?.modifiers.find((entry) => entry.id === selection.modifierId);
 
     if (!group || !modifier) {
-      throw new BusinessRuleError("MODIFIER_INACTIVE", "That modifier isn't available.");
+      return null;
     }
 
     return { modifierGroupId: group.id, modifierGroupName: group.name, modifier };
   });
 
-  return { item, selections };
+  if (selections.some((selection) => selection === null)) {
+    const outs = await loadModifierOutagesInEffect(executor, {
+      organizationId: actor.organizationId,
+      locationId: actor.locationId,
+      at: input.at,
+      modifierIds: input.selections.map((selection) => selection.modifierId),
+    });
+
+    if (outs.length > 0) {
+      throw new BusinessRuleError("MODIFIER_UNAVAILABLE", "A chosen modifier is 86'd here right now.");
+    }
+
+    throw new BusinessRuleError("MODIFIER_INACTIVE", "That modifier isn't available.");
+  }
+
+  return {
+    item,
+    category,
+    selections: selections.filter((selection): selection is SellableSelection => selection !== null),
+  };
 }
 
 /**

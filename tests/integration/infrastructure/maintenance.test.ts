@@ -90,7 +90,7 @@ describe("runMaintenance", () => {
 
     try {
       await other`SELECT pg_advisory_lock(${MAINTENANCE_LOCK_KEY})`;
-      expect(await runMaintenance(getDatabase(), now, { retentionDays: 7, throttleWindowMs: 15 * MINUTE })).toEqual({ skipped: true });
+      expect(await runMaintenance(getDatabase(), now, { retentionDays: 7, throttleWindowMs: 15 * MINUTE, notify: false })).toEqual({ skipped: true });
       expect(await getDatabase().select({ id: outboxEvents.id }).from(outboxEvents).where(eq(outboxEvents.id, ids.oldPublished!))).toHaveLength(1);
     } finally {
       await other`SELECT pg_advisory_unlock(${MAINTENANCE_LOCK_KEY})`;
@@ -99,7 +99,7 @@ describe("runMaintenance", () => {
   });
 
   it("deletes only published outbox rows past retention and expired throttle rows, in batches", async () => {
-    const result = await runMaintenance(getDatabase(), now, { retentionDays: 7, throttleWindowMs: 15 * MINUTE, batchSize: 1 });
+    const result = await runMaintenance(getDatabase(), now, { retentionDays: 7, throttleWindowMs: 15 * MINUTE, batchSize: 1, notify: false });
 
     expect(result.skipped).toBe(false);
 
@@ -133,7 +133,7 @@ describe("runMaintenance", () => {
   });
 
   it("is idempotent: a second run deletes nothing of ours", async () => {
-    await runMaintenance(getDatabase(), now, { retentionDays: 7, throttleWindowMs: 15 * MINUTE });
+    await runMaintenance(getDatabase(), now, { retentionDays: 7, throttleWindowMs: 15 * MINUTE, notify: false });
 
     const [events] = await getDatabase()
       .select({ total: count() })
@@ -144,6 +144,6 @@ describe("runMaintenance", () => {
   });
 
   it("releases its lock, so the next run proceeds", async () => {
-    expect((await runMaintenance(getDatabase(), now, { retentionDays: 7 })).skipped).toBe(false);
+    expect((await runMaintenance(getDatabase(), now, { retentionDays: 7, notify: false })).skipped).toBe(false);
   });
 });

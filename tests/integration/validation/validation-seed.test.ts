@@ -18,6 +18,7 @@ import { assertLocalDevelopment } from "../../../scripts/local-seed-guard";
 import { seedValidationFixture } from "../../../scripts/validation-fixture";
 import { seedValidationLaborTips } from "../../../scripts/validation-labor";
 import { seedValidationMenuStock } from "../../../scripts/validation-menu-stock";
+import { seedValidationServicePolish } from "../../../scripts/validation-service-polish";
 import { dropDatabase, recreateEmptyDatabase } from "../../helpers/prepare-test-database";
 
 const VALIDATION_DATABASE = "restaurant_ops_test_validation_seed";
@@ -97,6 +98,8 @@ describe("Phase 13: opt-in validation seed", () => {
   let laborSecond: Awaited<ReturnType<typeof seedValidationLaborTips>>;
   let signalsFirst: Awaited<ReturnType<typeof seedValidationMenuStock>>;
   let signalsSecond: Awaited<ReturnType<typeof seedValidationMenuStock>>;
+  let polishFirst: Awaited<ReturnType<typeof seedValidationServicePolish>>;
+  let polishSecond: Awaited<ReturnType<typeof seedValidationServicePolish>>;
 
   beforeAll(async () => {
     const url = await recreateEmptyDatabase(requireTestDatabaseUrl(), VALIDATION_DATABASE);
@@ -110,10 +113,12 @@ describe("Phase 13: opt-in validation seed", () => {
     first = await seedValidationFixture(database, await owner());
     laborFirst = await seedValidationLaborTips(database, await owner());
     signalsFirst = await seedValidationMenuStock(database, await owner());
+    polishFirst = await seedValidationServicePolish(database, await owner());
     afterFirst = await counts();
     second = await seedValidationFixture(database, await owner());
     laborSecond = await seedValidationLaborTips(database, await owner());
     signalsSecond = await seedValidationMenuStock(database, await owner());
+    polishSecond = await seedValidationServicePolish(database, await owner());
     afterSecond = await counts();
   }, 180_000);
 
@@ -126,6 +131,16 @@ describe("Phase 13: opt-in validation seed", () => {
     expect(first).toEqual({ skipped: false, employees: 4, schedule: true, dineIn: true, takeout: true, upcoming: true });
     expect(second).toEqual({ skipped: true });
     expect(afterSecond).toEqual(afterFirst);
+  });
+
+  it("adds the Phase 20 modifier 86 once", async () => {
+    expect(polishFirst).toEqual({ skipped: false, modifierOut: true });
+    expect(polishSecond).toEqual({ skipped: true });
+
+    const rows = await client<{ code: string; status: string }[]>`
+      SELECT m.code, o.status FROM modifier_outages o JOIN modifiers m ON m.id = o.modifier_id`;
+
+    expect(rows).toEqual([{ code: "EXTRA_BACON", status: "ACTIVE" }]);
   });
 
   it("adds the Phase 19 86, low-stock alert and suggested draft once", async () => {

@@ -90,10 +90,19 @@ export function parseWith<Schema extends z.ZodType>(
     const fields = [
       ...new Set(result.error.issues.map((issue) => issue.path.join("."))),
     ].filter(Boolean);
+    // A message a schema wrote for people (such as the code rule) is passed on; Zod's own
+    // technical messages ("Invalid input: …") are not.
+    const hints = [
+      ...new Set(
+        result.error.issues
+          .map((issue) => issue.message)
+          .filter((message) => !/^(Invalid|Too (small|big)|Expected|Required|Unrecognized)/.test(message)),
+      ),
+    ];
 
     throw new ValidationError(
       fields.length > 0
-        ? `Check these fields: ${fields.join(", ")}.`
+        ? `Check these fields: ${fields.join(", ")}.${hints.length > 0 ? ` ${hints.join(" ")}` : ""}`
         : "The request is not valid.",
     );
   }

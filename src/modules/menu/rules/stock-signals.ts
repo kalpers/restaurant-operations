@@ -3,7 +3,10 @@ import { compareDecimals, isPositiveDecimal, wholeQuotient } from "@/shared/deci
 // Phase 19 pure rules for the 86 board (approved policies A3-A6). All quantities are base-unit
 // decimal strings; nothing here reads the database.
 
-/** Items with this many portions or fewer (but at least one) are "running low" (policy A7). */
+/**
+ * The default "running low" threshold (Phase 19 policy A7). Since Phase 20 each location sets
+ * its own (`location_settings.running_low_portions`, policy 5).
+ */
 export const RUNNING_LOW_PORTIONS = 5;
 
 export type Requirement = { inventoryItemId: string; baseQuantity: string };
@@ -95,6 +98,16 @@ export function isSellable(state: SellabilityState): boolean {
   return state === "SELLABLE" || state === "SELL_ANYWAY";
 }
 
-export function isRunningLow(portions: number | null): boolean {
-  return portions !== null && portions >= 1 && portions <= RUNNING_LOW_PORTIONS;
+export function isRunningLow(portions: number | null, threshold = RUNNING_LOW_PORTIONS): boolean {
+  return portions !== null && portions >= 1 && portions <= threshold;
+}
+
+/**
+ * Phase 20 (policy 3): an item whose required modifier group is left with fewer choices than
+ * its minimum, once 86'd modifiers are taken out, can't be ordered at the location.
+ */
+export function requiredChoicesRemain(
+  groups: readonly { minimumSelections: number; modifiers: readonly unknown[] }[],
+): boolean {
+  return groups.every((group) => group.modifiers.length >= group.minimumSelections);
 }

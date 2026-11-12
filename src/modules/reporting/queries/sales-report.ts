@@ -187,11 +187,12 @@ async function taxAndRefundSections(context: ReportContext): Promise<ReportSecti
     orders: number;
     taxable: string;
     tax: string;
+    included: boolean;
   }>(
     context,
     sql`
       SELECT o.business_date::text AS business_date, l.tax_category_code_snapshot AS code,
-             l.tax_rate_snapshot::text AS rate, COUNT(DISTINCT o.id)::int AS orders,
+             l.tax_rate_snapshot::text AS rate, l.tax_included AS included, COUNT(DISTINCT o.id)::int AS orders,
              SUM(l.taxable_amount)::numeric(14,2)::text AS taxable, SUM(l.tax_amount)::numeric(14,2)::text AS tax
       FROM order_tax_lines l
       JOIN orders o ON o.id = l.order_id
@@ -199,8 +200,28 @@ async function taxAndRefundSections(context: ReportContext): Promise<ReportSecti
         AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
         AND o.status = 'CLOSED'
         ${orderTypeFilter}
-      GROUP BY o.business_date, l.tax_category_code_snapshot, l.tax_rate_snapshot
-      ORDER BY o.business_date, l.tax_category_code_snapshot, l.tax_rate_snapshot
+      GROUP BY o.business_date, l.tax_category_code_snapshot, l.tax_rate_snapshot, l.tax_included
+      ORDER BY o.business_date, l.tax_category_code_snapshot, l.tax_rate_snapshot, l.tax_included
+    `,
+  );
+  // Phase 20 (policy 16): tax-exempt CLOSED checks, with the reason; never the reference.
+  const exemptRows = await rowsOf<{
+    business_date: string;
+    order_number: number;
+    reason: string;
+    net_sales: string;
+  }>(
+    context,
+    sql`
+      SELECT o.business_date::text AS business_date, o.order_number, o.tax_exempt_reason AS reason,
+             o.subtotal::text AS net_sales
+      FROM orders o
+      WHERE o.location_id = ${filters.locationId}
+        AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        AND o.status = 'CLOSED'
+        AND o.tax_exempt
+        ${orderTypeFilter}
+      ORDER BY o.business_date, o.order_number
     `,
   );
   const refundRows = await rowsOf<{
@@ -251,11 +272,12 @@ async function taxAndRefundSections(context: ReportContext): Promise<ReportSecti
       key: "tax",
       title: "Tax by category",
       description:
-        "Tax on CLOSED orders, from each item's tax snapshot at SEND. Tax returned with refunds is in the refunds section.",
+        "Tax on CLOSED orders, from each item's tax snapshot at SEND. Tax returned with refunds is in the refunds section. Tax included in prices is shown on its own line, with the price less that tax as the taxable amount.",
       columns: [
         { key: "businessDate", label: "Business date", kind: "date" },
         { key: "category", label: "Tax category", kind: "text" },
         { key: "rate", label: "Rate %", kind: "text" },
+        { key: "kind", label: "Charged", kind: "text" },
         { key: "orders", label: "Orders", kind: "count" },
         { key: "taxable", label: "Taxable amount", kind: "money" },
         { key: "tax", label: "Tax", kind: "money" },
@@ -264,9 +286,27 @@ async function taxAndRefundSections(context: ReportContext): Promise<ReportSecti
         businessDate: row.business_date,
         category: row.code,
         rate: row.rate,
+        kind: row.included ? "Included in price" : "Added",
         orders: row.orders,
         taxable: row.taxable,
         tax: row.tax,
+      })),
+    },
+    {
+      key: "taxExempt",
+      title: "Tax-exempt checks",
+      description: "CLOSED checks marked tax exempt, with the reason given. Certificate references aren't shown.",
+      columns: [
+        { key: "businessDate", label: "Business date", kind: "date" },
+        { key: "orderNumber", label: "Order", kind: "count" },
+        { key: "reason", label: "Reason", kind: "text" },
+        { key: "netSales", label: "Net sales", kind: "money" },
+      ],
+      rows: exemptRows.map((row) => ({
+        businessDate: row.business_date,
+        orderNumber: row.order_number,
+        reason: row.reason,
+        netSales: row.net_sales,
       })),
     },
     {

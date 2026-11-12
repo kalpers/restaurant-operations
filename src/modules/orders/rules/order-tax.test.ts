@@ -74,8 +74,10 @@ describe("order tax", () => {
 
     // FOOD: 10.20 x 8.25% = 0.8415 -> 0.84. ALCOHOL: 7.25 x 10% = 0.725 -> 0.73 (half up).
     expect(tax.lines).toEqual([
-      { taxCategoryId: "cat-alc", taxCategoryCode: "ALCOHOL", taxRate: "10.0000", taxableAmount: "7.25", taxAmount: "0.73" },
-      { taxCategoryId: "cat-food", taxCategoryCode: "FOOD", taxRate: "8.2500", taxableAmount: "10.20", taxAmount: "0.84" },
+      { taxCategoryId: "cat-alc", taxCategoryCode: "ALCOHOL", taxRate: "10.0000", taxableAmount: "7.25",
+        taxIncluded: false, taxAmount: "0.73" },
+      { taxCategoryId: "cat-food", taxCategoryCode: "FOOD", taxRate: "8.2500", taxableAmount: "10.20",
+        taxIncluded: false, taxAmount: "0.84" },
     ]);
     expect(tax.taxTotal).toBe("1.57");
   });
@@ -159,5 +161,81 @@ describe("order tax", () => {
     // Shares: a 1.50, b 1.00. Taxable 13.50 + 9.00 = 22.50 = subtotal; 6% = 1.35.
     expect(tax.taxTotal).toBe("1.35");
     expect(tax.lines[0]!.taxableAmount).toBe(totals.subtotal);
+  });
+});
+
+// Phase 20 policies 15 and 16 (D13-D15).
+describe("tax included in prices and exempt checks", () => {
+  const included = (id: string, rate: string): TaxableItem => ({ ...item(id, ALCOHOL, rate), taxIncluded: true });
+
+  it("extracts tax from a price that includes it: price × rate ÷ (100 + rate), half up", () => {
+    // 10.00 at 8.25% included: 10 × 8.25 / 108.25 = 0.7621.. → 0.76; pre-tax 9.24.
+    const tax = calculateOrderTax({
+      items: [included("a", "8.25")],
+      itemNetAmounts: new Map([["a", "10.00"]]),
+      orderDiscountAmount: "0.00",
+    });
+
+    expect(tax).toMatchObject({ taxTotal: "0.76", includedTaxTotal: "0.76" });
+    expect(tax.lines).toEqual([
+      expect.objectContaining({ taxIncluded: true, taxAmount: "0.76", taxableAmount: "9.24" }),
+    ]);
+  });
+
+  it("keeps included and added tax in separate lines and totals", () => {
+    const tax = calculateOrderTax({
+      items: [included("a", "10"), item("b", FOOD, "10")],
+      itemNetAmounts: new Map([
+        ["a", "11.00"],
+        ["b", "10.00"],
+      ]),
+      orderDiscountAmount: "0.00",
+    });
+
+    // a: 11 × 10 / 110 = 1.00 included; b: 10 × 10% = 1.00 added.
+    expect(tax).toMatchObject({ taxTotal: "2.00", includedTaxTotal: "1.00" });
+    expect(tax.lines.map((line) => [line.taxCategoryCode, line.taxIncluded])).toEqual([
+      ["ALCOHOL", true],
+      ["FOOD", false],
+    ]);
+  });
+
+  it("takes the discount before extracting included tax", () => {
+    const tax = calculateOrderTax({
+      items: [included("a", "10")],
+      itemNetAmounts: new Map([["a", "22.00"]]),
+      orderDiscountAmount: "11.00",
+    });
+
+    expect(tax.includedTaxTotal).toBe("1.00");
+  });
+
+  it("charges an exempt check no tax, still taking included tax out of the price", () => {
+    const tax = calculateOrderTax({
+      items: [included("a", "10"), item("b", FOOD, "10")],
+      itemNetAmounts: new Map([
+        ["a", "11.00"],
+        ["b", "10.00"],
+      ]),
+      orderDiscountAmount: "0.00",
+      exempt: true,
+    });
+
+    // Guest pays: (21.00 − 1.00 included) + 0 tax = 20.00.
+    expect(tax).toMatchObject({ taxTotal: "0.00", includedTaxTotal: "1.00", lines: [] });
+  });
+
+  it("keeps subtotal + tax = what the guest pays, with tax inside the price", () => {
+    const tax = calculateOrderTax({
+      items: [included("a", "8.25"), included("b", "8.25")],
+      itemNetAmounts: new Map([
+        ["a", "5.00"],
+        ["b", "7.50"],
+      ]),
+      orderDiscountAmount: "0.00",
+    });
+    const subtotal = (12.5 * 100 - Number(tax.includedTaxTotal) * 100) / 100;
+
+    expect((subtotal * 100 + Number(tax.taxTotal) * 100) / 100).toBe(12.5);
   });
 });

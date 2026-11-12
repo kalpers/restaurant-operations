@@ -19,6 +19,8 @@ export const AUDIT_CATEGORIES = [
   "SETTLEMENTS",
   "REPORTING",
   "SYSTEM",
+  // Phase 20: location settings changes.
+  "ORGANIZATION",
 ] as const;
 
 /**
@@ -59,7 +61,7 @@ export const auditEvents = pgTable(
     check("audit_events_action_format", sql`${table.action} ~ '^[a-z]+[.][a-z-]+$'`),
     check(
       "audit_events_category_valid",
-      sql`${table.category} IN ('ACCESS', 'SECURITY', 'HR', 'SCHEDULING', 'ORDERS', 'MENU', 'INVENTORY', 'SETTLEMENTS', 'REPORTING', 'SYSTEM')`,
+      sql`${table.category} IN ('ACCESS', 'SECURITY', 'HR', 'SCHEDULING', 'ORDERS', 'MENU', 'INVENTORY', 'SETTLEMENTS', 'REPORTING', 'SYSTEM', 'ORGANIZATION')`,
     ),
     check("audit_events_actor_type_valid", sql`${table.actorType} IN ('USER', 'SYSTEM')`),
     check(

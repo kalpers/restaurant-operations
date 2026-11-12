@@ -5,6 +5,7 @@ import {
   orderItemDiscounts,
   orderItemInventoryConsumption,
   orderItems,
+  orderItemShares,
   orderItemVoids,
 } from "@/db/schema";
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
@@ -209,6 +210,21 @@ export async function voidOrder(
       .where(eq(orderItems.orderId, orderId))
       .orderBy(orderItems.id)
       .for("update");
+    // Phase 20 (policy 17): shared items and shares are settled share by share, so a check
+    // holding either can't be voided as a whole.
+    const [share] = await transaction
+      .select({ id: orderItemShares.id })
+      .from(orderItemShares)
+      .where(eq(orderItemShares.orderId, orderId))
+      .limit(1);
+
+    if (share || items.some((item) => item.status === "SPLIT")) {
+      throw new BusinessRuleError(
+        "ORDER_HAS_SHARES",
+        "This check has shared items. Void the items and shares one by one instead.",
+      );
+    }
+
     const submitted = items.filter((item) => item.status === "SUBMITTED");
     const missing = submitted.filter((item) => !input.dispositions[item.id]);
 

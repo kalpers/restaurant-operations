@@ -47,6 +47,7 @@ import {
   employeeAvailability,
   employeeAvailabilityExceptions,
   employeeSchedulingPreferences,
+  tipDeclarations,
 } from "@/db/schema";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
@@ -60,6 +61,7 @@ import {
 } from "./auth-fixtures";
 import { clearOrderData } from "./order-cleanup";
 import { clearAuditEvents } from "./audit-cleanup";
+import { clearPhase20Notifications } from "./notification-cleanup";
 
 export const HIRE_DATE = "2024-01-15";
 export const ABSENT_ID = "00000000-0000-4000-8000-000000000000";
@@ -211,6 +213,8 @@ export async function clearEmployeeData(database: Database): Promise<void> {
   // Audit events reference employees with RESTRICT, so they go first.
   await clearAuditEvents(database);
   await clearRestaurantData(database);
+  await clearPhase20Notifications(database);
+  await database.delete(tipDeclarations);
   await database.delete(shiftSwapRequests);
   await database.delete(shiftAssignments);
   await database.delete(scheduleGenerationRuns);

@@ -17,6 +17,7 @@ import { useToast } from "@/components/ui/toast";
 import type { OrderItemFulfillment } from "@/modules/kitchen/queries/kitchen-queries";
 import type { OperationalMenuItem } from "@/modules/menu/queries/operational-menu";
 import type { OrderDetail } from "@/modules/orders/queries/order-queries";
+import { sumDecimals } from "@/shared/decimal/decimal";
 
 import { callOrderApi, formatMoney, newIdempotencyKey, ORDER_TYPE_LABELS } from "./order-api";
 
@@ -35,6 +36,8 @@ export type WorkspaceAbilities = {
   fire: boolean;
   move: boolean;
   newCheck: boolean;
+  /** Phase 20: `tax.exempt`, mark the check tax exempt. */
+  taxExempt: boolean;
 };
 
 export type OtherCheck = { id: string; orderNumber: number; version: number };
@@ -653,15 +656,28 @@ function SentLine({
   abilities,
   discounts,
   fulfillment,
+  otherChecks,
 }: {
   order: OrderDetail;
   item: OrderDetail["items"][number];
   abilities: WorkspaceAbilities;
   discounts: DiscountChoice[];
   fulfillment: OrderItemFulfillment | undefined;
+  otherChecks: OtherCheck[];
 }) {
   const voided = item.status === "VOIDED";
+  // Phase 20 (policy 17): a SPLIT item is shared between checks; its shares carry the money.
+  const split = item.status === "SPLIT";
+  const itemShares = order.shares.filter((share) => share.orderItemId === item.id);
   const itemDiscounts = discounts.filter((entry) => entry.scope === "ITEM");
+  const appliedItemDiscounts = item.discounts.filter((entry) => entry.status === "APPLIED");
+  const canShare =
+    item.status === "SUBMITTED" &&
+    order.status === "OPEN" &&
+    abilities.move &&
+    order.tableSessionId !== null &&
+    appliedItemDiscounts.length === 0 &&
+    (abilities.newCheck || otherChecks.length > 0);
 
   return (
     <li
@@ -675,25 +691,46 @@ function SentLine({
         <span className={voided ? "line-through" : ""}>
           {item.quantity} × {item.name}
         </span>
-        <span className={cn("tabular", voided && "line-through")}>{formatMoney(item.lineTotal)}</span>
+        <span className={cn("tabular", (voided || split) && "line-through")}>{formatMoney(item.lineTotal)}</span>
       </p>
       <ModifierLines item={item} />
       <p className="text-xs tracking-wide uppercase">
         {voided
           ? `Voided${item.voidDisposition === "UNPREPARED" ? " · not prepared" : " · prepared or discarded"} · ${item.voidReason}`
-          : `Sent in round ${item.batchNumber} · course ${item.courseNumber}`}
+          : `Sent in round ${item.batchNumber} · course ${item.courseNumber}${split ? ` · shared ${itemShares[0]?.shareCount ?? ""} ways` : ""}`}
       </p>
+      {split && (
+        <ul aria-label={`Shares of ${item.name}`} className="mt-1 grid gap-0.5 text-sm text-neutral-700">
+          {itemShares.map((share) => (
+            <li key={share.id} className="flex justify-between">
+              <span>
+                Share {share.shareNumber}/{share.shareCount}
+                {share.elsewhereOrderNumber ? ` · on check #${share.elsewhereOrderNumber}` : " · on this check"}
+                {share.status === "VOIDED" ? " · voided" : ""}
+              </span>
+              <span className="tabular">{formatMoney(share.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <FulfillmentLine fulfillment={fulfillment} />
       {item.discounts
         .filter((entry) => entry.status === "APPLIED")
         .map((entry) => (
           <AppliedDiscountLine key={entry.id} order={order} discount={entry} canRemove={abilities.discount} />
         ))}
-      {!voided && order.status === "OPEN" && abilities.discount && itemDiscounts.length > 0 && (
+      {canShare && (
+        <DialogAction label="Share between checks" title={`Share ${item.name} between checks`}>
+          {(close) => (
+            <ShareItemForm order={order} item={item} otherChecks={otherChecks} canOpenNew={abilities.newCheck} onDone={close} />
+          )}
+        </DialogAction>
+      )}
+      {!voided && !split && order.status === "OPEN" && abilities.discount && itemDiscounts.length > 0 && (
         <ApplyDiscountForm order={order} choices={itemDiscounts} url={`/api/orders/${order.id}/items/${item.id}/discounts`} label={`Discount ${item.name}`} />
       )}
       {!voided && order.status === "OPEN" && abilities.remake && fulfillment && <RemakeForm order={order} item={item} />}
-      {!voided && order.status === "OPEN" && abilities.void && (
+      {!voided && !split && order.status === "OPEN" && abilities.void && (
         <DialogAction
           label="Void item"
           title={`Void ${item.name}?`}
@@ -704,6 +741,184 @@ function SentLine({
         </DialogAction>
       )}
     </li>
+  );
+}
+
+/** Phase 20 (policy 17): equal shares of one sent item, each on a chosen check at the table. */
+function ShareItemForm({
+  order,
+  item,
+  otherChecks,
+  canOpenNew,
+  onDone,
+}: {
+  order: OrderDetail;
+  item: OrderDetail["items"][number];
+  otherChecks: OtherCheck[];
+  canOpenNew: boolean;
+  onDone: () => void;
+}) {
+  const { run, pending, error } = useAction();
+  const toast = useToast();
+  const [count, setCount] = useState(2);
+  const [targets, setTargets] = useState<string[]>(() =>
+    Array.from({ length: 10 }, (_, index) => (index === 0 ? "THIS" : canOpenNew ? "NEW" : (otherChecks[0]?.id ?? "THIS"))),
+  );
+  const key = useRef<string | null>(null);
+  const choices = [
+    { value: "THIS", label: `This check (#${order.orderNumber})` },
+    ...otherChecks.map((entry) => ({ value: entry.id, label: `Check #${entry.orderNumber}` })),
+    ...(canOpenNew ? [{ value: "NEW", label: "A new check" }] : []),
+  ];
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    key.current ??= `split-${crypto.randomUUID()}`;
+
+    const chosen = targets.slice(0, count).map((target) => {
+      if (target === "NEW") {
+        return { newCheck: true as const };
+      }
+
+      if (target === "THIS") {
+        return { orderId: order.id, expectedVersion: order.version };
+      }
+
+      const other = otherChecks.find((entry) => entry.id === target)!;
+
+      return { orderId: other.id, expectedVersion: other.version };
+    });
+    const result = await run(
+      "POST",
+      `/api/orders/${order.id}/items/${item.id}/split`,
+      { shareCount: count, targets: chosen, expectedVersion: order.version },
+      { "Idempotency-Key": key.current },
+    );
+
+    if (result.ok || (result.status >= 400 && result.status < 500)) {
+      key.current = null;
+    }
+
+    if (result.ok) {
+      toast.success(`${item.name} is shared ${count} ways.`);
+      onDone();
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} aria-label={`Share ${item.name}`} className="grid gap-3">
+      <p className="text-sm text-neutral-700">
+        The item stays made once. Its {formatMoney(item.lineTotal)} is split into equal shares; each share goes on the
+        check you choose.
+      </p>
+      <Field label="Number of shares">
+        <Select value={String(count)} onChange={(event) => setCount(Number(event.target.value))}>
+          {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {Array.from({ length: count }, (_, index) => (
+        <Field key={index} label={`Share ${index + 1} goes on`}>
+          <Select
+            value={targets[index]}
+            onChange={(event) =>
+              setTargets((current) => current.map((value, position) => (position === index ? event.target.value : value)))
+            }
+          >
+            {choices.map((choice) => (
+              <option key={choice.value} value={choice.value}>
+                {choice.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ))}
+      <Button type="submit" pending={pending}>
+        Share item
+      </Button>
+      <ErrorText error={error} />
+    </form>
+  );
+}
+
+/** Phase 20 (policy 17): shares of other checks' items that sit on this one, with void. */
+function SharesHere({ order, canVoid }: { order: OrderDetail; canVoid: boolean }) {
+  const here = order.shares.filter(
+    (share) => share.elsewhereOrderNumber === null,
+  );
+
+  if (here.length === 0) {
+    return null;
+  }
+
+  return (
+    <section aria-label="Shared items" className="grid gap-2">
+      <h3 className="text-sm font-semibold">Shared items</h3>
+      <ul className="grid gap-2">
+        {here.map((share) => (
+          <li
+            key={share.id}
+            aria-label={`Share of ${share.itemName}`}
+            className={cn("rounded-md border p-3", share.status === "VOIDED" ? "border-neutral-300 bg-neutral-100 text-neutral-600" : "border-neutral-200 bg-surface")}
+          >
+            <p className="flex justify-between font-medium">
+              <span className={share.status === "VOIDED" ? "line-through" : ""}>
+                {share.itemName} · share {share.shareNumber}/{share.shareCount}
+              </span>
+              <span className={cn("tabular", share.status === "VOIDED" && "line-through")}>{formatMoney(share.amount)}</span>
+            </p>
+            {share.status === "ACTIVE" && order.status === "OPEN" && canVoid && (
+              <DialogAction label="Void share" title={`Void this share of ${share.itemName}?`} danger>
+                {(close) => <VoidShareForm order={order} share={share} onDone={close} />}
+              </DialogAction>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function VoidShareForm({
+  order,
+  share,
+  onDone,
+}: {
+  order: OrderDetail;
+  share: OrderDetail["shares"][number];
+  onDone: () => void;
+}) {
+  const { run, pending, error } = useAction();
+  const [reason, setReason] = useState("");
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+
+    const result = await run("POST", `/api/orders/${order.id}/shares/${share.id}/void`, {
+      reason,
+      expectedVersion: order.version,
+      shareVersion: share.version,
+    });
+
+    if (result.ok) {
+      onDone();
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} aria-label="Void share" className="grid gap-2">
+      <p className="text-sm text-neutral-700">This removes the money only. The item was made once and its stock stays used.</p>
+      <Field label="Reason">
+        <Input value={reason} required maxLength={300} onChange={(event) => setReason(event.target.value)} />
+      </Field>
+      <Button type="submit" variant="danger" pending={pending} disabled={!reason.trim()}>
+        Void share
+      </Button>
+      <ErrorText error={error} />
+    </form>
   );
 }
 
@@ -735,6 +950,55 @@ function ApplyDiscountForm({ order, choices, url, label }: { order: OrderDetail;
         </Field>
         <Button type="submit" pending={pending} disabled={!reason.trim()}>
           Apply discount
+        </Button>
+        <ErrorText error={error} />
+      </form>
+    </details>
+  );
+}
+
+/** Phase 20 (policy 16): mark the check tax exempt, or remove the exemption, while OPEN. */
+function TaxExemptionControl({ order }: { order: OrderDetail }) {
+  const { run, pending, error } = useAction();
+  const [reason, setReason] = useState("");
+  const [reference, setReference] = useState("");
+
+  if (order.taxExempt) {
+    return (
+      <div className="mt-2 grid gap-2">
+        <Button
+          type="button"
+          pending={pending}
+          onClick={() => run("DELETE", `/api/orders/${order.id}/tax-exemption`, { expectedVersion: order.version })}
+        >
+          Remove tax exemption
+        </Button>
+        <ErrorText error={error} />
+      </div>
+    );
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    await run("POST", `/api/orders/${order.id}/tax-exemption`, {
+      expectedVersion: order.version,
+      reason,
+      reference: reference.trim() || null,
+    });
+  }
+
+  return (
+    <details className="mt-2">
+      <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium">Make tax exempt</summary>
+      <form onSubmit={handleSubmit} aria-label="Make tax exempt" className="grid gap-2">
+        <Field label="Reason">
+          <Input value={reason} required maxLength={200} onChange={(event) => setReason(event.target.value)} />
+        </Field>
+        <Field label="Exemption certificate reference (optional)">
+          <Input value={reference} maxLength={60} onChange={(event) => setReference(event.target.value)} />
+        </Field>
+        <Button type="submit" pending={pending} disabled={!reason.trim()}>
+          Make tax exempt
         </Button>
         <ErrorText error={error} />
       </form>
@@ -1105,12 +1369,24 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
                 abilities={abilities}
                 discounts={discounts}
                 fulfillment={fulfillment[item.id]}
+                otherChecks={otherChecks}
               />
             ))}
           </ul>
+          <SharesHere order={order} canVoid={abilities.void} />
         </section>
 
         <section aria-label="Totals" className="grid gap-1 border-t border-neutral-200 pt-3">
+          {drafts.length > 0 && (
+            <p className="flex justify-between text-sm text-neutral-700">
+              <span>
+                Not sent yet ({drafts.length} {drafts.length === 1 ? "item" : "items"}; counted once sent)
+              </span>
+              <span aria-label="Not sent yet" className="tabular">
+                {formatMoney(sumDecimals(drafts.map((item) => item.lineTotal), 2))}
+              </span>
+            </p>
+          )}
           <p className="flex justify-between">
             <span>Items sent</span>
             <span className="tabular">{formatMoney(order.itemSubtotal)}</span>
@@ -1131,11 +1407,22 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
             </span>
           </p>
           <p className="flex justify-between">
-            <span>Tax</span>
+            <span>{order.taxExempt ? "Tax (exempt)" : "Tax"}</span>
             <span aria-label="Tax" className="tabular">
               {formatMoney(order.taxTotal)}
             </span>
           </p>
+          {order.includedTaxTotal !== "0.00" && (
+            <p className="flex justify-between text-sm text-neutral-600">
+              <span>{order.taxExempt ? "Tax taken out of prices" : "Of which included in prices"}</span>
+              <span aria-label="Tax included in prices" className="tabular">
+                {formatMoney(order.includedTaxTotal)}
+              </span>
+            </p>
+          )}
+          {order.taxExempt && order.taxExemptReason && (
+            <p className="text-sm text-neutral-600">Tax exempt: {order.taxExemptReason}</p>
+          )}
           <p className="flex justify-between text-xl font-semibold">
             <span>Total due</span>
             <span aria-label="Order total" className="tabular">
@@ -1145,6 +1432,7 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
           {open && abilities.discount && orderDiscounts.length > 0 && order.itemSubtotal !== "0.00" && (
             <ApplyDiscountForm order={order} choices={orderDiscounts} url={`/api/orders/${order.id}/discounts`} label="Discount the order" />
           )}
+          {open && abilities.taxExempt && <TaxExemptionControl order={order} />}
         </section>
 
         {abilities.settle && order.status !== "VOIDED" && (

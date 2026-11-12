@@ -218,7 +218,7 @@ export default async function RecipeDetailPage({
                       submitLabel="Publish revision"
                       hidden={{ expectedVersion: revision.version }}
                       fields={[
-                        { name: "effectiveFrom", label: "Takes effect (your local time; blank is now)", type: "datetime-local" },
+                        { name: "effectiveFrom", label: "Takes effect (location time; blank is now)", type: "datetime-local" },
                       ]}
                     />
                   </div>

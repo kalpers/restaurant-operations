@@ -36,6 +36,7 @@ import { createEmployee } from "../../src/modules/employees/services/employee-se
 import { E2E_DOCUMENT_STORAGE_PATH } from "./e2e-storage";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
 import { clearStockSignalRows } from "./e2e-stock-signals";
+import { clearNotificationsFor } from "../fixtures/notification-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -176,6 +177,7 @@ export async function removeHrE2eData(): Promise<void> {
   const employeeIds = employeeRows.map((row) => row.id);
 
   if (employeeIds.length > 0) {
+    await clearNotificationsFor(database, { employeeIds });
     await database.delete(employeeCertifications).where(inArray(employeeCertifications.employeeId, employeeIds));
     await database.delete(employeeDocuments).where(inArray(employeeDocuments.employeeId, employeeIds));
     await database.delete(employeeNotes).where(inArray(employeeNotes.employeeId, employeeIds));

@@ -1,6 +1,6 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
 
-import { locations, locationSettings, menuItemOutages, menuItemStockOverrides } from "@/db/schema";
+import { locations, locationSettings, menuItemOutages, menuItemStockOverrides, modifierOutages } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import { quantitiesOnHand } from "@/modules/inventory/queries/item-facts";
 import { resolveCurrentRequirementsForMenuItems } from "@/modules/recipes/queries/menu-item-requirements";
@@ -13,7 +13,41 @@ import { portionsRemaining, sellabilityState, type SellabilityState } from "../r
 // Outages and overrides are Menu records; stock comes from Inventory's public query and
 // requirements from Recipes'. Nothing here is stored: auto-86 is worked out on every read.
 
-export type LocationMenuSettings = BusinessDateSettings & { auto86FromStock: boolean };
+export type LocationMenuSettings = BusinessDateSettings & { auto86FromStock: boolean; runningLowPortions: number };
+
+/**
+ * Phase 20 (policy 4): an ACTIVE outage counts only inside its `[starts_at, ends_at)` window,
+ * worked out on read, so a scheduled 86 needs no job to start or end it.
+ */
+export function outageInEffect(table: typeof menuItemOutages | typeof modifierOutages, at: Date): SQL {
+  return and(
+    eq(table.status, "ACTIVE"),
+    lte(table.startsAt, at),
+    or(isNull(table.endsAt), gt(table.endsAt, at)),
+  )!;
+}
+
+/** Phase 20 (policy 3): modifiers 86'd at the location at `at`. */
+export async function loadModifierOutagesInEffect(
+  executor: DatabaseExecutor,
+  input: { organizationId: string; locationId: string; at: Date; modifierIds?: readonly string[] },
+) {
+  if (input.modifierIds && input.modifierIds.length === 0) {
+    return [];
+  }
+
+  return executor
+    .select()
+    .from(modifierOutages)
+    .where(
+      and(
+        eq(modifierOutages.organizationId, input.organizationId),
+        eq(modifierOutages.locationId, input.locationId),
+        outageInEffect(modifierOutages, input.at),
+        input.modifierIds ? inArray(modifierOutages.modifierId, [...input.modifierIds]) : undefined,
+      ),
+    );
+}
 
 export async function loadLocationMenuSettings(
   executor: DatabaseExecutor,
@@ -25,6 +59,7 @@ export async function loadLocationMenuSettings(
       timeZone: locations.timezone,
       businessDayCutoff: locationSettings.businessDayCutoff,
       auto86FromStock: locationSettings.auto86FromStock,
+      runningLowPortions: locationSettings.runningLowPortions,
     })
     .from(locations)
     .innerJoin(locationSettings, eq(locationSettings.locationId, locations.id))
@@ -43,13 +78,22 @@ export type ItemStockSignal = {
   /** Null when the item has no recipe figure, or when it wasn't computed. */
   portions: number | null;
   limitingInventoryItemId: string | null;
-  outage: { id: string; reason: string; markedOutAt: Date; markedOutByUserId: string; version: number } | null;
+  outage: {
+    id: string;
+    reason: string;
+    markedOutAt: Date;
+    markedOutByUserId: string;
+    startsAt: Date;
+    endsAt: Date | null;
+    version: number;
+  } | null;
   override: { id: string; reason: string; setAt: Date; setByUserId: string; version: number } | null;
 };
 
 export type StockSignals = {
   businessDate: string;
   auto86FromStock: boolean;
+  runningLowPortions: number;
   items: Map<string, ItemStockSignal>;
 };
 
@@ -74,7 +118,7 @@ export async function loadStockSignals(
   const items = new Map<string, ItemStockSignal>();
 
   if (input.menuItemIds.length === 0) {
-    return { businessDate, auto86FromStock: settings.auto86FromStock, items };
+    return { businessDate, auto86FromStock: settings.auto86FromStock, runningLowPortions: settings.runningLowPortions, items };
   }
 
   const ids = [...input.menuItemIds];
@@ -85,7 +129,7 @@ export async function loadStockSignals(
       and(
         eq(menuItemOutages.locationId, input.locationId),
         eq(menuItemOutages.organizationId, input.organizationId),
-        eq(menuItemOutages.status, "ACTIVE"),
+        outageInEffect(menuItemOutages, input.at),
         inArray(menuItemOutages.menuItemId, ids),
       ),
     );
@@ -137,6 +181,8 @@ export async function loadStockSignals(
         reason: outage.reason,
         markedOutAt: outage.markedOutAt,
         markedOutByUserId: outage.markedOutByUserId,
+        startsAt: outage.startsAt,
+        endsAt: outage.endsAt,
         version: outage.version,
       },
       override: override && {
@@ -149,5 +195,5 @@ export async function loadStockSignals(
     });
   }
 
-  return { businessDate, auto86FromStock: settings.auto86FromStock, items };
+  return { businessDate, auto86FromStock: settings.auto86FromStock, runningLowPortions: settings.runningLowPortions, items };
 }

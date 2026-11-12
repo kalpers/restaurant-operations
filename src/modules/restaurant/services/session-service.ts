@@ -43,6 +43,16 @@ import {
 type SessionRow = NonNullable<Awaited<ReturnType<typeof lockSession>>>;
 type Versioned = { id: string; version: number };
 
+/**
+ * Phase 20 (policy 8): a check on the tables a move or combine takes, run in the same
+ * transaction after they are locked and before the party joins them. The move-table-session
+ * workflow passes the reservation-hold check, because Restaurant can't import Reservations.
+ */
+export type NewTablesCheck = (
+  transaction: DatabaseTransaction,
+  input: { sessionId: string; guestPartyId: string | null; tableIds: readonly string[]; now: Date },
+) => Promise<void>;
+
 /** Locks the session, at the expected version and still active. */
 async function lockActiveSession(
   transaction: DatabaseTransaction,
@@ -158,6 +168,7 @@ export async function moveSession(
     capacityOverrideReason?: string | null;
     expectedVersion: number;
   },
+  checkNewTables?: NewTablesCheck,
 ): Promise<Versioned> {
   assertPermission(actor, "restaurant.move");
 
@@ -201,6 +212,10 @@ export async function moveSession(
       overrideReason: input.capacityOverrideReason,
     });
 
+    if (checkNewTables && newIds.length > 0) {
+      await checkNewTables(transaction, { sessionId, guestPartyId: session.guestPartyId, tableIds: newIds, now });
+    }
+
     await endMemberships(transaction, {
       sessionId,
       tableIds: vacatedIds,
@@ -241,6 +256,7 @@ export async function addTableToSession(
     capacityOverrideReason?: string | null;
     expectedVersion: number;
   },
+  checkNewTables?: NewTablesCheck,
 ): Promise<Versioned> {
   assertPermission(actor, "restaurant.move");
 
@@ -277,6 +293,15 @@ export async function addTableToSession(
       tables,
       overrideReason: input.capacityOverrideReason,
     });
+
+    if (checkNewTables) {
+      await checkNewTables(transaction, {
+        sessionId,
+        guestPartyId: session.guestPartyId,
+        tableIds: [input.tableId],
+        now,
+      });
+    }
 
     await openMemberships(transaction, {
       sessionId,

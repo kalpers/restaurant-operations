@@ -45,7 +45,7 @@ export default async function PurchaseOrdersPage() {
                   ...suppliers.filter((supplier) => supplier.active).map((supplier) => ({ value: supplier.id, label: supplier.name })),
                 ],
               },
-              { name: "expectedAt", label: "Expected delivery (your local time)", type: "datetime-local" },
+              { name: "expectedAt", label: "Expected delivery (location time)", type: "datetime-local" },
               { name: "notes", label: "Notes" },
             ]}
           />

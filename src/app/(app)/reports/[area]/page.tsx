@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { ReportTabs } from "@/components/reports/report-tabs";
 import { ReportView } from "@/components/reports/report-view";
@@ -17,12 +18,15 @@ import {
   REPORT_AREA_TITLE,
   TENDER_TYPES,
   type ReportArea,
+  type ReportFilters,
   type ReportResult,
 } from "@/modules/reporting/types";
 import { reportAreaParamsSchema, reportFiltersSchema } from "@/modules/reporting/validators/report-filters";
 import { AppError } from "@/shared/errors/app-error";
 import { INPUT_BASE } from "@/components/ui/field";
 import { Breadcrumbs } from "@/components/ui/page-header";
+import { SectionsSkeleton } from "@/components/ui/skeleton";
+import type { Actor } from "@/modules/auth/types";
 
 const INPUT_CLASS = INPUT_BASE;
 
@@ -100,21 +104,6 @@ export default async function ReportPage({
     orderType: ORDER_TYPE_FILTER.includes(area) ? raw.orderType : undefined,
     tenderType: area === "settlements" ? raw.tenderType : undefined,
   });
-  let report: ReportResult | null = null;
-  let error: string | null = parsed.success ? null : "Check the filters: dates must be valid.";
-
-  if (parsed.success) {
-    try {
-      report = await runReport(database, actor, area, parsed.data);
-    } catch (caught) {
-      if (caught instanceof AppError && caught.httpStatus < 500) {
-        error = caught.message;
-      } else {
-        throw caught;
-      }
-    }
-  }
-
   const employees = EMPLOYEE_FILTER.includes(area)
     ? await listReportEmployees(database, actor, location.locationId)
     : [];
@@ -211,7 +200,7 @@ export default async function ReportPage({
         <button type="submit" className="min-h-11 rounded-md border border-neutral-300 px-4 font-medium">
           Run report
         </button>
-        {exportHref && report && (
+        {exportHref && parsed.success && (
           <a
             href={exportHref()}
             className="inline-flex min-h-11 items-center rounded-md border border-brand-700 bg-brand-700 px-4 font-medium text-white shadow-sm hover:bg-brand-800"
@@ -221,12 +210,51 @@ export default async function ReportPage({
         )}
       </form>
 
-      {error && (
-        <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
-          {error}
-        </p>
+      {parsed.success ? (
+        <Suspense
+          key={JSON.stringify(filterQuery)}
+          fallback={<SectionsSkeleton label="Loading report" />}
+        >
+          <ReportResults actor={actor} area={area} filters={parsed.data} exportHref={exportHref} />
+        </Suspense>
+      ) : (
+        <ReportErrorText error="Check the filters: dates must be valid." />
       )}
-      {report && <ReportView report={report} exportHref={exportHref} />}
     </>
   );
+}
+
+function ReportErrorText({ error }: { error: string }) {
+  return (
+    <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
+      {error}
+    </p>
+  );
+}
+
+/** Streams in after the filters render, so a slow range shows a placeholder first. */
+async function ReportResults({
+  actor,
+  area,
+  filters,
+  exportHref,
+}: {
+  actor: Actor;
+  area: ReportArea;
+  filters: ReportFilters;
+  exportHref: ((section?: string) => string) | null;
+}) {
+  let report: ReportResult;
+
+  try {
+    report = await runReport(getDatabase(), actor, area, filters);
+  } catch (caught) {
+    if (caught instanceof AppError && caught.httpStatus < 500) {
+      return <ReportErrorText error={caught.message} />;
+    }
+
+    throw caught;
+  }
+
+  return <ReportView report={report} exportHref={exportHref} />;
 }

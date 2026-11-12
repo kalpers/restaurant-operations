@@ -88,6 +88,15 @@ function assertRules(input: SchedulingRuleRow): void {
   if (!Number.isInteger(input.lateClockInGraceMinutes) || input.lateClockInGraceMinutes < 0 || input.lateClockInGraceMinutes > 120) {
     throw new ValidationError("Enter a late clock-in grace from 0 to 120 minutes.");
   }
+
+  if (
+    input.dailyOvertimeThreshold !== null &&
+    (!isValidHours(input.dailyOvertimeThreshold) ||
+      compareDecimals(input.dailyOvertimeThreshold, "0") <= 0 ||
+      compareDecimals(input.dailyOvertimeThreshold, "24") > 0)
+  ) {
+    throw new ValidationError("Enter a daily overtime threshold above 0 and up to 24 hours, or leave it blank.");
+  }
 }
 
 /** `expectedVersion` is null only when this location has no rules row yet. */

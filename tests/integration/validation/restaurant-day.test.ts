@@ -229,7 +229,9 @@ describe("Phase 13: a full simulated restaurant day", () => {
 
       const unread = await database().select().from(notifications).where(eq(notifications.recipientUserId, day.actors.server.userId));
 
-      expect(unread).toHaveLength(5);
+      // Five ready notices; since Phase 20 the published schedule is announced too.
+      expect(unread.filter((row) => row.notificationType.endsWith("READY"))).toHaveLength(5);
+      expect(unread.filter((row) => row.notificationType === "SCHEDULE_PUBLISHED")).toHaveLength(1);
     });
   });
 

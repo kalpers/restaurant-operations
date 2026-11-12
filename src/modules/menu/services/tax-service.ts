@@ -130,6 +130,8 @@ export function normalizeTaxRate(value: string): string {
 export type ChangeTaxRateInput = {
   taxCategoryId: string;
   ratePercent: string;
+  /** Phase 20 (policy 15, D13): the menu prices already include this tax. */
+  priceIncludesTax?: boolean;
   effectiveFrom: Date | null;
   /** The rate row the editor showed as current (null: none); a mismatch is stale. */
   expectedCurrentRateId?: string | null;
@@ -207,6 +209,7 @@ export async function changeTaxRate(
           taxCategoryId: category.id,
           locationId: actor.locationId,
           ratePercent,
+          priceIncludesTax: input.priceIncludesTax ?? false,
           effectiveFrom,
           createdByUserId: actor.userId,
         })
@@ -217,9 +220,21 @@ export async function changeTaxRate(
         action: "tax.rate-changed",
         entityId: category.id,
         before: replaced
-          ? { categoryCode: category.code, recordId: replaced.id, percent: replaced.ratePercent, effectiveFrom: replaced.effectiveFrom }
+          ? {
+              categoryCode: category.code,
+              recordId: replaced.id,
+              percent: replaced.ratePercent,
+              priceIncludesTax: replaced.priceIncludesTax,
+              effectiveFrom: replaced.effectiveFrom,
+            }
           : null,
-        after: { categoryCode: category.code, recordId: created!.id, percent: ratePercent, effectiveFrom },
+        after: {
+          categoryCode: category.code,
+          recordId: created!.id,
+          percent: ratePercent,
+          priceIncludesTax: created!.priceIncludesTax,
+          effectiveFrom,
+        },
       });
 
       return created!;
@@ -302,7 +317,7 @@ export async function resolveAssignableTaxCategory(
   }
 }
 
-export type ItemTax = { taxCategoryId: string; taxCategoryCode: string; taxRate: string };
+export type ItemTax = { taxCategoryId: string; taxCategoryCode: string; taxRate: string; priceIncludesTax: boolean };
 
 /**
  * The trusted lookup SEND uses (policy A4): each menu item's Tax Category and the rate in
@@ -347,7 +362,14 @@ export async function resolveItemTaxes(
 
     result.set(
       item.id,
-      rate && item.code ? { taxCategoryId: rate.taxCategoryId, taxCategoryCode: item.code, taxRate: rate.ratePercent } : null,
+      rate && item.code
+        ? {
+            taxCategoryId: rate.taxCategoryId,
+            taxCategoryCode: item.code,
+            taxRate: rate.ratePercent,
+            priceIncludesTax: rate.priceIncludesTax,
+          }
+        : null,
     );
   }
 

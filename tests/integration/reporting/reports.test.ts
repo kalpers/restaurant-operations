@@ -426,6 +426,25 @@ describe("reporting", () => {
       const plain = await report("menu", noCost);
 
       expect(plain.sections.map((entry) => entry.key)).not.toContain("menuEngineering");
+      expect(plain.sections.map((entry) => entry.key)).not.toContain("menuEngineeringByCategory");
+      expect(plain.sections.map((entry) => entry.key)).toContain("itemMixByCategory");
+    });
+
+    it("groups item mix and engineering by the category snapshotted at SEND (Phase 20)", async () => {
+      const menu = await report("menu");
+      const byCategory = section(menu, "itemMixByCategory");
+
+      expect(byCategory.rows.every((entry) => entry.category !== "Uncategorized")).toBe(true);
+      expect(sum(byCategory.rows.map((entry) => entry.netSales))).toBe(32.99);
+
+      // Within each category the shares add up to 100%.
+      for (const category of new Set(byCategory.rows.map((entry) => entry.category))) {
+        const rows = byCategory.rows.filter((entry) => entry.category === category);
+
+        expect(sum(rows.map((entry) => entry.quantityPercent))).toBeCloseTo(100, 1);
+      }
+
+      expect(section(menu, "menuEngineeringByCategory").rows.length).toBe(byCategory.rows.length);
     });
 
     it("adds server performance, with tips only for tip viewers", async () => {

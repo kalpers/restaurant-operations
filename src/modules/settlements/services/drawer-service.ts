@@ -297,7 +297,7 @@ async function drawerFacts(executor: DatabaseExecutor, session: SessionRow): Pro
     .from(cashDrawerMovements)
     .where(eq(cashDrawerMovements.sessionId, session.id));
   const refunds = await executor
-    .select({ status: orderRefunds.status, amount: orderRefunds.amount })
+    .select({ status: orderRefunds.status, amount: orderRefunds.amount, tipAmount: orderRefunds.tipAmount })
     .from(orderRefunds)
     .where(eq(orderRefunds.cashDrawerSessionId, session.id));
 

@@ -14,18 +14,28 @@ export type TaxableItem = {
   taxCategoryId: string | null;
   taxCategoryCode: string | null;
   taxRate: string | null;
+  /** Phase 20 (policy 15): the price already includes this tax. */
+  taxIncluded?: boolean;
 };
 
 export type TaxLine = {
   taxCategoryId: string;
   taxCategoryCode: string;
   taxRate: string;
+  /** Pre-tax amount: for tax included in prices, the price less the tax in it. */
   taxableAmount: string;
   taxAmount: string;
+  taxIncluded: boolean;
 };
 
 export type OrderTax = {
+  /** All tax the guest pays: added and included. Zero on an exempt check. */
   taxTotal: string;
+  /**
+   * Phase 20 (D14): tax contained in the item prices. It comes off the subtotal, so the
+   * subtotal stays pre-tax. Worked out on an exempt check too, where none is added back.
+   */
+  includedTaxTotal: string;
   lines: TaxLine[];
   /** Each item's taxable base: its net after item discounts, less its order-discount share. */
   taxableByItem: Map<string, string>;
@@ -99,6 +109,8 @@ export function calculateOrderTax(input: {
   items: readonly TaxableItem[];
   itemNetAmounts: ReadonlyMap<string, string>;
   orderDiscountAmount: string;
+  /** Phase 20 (policy 16, D15): a tax-exempt check. */
+  exempt?: boolean;
 }): OrderTax {
   const shares = allocateOrderDiscount(input.itemNetAmounts, input.orderDiscountAmount);
   const taxableByItem = new Map<string, string>();
@@ -118,9 +130,10 @@ export function calculateOrderTax(input: {
     }
 
     const rate = toScale(item.taxRate, 4);
-    const key = `${item.taxCategoryId}|${rate}`;
+    const included = item.taxIncluded === true;
+    const key = `${item.taxCategoryId}|${rate}|${included}`;
     const group = groups.get(key) ?? {
-      line: { taxCategoryId: item.taxCategoryId, taxCategoryCode: item.taxCategoryCode, taxRate: rate },
+      line: { taxCategoryId: item.taxCategoryId, taxCategoryCode: item.taxCategoryCode, taxRate: rate, taxIncluded: included },
       cents: 0n,
     };
 
@@ -130,27 +143,48 @@ export function calculateOrderTax(input: {
 
   const lines = [...groups.values()]
     .map(({ line, cents }) => {
-      const taxableAmount = fromCents(cents);
+      const amount = fromCents(cents);
 
-      return {
-        ...line,
-        taxableAmount,
-        taxAmount: divideRoundHalfUp(multiplyExact(taxableAmount, line.taxRate), "100", MONEY_SCALE),
-      };
+      if (!line.taxIncluded) {
+        return {
+          ...line,
+          taxableAmount: amount,
+          taxAmount: divideRoundHalfUp(multiplyExact(amount, line.taxRate), "100", MONEY_SCALE),
+        };
+      }
+
+      // Phase 20 (D14): the tax inside a price is amount × rate ÷ (100 + rate), half up.
+      const taxAmount = divideRoundHalfUp(
+        multiplyExact(amount, line.taxRate),
+        sumDecimals(["100", line.taxRate], 4),
+        MONEY_SCALE,
+      );
+
+      return { ...line, taxableAmount: fromCents(cents - toCents(taxAmount)), taxAmount };
     })
     .sort((a, b) =>
       a.taxCategoryCode === b.taxCategoryCode
-        ? compareDecimals(a.taxRate, b.taxRate)
+        ? compareDecimals(a.taxRate, b.taxRate) || Number(a.taxIncluded) - Number(b.taxIncluded)
         : a.taxCategoryCode < b.taxCategoryCode
           ? -1
           : 1,
     );
+  const includedTaxTotal = sumDecimals(
+    lines.filter((line) => line.taxIncluded).map((line) => line.taxAmount),
+    MONEY_SCALE,
+  );
+
+  if (input.exempt) {
+    // An exempt check pays no tax: tax inside prices still comes off, and none is added.
+    return { taxTotal: "0.00", includedTaxTotal, lines: [], taxableByItem };
+  }
 
   return {
     taxTotal: sumDecimals(
       lines.map((line) => line.taxAmount),
       MONEY_SCALE,
     ),
+    includedTaxTotal,
     lines,
     taxableByItem,
   };

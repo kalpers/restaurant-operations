@@ -19,15 +19,17 @@ import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 
 import { effectiveConstraints, type SelectionType } from "../rules/modifier-selection";
-import { isSellable } from "../rules/stock-signals";
+import { isSellable, requiredChoicesRemain } from "../rules/stock-signals";
 import { resolvePrice } from "../rules/price-resolution";
 import { assertPermission } from "../services/access";
-import { loadStockSignals } from "./stock-signals";
+import { loadModifierOutagesInEffect, loadStockSignals } from "./stock-signals";
 
 // The contract Phase 9 order entry reads. It carries what is sold and how it is chosen:
 // placement, exact price, modifier groups with their effective rules, and routing IDs.
 // It deliberately has no recipe, revision, cost, audit or version data. Phase 19 filters out
 // items that aren't sellable at the location; "N left" figures come from `stock-signals`.
+// Phase 20 leaves out modifiers 86'd at the location, and items whose required group is left
+// without enough choices (policy 3).
 
 export type OperationalModifier = {
   id: string;
@@ -236,6 +238,16 @@ export async function getOperationalMenu(
             ),
           )
           .orderBy(asc(modifierGroupModifiers.displayOrder));
+  const modifierOuts = new Set(
+    (
+      await loadModifierOutagesInEffect(executor, {
+        organizationId: actor.organizationId,
+        locationId: actor.locationId,
+        at,
+        modifierIds: [...new Set(members.map(({ modifier }) => modifier.id))],
+      })
+    ).map((row) => row.modifierId),
+  );
 
   const groupsOf = (menuItemId: string): OperationalModifierGroup[] =>
     attachments
@@ -254,7 +266,10 @@ export async function getOperationalMenu(
           minimumSelections: constraints.minimum,
           maximumSelections: constraints.maximum,
           modifiers: members
-            .filter(({ membership }) => membership.modifierGroupId === group.id)
+            .filter(
+              ({ membership, modifier }) =>
+                membership.modifierGroupId === group.id && !modifierOuts.has(modifier.id),
+            )
             .map(({ modifier }) => ({
               id: modifier.id,
               code: modifier.code,
@@ -281,6 +296,12 @@ export async function getOperationalMenu(
         continue;
       }
 
+      const modifierGroupsOfItem = groupsOf(row.item.id);
+
+      if (!requiredChoicesRemain(modifierGroupsOfItem)) {
+        continue;
+      }
+
       const category = categories.get(row.category.id) ?? {
         id: row.category.id,
         code: row.category.code,
@@ -301,7 +322,7 @@ export async function getOperationalMenu(
         prepStationIds: routing
           .filter((entry) => entry.menuItemId === row.item.id)
           .map((entry) => entry.stationId),
-        modifierGroups: groupsOf(row.item.id),
+        modifierGroups: modifierGroupsOfItem,
       });
       categories.set(row.category.id, category);
     }

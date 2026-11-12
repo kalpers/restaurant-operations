@@ -61,6 +61,7 @@ const baseRules = {
   weekStartDay: 1,
   overtimeMultiplier: "1.50",
   lateClockInGraceMinutes: 5,
+  dailyOvertimeThreshold: null,
 };
 
 describe("staffing templates and rules", () => {

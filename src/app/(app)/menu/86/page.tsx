@@ -8,9 +8,14 @@ import { PageHeader } from "@/components/ui/page-header";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { findDisplayNamesByUser } from "@/modules/employees/queries/employee-display-names";
-import { getAuto86Setting, getStockBoard, type StockBoardItem } from "@/modules/menu/services/outage-service";
-
-const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+import {
+  getAuto86Setting,
+  getStockBoard,
+  type BoardOutage,
+  type StockBoardItem,
+} from "@/modules/menu/services/outage-service";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
+import { formatInstant } from "@/shared/time/format-instant";
 
 function portionsText(item: StockBoardItem): string | null {
   return item.portions === null ? null : `${item.portions} left`;
@@ -25,14 +30,27 @@ export default async function EightySixBoardPage() {
   const database = getDatabase();
   const board = await getStockBoard(database, actor);
   const setting = await getAuto86Setting(database, actor);
+  const timeZone = await getLocationTimeZone(database, location.locationId);
+  const time = (iso: string) => formatInstant(iso, timeZone, "time");
   const names = await findDisplayNamesByUser(database, {
     organizationId: actor.organizationId,
     userIds: [
       ...board.items.flatMap((item) => [item.outage?.markedOutByUserId, item.override?.setByUserId]),
       ...board.restoredToday.map((entry) => entry.restoredByUserId),
+      ...[...board.scheduled, ...board.endedToday, ...board.modifiersOut].map((entry) => entry.markedOutByUserId),
     ].filter((id): id is string => typeof id === "string"),
   });
   const who = (userId: string) => names.get(userId) ?? "Staff";
+  const dayTime = (iso: string) => formatInstant(iso, timeZone);
+  const until = (endsAt: string | null) => (endsAt ? ` · until ${dayTime(endsAt)}` : "");
+  const restoreUrl = (entry: BoardOutage) =>
+    entry.kind === "ITEM" ? `/api/menu/outages/${entry.outageId}/restore` : `/api/menu/modifier-outages/${entry.outageId}/restore`;
+  // Phase 20 (policy 4): a 86 may start later and end at a time or at close.
+  const windowFields = [
+    { name: "startsAt", label: "Starts (location time; blank is now)", type: "datetime-local" as const },
+    { name: "endsAt", label: "Ends (location time; blank is until restored)", type: "datetime-local" as const },
+    { name: "untilClose", label: "Until close (the business-day cutoff)", type: "checkbox" as const },
+  ];
   const canSetAuto = location.permissions.includes("locations.manage");
   const offSale = board.items.filter((item) => item.available && (item.state === "MANUAL_86" || item.state === "AUTO_86"));
   const low = board.items.filter((item) => item.runningLow && item.state === "SELLABLE");
@@ -74,6 +92,7 @@ export default async function EightySixBoardPage() {
                   {item.outage ? (
                     <p className="text-sm text-neutral-700">
                       {item.outage.reason} · {who(item.outage.markedOutByUserId)} at {time(item.outage.markedOutAt)}
+                      {until(item.outage.endsAt)}
                     </p>
                   ) : (
                     <p className="text-sm text-neutral-700">
@@ -105,8 +124,56 @@ export default async function EightySixBoardPage() {
           )}
         </Card>
 
+        {board.modifiersOut.length > 0 && (
+          <Card aria-label="Modifiers 86'd now">
+            <CardTitle>Modifiers 86&apos;d now ({board.modifiersOut.length})</CardTitle>
+            <ul className="grid gap-3">
+              {board.modifiersOut.map((entry) => (
+                <OutageRow
+                  key={entry.outageId}
+                  entry={entry}
+                  text={`${entry.reason} · ${who(entry.markedOutByUserId)}${until(entry.endsAt)}`}
+                  restoreUrl={board.canManage ? restoreUrl(entry) : null}
+                  restoreLabel={`Restore ${entry.name}`}
+                />
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        {board.scheduled.length > 0 && (
+          <Card aria-label="Scheduled 86">
+            <CardTitle>Scheduled ({board.scheduled.length})</CardTitle>
+            <ul className="grid gap-3">
+              {board.scheduled.map((entry) => (
+                <OutageRow
+                  key={entry.outageId}
+                  entry={entry}
+                  text={`From ${dayTime(entry.startsAt)}${until(entry.endsAt)} · ${entry.reason} · ${who(entry.markedOutByUserId)}`}
+                  restoreUrl={board.canManage ? restoreUrl(entry) : null}
+                  restoreLabel={`Cancel the 86 of ${entry.name}`}
+                />
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        {board.endedToday.length > 0 && (
+          <Card aria-label="Ended today">
+            <CardTitle>Ended today ({board.endedToday.length})</CardTitle>
+            <ul className="grid gap-1 text-sm">
+              {board.endedToday.map((entry) => (
+                <li key={entry.outageId}>
+                  {entry.name}: {entry.reason} · ended at {time(entry.endsAt!)}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
         <Card aria-label="Running low">
           <CardTitle>Running low ({low.length})</CardTitle>
+          <p className="mb-2 text-sm text-neutral-600">1 to {board.runningLowPortions} portions left.</p>
           {low.length === 0 ? (
             <EmptyState title="Nothing is down to its last few portions." />
           ) : (
@@ -181,11 +248,40 @@ export default async function EightySixBoardPage() {
                     })),
                   },
                   { name: "reason", label: "Reason", required: true },
+                  ...windowFields,
                 ]}
                 submitLabel="86 item"
                 successMessage="Item 86'd here."
               />
             )}
+          </Card>
+        )}
+
+        {board.canManage && board.modifierChoices.length > 0 && (
+          <Card aria-label="86 a modifier">
+            <CardTitle>86 a modifier</CardTitle>
+            <p className="mb-3 text-sm text-neutral-700">
+              A 86&apos;d modifier can&apos;t be chosen here. An item that needs a choice from a group with none left
+              comes off sale too.
+            </p>
+            <EntityForm
+              method="POST"
+              url="/api/menu/modifier-outages"
+              resetOnSuccess
+              fields={[
+                {
+                  name: "modifierId",
+                  label: "Modifier",
+                  type: "select",
+                  required: true,
+                  options: board.modifierChoices.map((modifier) => ({ value: modifier.id, label: modifier.name })),
+                },
+                { name: "reason", label: "Reason", required: true },
+                ...windowFields,
+              ]}
+              submitLabel="86 modifier"
+              successMessage="Modifier 86'd here."
+            />
           </Card>
         )}
 
@@ -203,9 +299,58 @@ export default async function EightySixBoardPage() {
               label={setting.enabled ? "Turn auto-86 off" : "Turn auto-86 on"}
               successMessage={setting.enabled ? "Auto-86 is off." : "Auto-86 is on."}
             />
+            <div className="mt-4">
+              <EntityForm
+                method="PATCH"
+                url="/api/menu/stock-settings"
+                hidden={{ enabled: setting.enabled, expectedVersion: setting.version }}
+                fields={[
+                  {
+                    name: "runningLowPortions",
+                    label: "Running low at (portions left)",
+                    type: "number",
+                    required: true,
+                    defaultValue: setting.runningLowPortions,
+                  },
+                ]}
+                submitLabel="Save threshold"
+                successMessage="Running-low threshold saved."
+              />
+            </div>
           </Card>
         )}
       </div>
     </>
+  );
+}
+
+function OutageRow({
+  entry,
+  text,
+  restoreUrl,
+  restoreLabel,
+}: {
+  entry: BoardOutage;
+  text: string;
+  restoreUrl: string | null;
+  restoreLabel: string;
+}) {
+  return (
+    <li aria-label={`86 ${entry.name}`} className="grid gap-1 border-b border-neutral-200 pb-3 last:border-0">
+      <p className="flex flex-wrap items-center gap-2 font-medium">
+        {entry.name}
+        <Badge tone="neutral">{entry.kind === "ITEM" ? "Item" : "Modifier"}</Badge>
+      </p>
+      <p className="text-sm text-neutral-700">{text}</p>
+      {restoreUrl && (
+        <ActionButton
+          method="POST"
+          url={restoreUrl}
+          body={{ expectedVersion: entry.version }}
+          label={restoreLabel}
+          successMessage={`${entry.name} is back.`}
+        />
+      )}
+    </li>
   );
 }

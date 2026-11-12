@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
-import { orderItems, orderRefundItems, orderRefunds, settlements } from "@/db/schema";
+import { orderItems, orderRefundItems, orderRefunds, orders, settlements, settlementTenders, tipDistributions } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
@@ -11,7 +11,7 @@ import { lockOrderRow, readOrderLocation } from "@/modules/orders/repositories/o
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
-import { assertRefundWithinLimits } from "../rules/drawer-math";
+import { assertRefundWithinLimits, assertTipRefundWithinLimits } from "../rules/drawer-math";
 import { looksLikeCardNumber, parseMoney } from "../rules/settlement-math";
 import type { TenderType } from "../types";
 import { assertPermission } from "./access";
@@ -28,6 +28,8 @@ export type RecordRefundInput = {
   tenderType: TenderType;
   amount: string;
   taxAmount: string;
+  /** Phase 20 (policy 18): a tip handed back, CASH or EXTERNAL_CARD only. */
+  tipAmount?: string;
   reason: string;
   otherDescription: string | null;
   externalReference: string | null;
@@ -41,9 +43,46 @@ export type RefundResult = {
   refundNumber: number;
   amount: string;
   taxAmount: string;
+  tipAmount: string;
   remaining: string;
   remainingTax: string;
+  remainingTips: string;
 };
+
+/**
+ * Phase 20 (policy 18): a tip refund changes the business date's tip pool, so it is refused
+ * while that date's distribution is FINALIZED. Void the distribution and redo it after.
+ */
+async function assertTipsNotFinalized(executor: DatabaseExecutor, locationId: string, businessDate: string) {
+  const [finalized] = await executor
+    .select({ id: tipDistributions.id })
+    .from(tipDistributions)
+    .where(
+      and(
+        eq(tipDistributions.locationId, locationId),
+        eq(tipDistributions.businessDate, businessDate),
+        eq(tipDistributions.status, "FINALIZED"),
+      ),
+    )
+    .limit(1);
+
+  if (finalized) {
+    throw new BusinessRuleError(
+      "TIP_DISTRIBUTION_FINALIZED",
+      "This check's tips are in a finalized tip distribution. Void that distribution before refunding a tip.",
+    );
+  }
+}
+
+/** RECORDED tender tips on the order's COMPLETED settlement. */
+async function recordedTipsOf(executor: DatabaseExecutor, settlementId: string): Promise<string> {
+  const [row] = await executor
+    .select({ total: sql<string>`COALESCE(SUM(${settlementTenders.tipAmount}), 0)::numeric(14,2)::text` })
+    .from(settlementTenders)
+    .where(and(eq(settlementTenders.settlementId, settlementId), eq(settlementTenders.status, "RECORDED")));
+
+  return row?.total ?? "0.00";
+}
 
 function refundEvent(actor: Actor, eventType: string, refund: { id: string; orderId: string }, at: Date) {
   return {
@@ -68,9 +107,14 @@ export async function recordRefund(
 
   const amount = parseMoney(input.amount, "refund amount");
   const taxAmount = parseMoney(input.taxAmount, "tax part");
+  const tipAmount = parseMoney(input.tipAmount ?? "0.00", "tip refund");
 
-  if (amount === "0.00") {
-    throw new BusinessRuleError("INVALID_AMOUNT", "Enter a refund amount greater than zero.");
+  if (amount === "0.00" && tipAmount === "0.00") {
+    throw new BusinessRuleError("INVALID_AMOUNT", "Enter a refund or tip amount greater than zero.");
+  }
+
+  if (tipAmount !== "0.00" && input.tenderType !== "CASH" && input.tenderType !== "EXTERNAL_CARD") {
+    throw new BusinessRuleError("TIP_REFUND_TENDER", "Tips are refunded only in cash or to an external card.");
   }
 
   if (input.tenderType === "OTHER" && !input.otherDescription?.trim()) {
@@ -99,7 +143,7 @@ export async function recordRefund(
         scope: REFUND_SCOPE,
         key: idempotencyKey,
         actorUserId: actor.userId,
-        request: { orderId, ...request, amount, taxAmount, orderItemIds: [...orderItemIds].sort() },
+        request: { orderId, ...request, amount, taxAmount, tipAmount, orderItemIds: [...orderItemIds].sort() },
       },
       async (idempotencyRecordId) => {
         // The order lock serializes refunds on one order, so their sum can't race past it.
@@ -119,7 +163,12 @@ export async function recordRefund(
         }
 
         const existing = await transaction
-          .select({ status: orderRefunds.status, amount: orderRefunds.amount, taxAmount: orderRefunds.taxAmount })
+          .select({
+            status: orderRefunds.status,
+            amount: orderRefunds.amount,
+            taxAmount: orderRefunds.taxAmount,
+            tipAmount: orderRefunds.tipAmount,
+          })
           .from(orderRefunds)
           .where(eq(orderRefunds.orderId, order.id));
         const left = assertRefundWithinLimits(
@@ -127,6 +176,14 @@ export async function recordRefund(
           amount,
           taxAmount,
         );
+        const remainingTips = assertTipRefundWithinLimits(
+          { recordedTips: await recordedTipsOf(transaction, settlement.id), existing },
+          tipAmount,
+        );
+
+        if (tipAmount !== "0.00") {
+          await assertTipsNotFinalized(transaction, order.locationId, order.businessDate);
+        }
 
         if (orderItemIds.length > 0) {
           const items = await transaction
@@ -160,6 +217,7 @@ export async function recordRefund(
             tenderType: input.tenderType,
             amount,
             taxAmount,
+            tipAmount,
             reason: input.reason.trim(),
             otherDescription: input.tenderType === "OTHER" ? input.otherDescription!.trim() : null,
             externalReference: input.externalReference?.trim() || null,
@@ -190,6 +248,7 @@ export async function recordRefund(
             tenderType: refund!.tenderType,
             amount,
             taxAmount,
+            tipAmount,
             businessDate: refund!.businessDate,
           },
         });
@@ -200,8 +259,10 @@ export async function recordRefund(
           refundNumber: refund!.refundNumber,
           amount,
           taxAmount,
+          tipAmount,
           remaining: left.remaining,
           remainingTax: left.remainingTax,
+          remainingTips,
         };
       },
     ),
@@ -249,6 +310,16 @@ export async function voidRefund(
 
     if (refund!.status !== "RECORDED") {
       throw new BusinessRuleError("REFUND_NOT_VOIDABLE", "That refund is already voided.");
+    }
+
+    // Phase 20: voiding a tip refund changes the tip pool, so not once the date is finalized.
+    if (refund!.tipAmount !== "0.00") {
+      const [order] = await transaction
+        .select({ locationId: orders.locationId, businessDate: orders.businessDate })
+        .from(orders)
+        .where(eq(orders.id, refund!.orderId));
+
+      await assertTipsNotFinalized(transaction, order!.locationId, order!.businessDate);
     }
 
     // Voiding cash changes its drawer's count, so the drawer must still be open.
@@ -307,6 +378,7 @@ export async function listRefundsForOrder(executor: DatabaseExecutor, actor: Act
     tenderType: row.tenderType,
     amount: row.amount,
     taxAmount: row.taxAmount,
+    tipAmount: row.tipAmount,
     reason: row.reason,
     otherDescription: row.otherDescription,
     externalReference: canSeeReference ? row.externalReference : null,

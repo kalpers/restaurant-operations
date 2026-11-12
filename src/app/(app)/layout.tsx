@@ -5,14 +5,19 @@ import { LocationSwitcher } from "@/components/app-shell/location-switcher";
 import { visibleNavigationGroups } from "@/components/app-shell/navigation";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { RealtimeProvider } from "@/components/realtime/realtime-provider";
+import { LocationTimeZoneProvider } from "@/components/time/location-time-zone";
+import { getDatabase } from "@/db";
 import { requirePageUser, resolveCurrentLocation } from "@/modules/auth/guards";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const auth = await requirePageUser();
   const location = await resolveCurrentLocation(auth);
   const groups = visibleNavigationGroups(location?.permissions ?? []);
+  const timeZone = location ? await getLocationTimeZone(getDatabase(), location.locationId) : "UTC";
 
   return (
+    <LocationTimeZoneProvider timeZone={timeZone}>
     <RealtimeProvider>
       <AppShell
         groups={groups}
@@ -35,5 +40,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         {children}
       </AppShell>
     </RealtimeProvider>
+    </LocationTimeZoneProvider>
   );
 }

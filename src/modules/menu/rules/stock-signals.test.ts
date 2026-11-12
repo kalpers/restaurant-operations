@@ -90,6 +90,10 @@ describe("sellabilityState (policies A4-A6)", () => {
   });
 
   it("marks 1 to 5 portions as running low", () => {
-    expect([null, 0, 1, 5, 6].map(isRunningLow)).toEqual([false, false, true, true, false]);
+    expect([null, 0, 1, 5, 6].map((portions) => isRunningLow(portions))).toEqual([false, false, true, true, false]);
+  });
+
+  it("uses the location's own threshold when given (Phase 20)", () => {
+    expect([1, 12, 13].map((portions) => isRunningLow(portions, 12))).toEqual([true, true, false]);
   });
 });

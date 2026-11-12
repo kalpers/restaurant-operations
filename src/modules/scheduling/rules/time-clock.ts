@@ -77,31 +77,56 @@ export function matchShift(
   return matches[0]?.assignmentId ?? null;
 }
 
-export type WeekEntry = { id: string; clockInAt: Date; workedSeconds: number };
+export type WeekEntry = { id: string; clockInAt: Date; workedSeconds: number; businessDate?: string };
 export type OvertimeSplit = { regularSeconds: number; overtimeSeconds: number };
+
+/** Phase 20 (D18): within this many hours of the daily threshold, the warning shows. */
+export const APPROACHING_DAILY_OVERTIME_MS = 1 * HOUR;
 
 /**
  * Policy B15: one employee's entries for one work week, ordered by clock-in (ties: entry
  * UUID). Worked time accumulates, and time past the threshold is overtime, so an entry that
  * crosses the threshold is split and later work is overtime first.
+ *
+ * Phase 20 (policy 19, D18): with a daily threshold, each business date's hours past it are
+ * overtime first (latest work first, the same way). Weekly overtime then counts only the hours
+ * that were still regular, so no hour is overtime twice.
  */
 export function allocateOvertime(
   entries: readonly WeekEntry[],
   thresholdSeconds: number,
+  dailyThresholdSeconds: number | null = null,
 ): Map<string, OvertimeSplit> {
   const ordered = [...entries].sort((left, right) => {
     const difference = left.clockInAt.getTime() - right.clockInAt.getTime();
 
     return difference !== 0 ? difference : left.id.localeCompare(right.id);
   });
+  const dailyOvertime = new Map<string, number>();
+
+  if (dailyThresholdSeconds !== null) {
+    const byDate = new Map<string, number>();
+
+    for (const entry of ordered) {
+      const date = entry.businessDate ?? "";
+      const before = byDate.get(date) ?? 0;
+      const regular = Math.min(entry.workedSeconds, Math.max(0, dailyThresholdSeconds - before));
+
+      dailyOvertime.set(entry.id, entry.workedSeconds - regular);
+      byDate.set(date, before + entry.workedSeconds);
+    }
+  }
+
   const result = new Map<string, OvertimeSplit>();
   let accumulated = 0;
 
   for (const entry of ordered) {
-    const regularSeconds = Math.min(entry.workedSeconds, Math.max(0, thresholdSeconds - accumulated));
+    const daily = dailyOvertime.get(entry.id) ?? 0;
+    const remaining = entry.workedSeconds - daily;
+    const regularSeconds = Math.min(remaining, Math.max(0, thresholdSeconds - accumulated));
 
     result.set(entry.id, { regularSeconds, overtimeSeconds: entry.workedSeconds - regularSeconds });
-    accumulated += entry.workedSeconds;
+    accumulated += remaining;
   }
 
   return result;
@@ -110,9 +135,21 @@ export function allocateOvertime(
 export type OvertimeState = "NONE" | "APPROACHING" | "OVERTIME";
 
 /** Policy B17: from the week's worked seconds so far, including an open entry's elapsed time. */
-export function overtimeState(weekSeconds: number, thresholdSeconds: number): OvertimeState {
-  if (weekSeconds > thresholdSeconds) {
+export function overtimeState(
+  weekSeconds: number,
+  thresholdSeconds: number,
+  daily: { todaySeconds: number; thresholdSeconds: number | null } = { todaySeconds: 0, thresholdSeconds: null },
+): OvertimeState {
+  if (weekSeconds > thresholdSeconds || (daily.thresholdSeconds !== null && daily.todaySeconds > daily.thresholdSeconds)) {
     return "OVERTIME";
+  }
+
+  // Phase 20 (D18): the daily line warns within an hour of it.
+  if (
+    daily.thresholdSeconds !== null &&
+    daily.todaySeconds >= daily.thresholdSeconds - APPROACHING_DAILY_OVERTIME_MS / SECOND
+  ) {
+    return "APPROACHING";
   }
 
   return weekSeconds >= thresholdSeconds - APPROACHING_OVERTIME_MS / SECOND ? "APPROACHING" : "NONE";

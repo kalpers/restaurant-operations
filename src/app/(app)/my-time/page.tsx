@@ -12,6 +12,7 @@ import { Table, TableFrame, TBody, Td, Th, THead, Tr } from "@/components/ui/tab
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { getMyTime } from "@/modules/scheduling/services/timeclock-service";
+import { listTipDeclarations } from "@/modules/settlements/services/tip-declaration-service";
 import { getMyTipShares } from "@/modules/settlements/services/tip-service";
 import { addDays } from "@/shared/time/zoned-time";
 
@@ -39,6 +40,11 @@ export default async function MyTimePage() {
 
   const { openEntry, week, timeZone, positions } = mine;
   const shares = await getMyTipShares(database, actor, { from: addDays(mine.businessDate, -30), to: mine.businessDate });
+  const declarations = await listTipDeclarations(database, actor, {
+    from: addDays(mine.businessDate, -30),
+    to: mine.businessDate,
+    own: true,
+  });
   const onBreak = openEntry?.breaks.some((span) => span.endedAt === null) ?? false;
 
   return (
@@ -186,6 +192,45 @@ export default async function MyTimePage() {
             </TableFrame>
           )}
           <p className="mt-3 text-xs text-neutral-600">Record only: tips are paid out outside this system.</p>
+        </Card>
+
+        <Card aria-label="Declare cash tips">
+          <CardTitle>Cash tips I kept</CardTitle>
+          <p className="mb-3 text-sm text-neutral-700">
+            Declare cash tips you kept on a day you worked. This is a record only: it isn&apos;t part of the tip pool.
+          </p>
+          {declarations.length > 0 && (
+            <ul className="mb-3 grid gap-2">
+              {declarations.map((entry) => (
+                <li key={entry.id} aria-label={`Declared ${entry.businessDate}`} className="grid gap-2 border-b border-neutral-200 pb-2">
+                  <p className="text-sm">
+                    {entry.businessDate}: <span className="tabular font-medium">{formatMoney(entry.amount)}</span>
+                    {entry.note ? ` · ${entry.note}` : ""}
+                  </p>
+                  <EntityForm
+                    method="POST"
+                    url="/api/tips/declarations"
+                    hidden={{ businessDate: entry.businessDate, expectedVersion: entry.version }}
+                    fields={[{ name: "amount", label: "Change amount", required: true, defaultValue: entry.amount }]}
+                    submitLabel="Save"
+                    successMessage="Declaration saved."
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          <EntityForm
+            method="POST"
+            url="/api/tips/declarations"
+            resetOnSuccess
+            fields={[
+              { name: "businessDate", label: "Business date", type: "date", required: true, defaultValue: mine.businessDate },
+              { name: "amount", label: "Cash tips kept", required: true },
+              { name: "note", label: "Note (optional)" },
+            ]}
+            submitLabel="Declare tips"
+            successMessage="Cash tips declared."
+          />
         </Card>
       </div>
     </>

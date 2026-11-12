@@ -1,5 +1,6 @@
 import { FileClock } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { AuditChanges, CopyId } from "@/components/audit/audit-changes";
 import { actionLabel, entityHref, entityLabel, shortId } from "@/components/audit/audit-format";
@@ -20,6 +21,8 @@ import { requirePageActor } from "@/modules/auth/guards";
 import { AppError } from "@/shared/errors/app-error";
 import { addDays } from "@/shared/time/zoned-time";
 import { INPUT_BASE } from "@/components/ui/field";
+import { SectionsSkeleton } from "@/components/ui/skeleton";
+import type { Actor } from "@/modules/auth/types";
 
 const INPUT_CLASS = INPUT_BASE;
 
@@ -93,23 +96,7 @@ export default async function AuditPage({
     ...raw,
     locationId: location.locationId,
   });
-  let page: Awaited<ReturnType<typeof listAuditEvents>> | null = null;
-  let error: string | null = parsed.success ? null : "Check the filters.";
-
-  if (parsed.success) {
-    try {
-      page = await listAuditEvents(database, actor, parsed.data);
-    } catch (caught) {
-      if (!(caught instanceof AppError)) {
-        throw caught;
-      }
-
-      error = caught.message;
-    }
-  }
-
   const filters = parsed.success ? parsed.data : undefined;
-  const olderQuery = new URLSearchParams({ ...raw, before: String(page?.nextBefore ?? "") });
 
   return (
     <>
@@ -155,47 +142,81 @@ export default async function AuditPage({
         </Button>
       </form>
 
-      {error && (
-        <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
-          {error}
-        </p>
+      {filters ? (
+        <Suspense key={JSON.stringify(raw)} fallback={<SectionsSkeleton label="Loading audit events" />}>
+          <AuditEvents actor={actor} filters={filters} raw={raw} />
+        </Suspense>
+      ) : (
+        <AuditError error="Check the filters." />
       )}
+    </>
+  );
+}
 
-      {page && page.events.length === 0 && (
-        <EmptyState icon={FileClock} title="No audit events match">
-          Widen the date range or clear the category and action filters.
-        </EmptyState>
-      )}
+function AuditError({ error }: { error: string }) {
+  return (
+    <p role="alert" className="mb-4 rounded border border-danger-300 bg-danger-50 p-3 text-danger-800">
+      {error}
+    </p>
+  );
+}
 
-      {page && page.events.length > 0 && (
-        <>
-          <TableFrame>
-            <Table>
-              <THead>
-                <tr>
-                  <Th>When</Th>
-                  <Th>Who</Th>
-                  <Th>Action</Th>
-                  <Th>Record</Th>
-                  <Th>Changes</Th>
-                </tr>
-              </THead>
-              <TBody>
-                {page.events.map((event) => (
-                  <EventRow key={event.sequence} event={event} timeZone={page.timeZone} />
-                ))}
-              </TBody>
-            </Table>
-          </TableFrame>
-          {page.nextBefore && (
-            <Link
-              href={`/audit?${olderQuery.toString()}`}
-              className="mt-4 inline-flex min-h-11 items-center font-medium underline"
-            >
-              Load older events
-            </Link>
-          )}
-        </>
+/** Streams in after the filters render (Phase 20 policy 21). */
+async function AuditEvents({
+  actor,
+  filters,
+  raw,
+}: {
+  actor: Actor;
+  filters: Parameters<typeof listAuditEvents>[2];
+  raw: Record<string, string>;
+}) {
+  let page: Awaited<ReturnType<typeof listAuditEvents>>;
+
+  try {
+    page = await listAuditEvents(getDatabase(), actor, filters);
+  } catch (caught) {
+    if (!(caught instanceof AppError)) {
+      throw caught;
+    }
+
+    return <AuditError error={caught.message} />;
+  }
+
+  const olderQuery = new URLSearchParams({ ...raw, before: String(page.nextBefore ?? "") });
+
+  if (page.events.length === 0) {
+    return (
+      <EmptyState icon={FileClock} title="No audit events match">
+        Widen the date range or clear the category and action filters.
+      </EmptyState>
+    );
+  }
+
+  return (
+    <>
+      <TableFrame>
+        <Table>
+          <THead>
+            <tr>
+              <Th>When</Th>
+              <Th>Who</Th>
+              <Th>Action</Th>
+              <Th>Record</Th>
+              <Th>Changes</Th>
+            </tr>
+          </THead>
+          <TBody>
+            {page.events.map((event) => (
+              <EventRow key={event.sequence} event={event} timeZone={page.timeZone} />
+            ))}
+          </TBody>
+        </Table>
+      </TableFrame>
+      {page.nextBefore && (
+        <Link href={`/audit?${olderQuery.toString()}`} className="mt-4 inline-flex min-h-11 items-center font-medium underline">
+          Load older events
+        </Link>
       )}
     </>
   );

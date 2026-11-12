@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import {
   employees,
@@ -6,6 +6,7 @@ import {
   orderItemDiscounts,
   orderItemModifiers,
   orderItems,
+  orderItemShares,
   orderItemVoids,
   orders,
   orderSendBatches,
@@ -42,6 +43,11 @@ export type OrderSummary = {
   taxTotal: string;
   /** Phase 17: subtotal plus tax, what the guest owes. */
   totalDue: string;
+  /** Phase 20 (policy 15): the part of the tax that was inside the prices. */
+  includedTaxTotal: string;
+  /** Phase 20 (policy 16). The certificate reference isn't shown. */
+  taxExempt: boolean;
+  taxExemptReason: string | null;
   draftCount: number;
   sentCount: number;
   version: number;
@@ -119,6 +125,9 @@ export async function readOrderSummaries(
     subtotal: order.subtotal,
     taxTotal: order.taxTotal,
     totalDue: order.totalDue,
+    includedTaxTotal: order.includedTaxTotal,
+    taxExempt: order.taxExempt,
+    taxExemptReason: order.taxExemptReason,
     draftCount,
     sentCount,
     version: order.version,
@@ -159,6 +168,22 @@ export type OrderDetail = OrderSummary & {
     discounts: AppliedDiscount[];
   }[];
   discounts: AppliedDiscount[];
+  /**
+   * Phase 20 (policy 17): shares of shared items that are on this check, whichever check the
+   * item was sent on, and each SPLIT item's shares here or elsewhere (`elsewhere`).
+   */
+  shares: {
+    id: string;
+    orderItemId: string;
+    itemName: string;
+    shareNumber: number;
+    shareCount: number;
+    amount: string;
+    status: string;
+    version: number;
+    /** The check holding the share, when it isn't this one. */
+    elsewhereOrderNumber: number | null;
+  }[];
   batches: { id: string; batchNumber: number; sentAt: string; itemCount: number }[];
   history: { status: string; reason: string | null; occurredAt: string }[];
 };
@@ -253,6 +278,21 @@ export async function readOrderDetail(
       .where(eq(orderStatusHistory.orderId, orderId))
       .orderBy(asc(orderStatusHistory.occurredAt)),
   ]);
+  const shareRows = await executor
+    .select({
+      share: orderItemShares,
+      itemName: orderItems.menuItemNameSnapshot,
+      shareOrderNumber: orders.orderNumber,
+    })
+    .from(orderItemShares)
+    .innerJoin(orderItems, eq(orderItems.id, orderItemShares.orderItemId))
+    .innerJoin(orders, eq(orders.id, orderItemShares.orderId))
+    .where(
+      itemIds.length === 0
+        ? eq(orderItemShares.orderId, orderId)
+        : or(eq(orderItemShares.orderId, orderId), inArray(orderItemShares.orderItemId, itemIds)),
+    )
+    .orderBy(asc(orderItemShares.orderItemId), asc(orderItemShares.shareNumber));
 
   return {
     ...summary!,
@@ -290,6 +330,17 @@ export async function readOrderDetail(
       discounts: itemDiscountRows.filter((row) => row.orderItemId === item.id).map(toDiscount),
     })),
     discounts: orderDiscountRows.map(toDiscount),
+    shares: shareRows.map(({ share, itemName, shareOrderNumber }) => ({
+      id: share.id,
+      orderItemId: share.orderItemId,
+      itemName,
+      shareNumber: share.shareNumber,
+      shareCount: share.shareCount,
+      amount: share.amount,
+      status: share.status,
+      version: share.version,
+      elsewhereOrderNumber: share.orderId === orderId ? null : shareOrderNumber,
+    })),
     batches: batches.map((batch) => ({
       id: batch.id,
       batchNumber: batch.batchNumber,

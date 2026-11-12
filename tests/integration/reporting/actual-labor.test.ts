@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/db";
@@ -309,5 +309,30 @@ describe("actual labor reporting", () => {
       noRateHours: "3.0000",
       totalCost: "0.00",
     });
+  });
+  // Phase 20 (policy 19, D18): daily overtime first, then weekly on the hours still regular.
+  it("adds daily overtime without counting any hour twice", async () => {
+    await database().execute(sql`
+      INSERT INTO scheduling_rules (location_id, daily_overtime_threshold) VALUES (${scenario.locationA}, '8.00')
+      ON CONFLICT (location_id) DO UPDATE SET daily_overtime_threshold = '8.00'`);
+
+    try {
+      const result = await report(withWages, MON, FRI);
+
+      // Mon-Thu are 10 h each: 2 h daily overtime each (8 h). That leaves 32 regular hours,
+      // so Friday's 5 h stay regular (37 < 40).
+      expect(rowOf(result, "actualEmployees", { employeeNumber: numbers.hourly })).toMatchObject({
+        workedHours: "45.0000",
+        regularHours: "37.0000",
+        overtimeHours: "8.0000",
+      });
+      expect(rowOf(result, "overtime", { employeeNumber: numbers.hourly, weekStart: MON })).toMatchObject({
+        overtimeHours: "8.0000",
+      });
+    } finally {
+      await database().execute(
+        sql`UPDATE scheduling_rules SET daily_overtime_threshold = NULL WHERE location_id = ${scenario.locationA}`,
+      );
+    }
   });
 });

@@ -103,6 +103,8 @@ export const recordRefundSchema = z.object({
   tenderType: z.enum(TENDER_TYPES),
   amount: money,
   taxAmount: money.default("0.00"),
+  /** Phase 20 (policy 18): a tip handed back, CASH or EXTERNAL_CARD only. */
+  tipAmount: money.default("0.00"),
   reason,
   otherDescription: noCardNumber(200),
   externalReference: noCardNumber(80),

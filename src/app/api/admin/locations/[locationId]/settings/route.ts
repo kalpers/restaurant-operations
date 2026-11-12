@@ -14,11 +14,11 @@ export const PATCH = apiRoute<{ locationId: string }>(
     const { locationId } = parseWith(locationIdParamsSchema, params);
 
     // Authorized at the target location, not the one the user is working at.
-    await requireApiPermission("locations.manage", locationId);
+    const actor = await requireApiPermission("locations.manage", locationId);
     const input = await parseJsonBody(request, updateLocationSettingsSchema);
 
     return {
-      body: await updateLocationSettings(getDatabase(), locationId, input),
+      body: await updateLocationSettings(getDatabase(), actor, locationId, input),
     };
   },
 );

@@ -54,6 +54,10 @@ The check on the right stays in view while you scroll the menu. It shows how man
 
 **Splitting the bill.** Choose **Move items**, tick the items (sent or not), and pick **A new check at this table** or another open check at the same table. Prices, discounts on those items and their kitchen progress go with them; discounts on the whole check stay on it. A check that is being settled can't be split until its settlement is cancelled.
 
+**Sharing one item.** To split one sent item (a bottle of wine, a shared platter) between guests, choose **Share between checks** on it, pick the number of shares (2 to 10) and the check each share goes on. The price is split into equal shares, to the cent, with its tax. The item is still made once: its kitchen work and stock stay with it. A discounted item can't be shared; remove the discount first. To take a share off a check, choose **Void share** under **Shared items**; it removes the money only.
+
+**Tax-exempt checks.** A manager can choose **Make tax exempt** under the totals, give a reason and, if the guest has one, an exemption certificate reference (never a card number). The check then pays no tax; items whose price includes tax are reduced by that tax. **Remove tax exemption** undoes it while the check is open. Neither can change while the check is being settled.
+
 Submitted items are historical records. To void one, choose **Void item** on it: a window asks for a reason and whether it was prepared, and for a final confirmation. Choose **Not prepared** only when it was not prepared; prepared or discarded food remains consumed.
 
 ### 4. Prepare and fulfill submitted items
@@ -79,7 +83,7 @@ Each ticket shows how long it has waited (counted from when its course was fired
 
 Settlement is record-keeping only. The app does not charge or authorize cards; any card transaction must be processed in an external system first. You may record safe external references when permitted, but never enter a full card number, security code, PIN, or bank details. The amount due is the subtotal plus tax, where the location charges tax.
 
-**Refunds.** A manager can record money given back to a guest on a closed check, under **Refunds** on its settlement screen: what it was refunded as, the amount (with the tax part), and a reason. Give the money back outside the app first. The check stays closed; the refund counts on the day it is given. A mistaken refund can be voided with a reason.
+**Refunds.** A manager can record money given back to a guest on a closed check, under **Refunds** on its settlement screen: what it was refunded as, the amount (with the tax part), any **Tip refunded** (cash or card only, up to the tips on the check), and a reason. A tip can't be refunded once that day's tips are finalized; void the distribution first. Give the money back outside the app first. The check stays closed; the refund counts on the day it is given. A mistaken refund can be voided with a reason.
 
 ### Cash drawers
 
@@ -107,22 +111,23 @@ Everyone with access to schedules sees published schedules here. Managers who ed
 
 ### Clocking in and out
 
-Open **My time** and choose **Clock in** at the start of your shift. If you hold more than one position here, choose the one you're working. **Start unpaid break** and **End break** record a break; unpaid break time isn't counted as worked. Choose **Clock out** when you leave; an open break ends at the same moment. The page shows this week's entries, your hours so far against the overtime threshold (**On track**, **Near overtime** or **In overtime**), and your finalized tip shares for the last 30 days. Your login must be linked to your employee record; if it isn't, a manager can clock you in instead.
+Open **My time** and choose **Clock in** at the start of your shift. If you hold more than one position here, choose the one you're working. **Start unpaid break** and **End break** record a break; unpaid break time isn't counted as worked. Choose **Clock out** when you leave; an open break ends at the same moment. The page shows this week's entries, your hours so far against the overtime threshold (**On track**, **Near overtime** or **In overtime**), and your finalized tip shares for the last 30 days. Your login must be linked to your employee record; if it isn't, a manager can clock you in instead. Under **Cash tips I kept**, declare cash tips you kept on a day you worked; it's a record only and isn't part of the tip pool.
 
 ### Time clock (managers)
 
 Open **Time clock** to see who is on the clock now, with each person's hours this week and overtime state. Managers can:
 
 - **Clock someone in** who has no login, or **Clock out** anyone on the clock. Both are recorded in the audit trail.
-- Fix a **missed clock-out**. An entry still open from an earlier day counts no hours until it's closed. Open **Adjust or void**, enter the clock-out time and a reason, and save.
-- Correct any entry's times or position under **Adjust or void**. Blank fields stay as they are, and a reason is always required. The original punch times are kept with the correction.
+- Fix a **missed clock-out**. An entry still open from an earlier day counts no hours until it's closed. Open **Adjust, edit breaks or void**, enter the clock-out time and a reason, and save. Managers also get a **Missed clock-out** alert for it.
+- Correct any entry's times or position under **Adjust, edit breaks or void**. Blank fields stay as they are, and a reason is always required. The original punch times are kept with the correction.
+- **Edit breaks** there too: change a break's start, end or paid flag, **Add a break**, or tick **Remove**, then give a reason and **Save breaks**. Times are in the restaurant's time zone.
 - **Void** an entry made by mistake. It stays on record but counts nowhere.
 
 Choose a date to see that day's entries; adjusted entries are marked **Adjusted**. Someone who is on the clock can't be terminated until they're clocked out.
 
 ### Tips
 
-Open **Tips** (managers). Under **Tip pool**, switch pooling on and give points to each position that shares tips, for example Server 10 and Busser 5. Leave a position blank to leave it out. For a business date, the page shows the cash and card tips from closed checks and how they would be shared: hours worked × points. Choose **Finalize tips** once every check is closed and everyone is clocked out. The shares are then saved as they are, and that day's hours can't change. To redo a day, **Void distribution** with a reason, fix what's wrong, then finalize again. Tips are recorded here only; pay them out outside the app.
+Open **Tips** (managers). Under **Tip pool**, switch pooling on and give points to each position that shares tips, for example Server 10 and Busser 5. Leave a position blank to leave it out. For a business date, the page shows the cash and card tips from closed checks and how they would be shared: hours worked × points. Choose **Finalize tips** once every check is closed and everyone is clocked out. The shares are then saved as they are, and that day's hours can't change. To redo a day, **Void distribution** with a reason, fix what's wrong, then finalize again. Tips are recorded here only; pay them out outside the app. Tips refunded on a check come out of that day's pool. **Declared cash tips** lists what people say they kept in cash; a manager can record one for anyone who worked that day. Declarations are never part of the pool.
 
 ### Employees
 
@@ -139,6 +144,9 @@ Open **86 board** to see what can't be sold at your location right now, what is 
 - **86 an item:** kitchen, bar and managers choose the item, give a reason (for example "Out of salmon") and choose **86 item**. It comes off sale at this location only, at once, on every order screen. It stays 86'd until someone chooses **Restore** on it; it doesn't end at close.
 - **Auto-86 from stock:** a manager who manages locations can turn this on for the location. Then an item whose recipe can't be made once more from recorded stock comes off sale by itself, and comes back when stock is received or counted.
 - **Sell anyway:** when recorded stock is wrong (a delivery not yet received, a bad count), a manager can sell an auto-86'd item anyway, with a reason. It lasts until the end of the business date. It never lifts a manual 86.
+- **Later or for a while:** an 86 can start later (**Starts**, for example 9 PM) and end at a time (**Ends**) or **Until close** (the end of the business day). It appears under **Scheduled** until it starts and under **Ended today** after it ends. **Cancel the 86** removes a scheduled one.
+- **86 a modifier:** choose a modifier (for example "Swiss instead") and a reason. It can't be chosen at this location until restored. An item that needs a choice from a group with none left comes off sale too.
+- **Running low** means 1 to 5 portions left unless a manager who manages locations sets another number under the auto-86 setting.
 
 ### Inventory and purchasing
 
@@ -156,7 +164,7 @@ Open **Reporting**, choose an available report, and set the date range. Which re
 
 The **Labor** report shows scheduled labor first, then actual labor from the time clock: worked hours, regular and overtime hours, scheduled vs. actual by day (late, early out, unscheduled, no-show), overtime by work week, and time clock exceptions (missed clock-outs, corrections, voids). Labor cost appears only for people allowed to see compensation. The **Tips** report shows tips by date and tender, direct tips by server, and finalized tip shares.
 
-Also in the reports: **Sales by hour** (by the hour each check was opened, from the start of the business day), **Item mix** and **Menu engineering** (Star, Plowhorse, Puzzle, Dog, shown to people who can see cost), **Server performance** (tips appear only for people who can see tips), **Voids, comps and discounts by employee** (facts only, no thresholds), and **86 history** in Inventory.
+Also in the reports: **Sales by hour** (by the hour each check was opened, from the start of the business day, with a bar chart above the table), **Item mix** and **Menu engineering** (Star, Plowhorse, Puzzle, Dog, shown to people who can see cost), **Server performance** (tips appear only for people who can see tips), **Voids, comps and discounts by employee** (facts only, no thresholds), and **86 history** in Inventory. **Item mix by category** and **Menu engineering by category** compare items only within the category they were sold under; items sold before categories were recorded show as Uncategorized. Sales also lists **Tax-exempt checks**, and Tips shows refunded tips and declared cash tips.
 
 ### Your password and account security
 
@@ -166,7 +174,11 @@ Also in the reports: **Sales by hour** (by the hour each check was opened, from 
 
 ### Taxes
 
-Under **Admin → Taxes**, an owner or general manager adds tax categories (for example *Food* or *Alcohol*), sets each one's rate at this location (a new rate can start now or later; earlier sales keep the rate they were sent with), and switches tax on for the location. Assign a category to each menu item on its page under **Tax category**. Once tax is on, an item with no category, or whose category has no rate here, can't be sent.
+Under **Admin → Taxes**, an owner or general manager adds tax categories (for example *Food* or *Alcohol*), sets each one's rate at this location (a new rate can start now or later; earlier sales keep the rate they were sent with), and switches tax on for the location. Tick **Menu prices already include this tax** on a rate when the menu price is tax-included (common for drinks): the app then takes the tax out of the price instead of adding it. Assign a category to each menu item on its page under **Tax category**. Once tax is on, an item with no category, or whose category has no rate here, can't be sent.
+
+### Notifications
+
+The bell shows in-app notices for you: food and drinks ready, low stock, a published schedule with your shifts, an approved shift swap, a decision on your time off, a certification about to expire, being close to overtime this week, and (for managers) a missed clock-out. Each notice appears once. Times everywhere in the app are shown in the restaurant's time zone, whatever your device is set to.
 
 ### Administration: users and System health
 
@@ -184,6 +196,8 @@ Under **Admin → Taxes**, an owner or general manager adds tax categories (for 
 
 **Why is a page missing?** Navigation is based on your permissions at a location. Ask an administrator to review access; a hidden link is not a substitute for server-side authorization.
 
+**What does "Reload" on an error mean?** Someone else changed the same record after you opened it. Choose **Reload** to see their change, then try again if it's still needed.
+
 **Why can't I edit a sent item?** Draft items can be edited or removed. Once submitted, the item is retained as an operational record; use the authorized void workflow when appropriate.
 
 **Why can't I complete a settlement?** Check for active draft items and an unpaid remaining balance. You may also lack settlement completion permission.
@@ -195,9 +209,9 @@ Under **Admin → Taxes**, an owner or general manager adds tax categories (for 
 ## Current Scope Notes
 
 - The application records settlement details but does not process payments.
-- Tax is added on top of menu prices. Tax-inclusive prices, tax exemptions and compound taxes aren't supported.
+- Compound or stacked taxes, service charges and splitting a check evenly by amount aren't supported.
 - A closed check can't be reopened; corrections after closing are refund records.
-- The time clock and tip pool are record only: no payroll, pay stubs or tip payouts. Overtime is weekly only and is your own setting, not a labor-law calculation.
+- The time clock and tip pool are record only: no payroll, pay stubs or tip payouts. Overtime is weekly, plus daily if a manager sets a daily threshold; both are your own settings, not a labor-law calculation.
 - There is no "forgot password" email or reset link. An administrator resets passwords in the app.
 - Full offline operation is not supported. If a request fails, check the displayed error and current record state before retrying a consequential action.
 

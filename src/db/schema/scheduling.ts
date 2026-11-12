@@ -598,6 +598,11 @@ export const schedulingRules = pgTable(
       .default("1.50"),
     /** Phase 18: a clock-in later than this after the shift start is flagged late. */
     lateClockInGraceMinutes: integer("late_clock_in_grace_minutes").notNull().default(5),
+    /**
+     * Phase 20 (policy 19, D18): hours past this on one business date are overtime. Null is
+     * off. Weekly overtime then counts only the hours that weren't daily overtime.
+     */
+    dailyOvertimeThreshold: hours("daily_overtime_threshold"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -610,6 +615,10 @@ export const schedulingRules = pgTable(
     check(
       "scheduling_rules_overtime_multiplier_valid",
       sql`${table.overtimeMultiplier} BETWEEN 1.00 AND 3.00`,
+    ),
+    check(
+      "scheduling_rules_daily_overtime_valid",
+      sql`${table.dailyOvertimeThreshold} IS NULL OR (${table.dailyOvertimeThreshold} > 0 AND ${table.dailyOvertimeThreshold} <= 24)`,
     ),
     check(
       "scheduling_rules_late_grace_valid",

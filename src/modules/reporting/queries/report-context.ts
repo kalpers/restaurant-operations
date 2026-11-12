@@ -1,4 +1,4 @@
-import { eq, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 
 import { locations, locationSettings } from "@/db/schema";
 import type { DatabaseTransaction } from "@/db/transactions/transaction-context";
@@ -89,3 +89,15 @@ export async function rowsOf<Row>(context: ReportContext, query: SQL): Promise<R
 export function minutes(value: string | number | null): number | null {
   return value === null ? null : Math.round(Number(value) * 10) / 10;
 }
+
+/**
+ * Phase 20 (policy 17): a sold item's line amount. A SPLIT item is counted once, on the check
+ * it was sent on, and its money is the sum of its ACTIVE shares wherever they were settled.
+ * Use with `oi` as the order item alias and `SOLD_ITEM_STATUSES` in the item filter.
+ */
+export const soldLineTotal = sql`CASE WHEN oi.status = 'SPLIT'
+  THEN (SELECT COALESCE(SUM(s.amount), 0) FROM order_item_shares s WHERE s.order_item_id = oi.id AND s.status = 'ACTIVE')
+  ELSE oi.line_total_snapshot END`;
+
+/** Items that count as sold: sent, or sent and then shared between checks. */
+export const SOLD_ITEM_STATUSES = sql`('SUBMITTED', 'SPLIT')`;

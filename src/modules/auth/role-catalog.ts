@@ -180,6 +180,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "drawers.view",
       "drawers.operate",
       "tax.view",
+      // Phase 20: tax-exempt checks.
+      "tax.exempt",
       "kitchen.view",
       "kitchen.manage",
       "bar.view",

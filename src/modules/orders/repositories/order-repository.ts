@@ -6,6 +6,7 @@ import {
   orderDiscounts,
   orderItemDiscounts,
   orderItems,
+  orderItemShares,
   orderItemStatusHistory,
   orders,
   orderStatusHistory,
@@ -16,6 +17,7 @@ import type { Actor } from "@/modules/auth/types";
 import { readConstraintName } from "@/db/helpers/database-errors";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
+import { subtractDecimals, toScale } from "@/shared/decimal/decimal";
 import { businessDateOf } from "@/shared/time/business-date-service";
 
 import { calculateOrderTax } from "../rules/order-tax";
@@ -135,7 +137,7 @@ export async function recomputeAndBumpOrder(
   orderId: string,
   values: Partial<typeof orders.$inferInsert> = {},
 ): Promise<OrderRow> {
-  const items = await transaction
+  const ownItems = await transaction
     .select({
       id: orderItems.id,
       status: orderItems.status,
@@ -143,10 +145,31 @@ export async function recomputeAndBumpOrder(
       taxCategoryId: orderItems.taxCategoryId,
       taxCategoryCode: orderItems.taxCategoryCodeSnapshot,
       taxRate: orderItems.taxRateSnapshot,
+      taxIncluded: orderItems.taxIncludedSnapshot,
     })
     .from(orderItems)
     .where(eq(orderItems.orderId, orderId));
-  const itemIds = items.map((item) => item.id);
+  // Phase 20 (policy 17): a SPLIT item counts through its ACTIVE shares, which may sit on other
+  // checks. Each share is a line of its own amount with the original's tax snapshot.
+  const shares = await transaction
+    .select({
+      id: orderItemShares.id,
+      lineTotal: orderItemShares.amount,
+      taxCategoryId: orderItemShares.taxCategoryId,
+      taxCategoryCode: orderItemShares.taxCategoryCodeSnapshot,
+      taxRate: orderItemShares.taxRateSnapshot,
+      taxIncluded: orderItemShares.taxIncludedSnapshot,
+    })
+    .from(orderItemShares)
+    .where(and(eq(orderItemShares.orderId, orderId), eq(orderItemShares.status, "ACTIVE")));
+  const items = [...ownItems, ...shares.map((share) => ({ ...share, status: "SUBMITTED" }))];
+  // Phase 20 (policy 16): an exemption set or cleared in this change, or the order's own.
+  const [current] = await transaction
+    .select({ taxExempt: orders.taxExempt })
+    .from(orders)
+    .where(eq(orders.id, orderId));
+  const exempt = values.taxExempt ?? current?.taxExempt ?? false;
+  const itemIds = ownItems.map((item) => item.id);
   const itemDiscountRows =
     itemIds.length === 0
       ? []
@@ -201,6 +224,7 @@ export async function recomputeAndBumpOrder(
     items: items.filter((item) => item.status === "SUBMITTED"),
     itemNetAmounts: totals.itemNetAmounts,
     orderDiscountAmount: totals.orderDiscountAmount,
+    exempt,
   });
 
   await transaction.delete(orderTaxLines).where(eq(orderTaxLines.orderId, orderId));
@@ -214,6 +238,7 @@ export async function recomputeAndBumpOrder(
         taxRateSnapshot: line.taxRate,
         taxableAmount: line.taxableAmount,
         taxAmount: line.taxAmount,
+        taxIncluded: line.taxIncluded,
       })),
     );
   }
@@ -224,7 +249,9 @@ export async function recomputeAndBumpOrder(
       ...values,
       itemSubtotal: totals.itemSubtotal,
       discountTotal: totals.discountTotal,
-      subtotal: totals.subtotal,
+      // Phase 20 (D14): tax inside the prices comes off, so the subtotal stays pre-tax.
+      subtotal: toScale(subtractDecimals(totals.subtotal, tax.includedTaxTotal), 2),
+      includedTaxTotal: tax.includedTaxTotal,
       taxTotal: tax.taxTotal,
       version: sql`${orders.version} + 1`,
       updatedAt: new Date(),

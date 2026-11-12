@@ -274,6 +274,69 @@
       "when": 1794408030576,
       "tag": "0038_menu_stock_signals_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794423486454,
+      "tag": "0039_service_polish_menu",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794423489671,
+      "tag": "0040_service_polish_menu_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794425069871,
+      "tag": "0041_service_polish_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794425073066,
+      "tag": "0042_service_polish_notifications_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794425976189,
+      "tag": "0043_service_polish_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794425979463,
+      "tag": "0044_service_polish_tax_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794426793240,
+      "tag": "0045_service_polish_shared_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1794426798298,
+      "tag": "0046_service_polish_shared_items_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794427570130,
+      "tag": "0047_service_polish_labor_tips",
+      "breakpoints": true
     }
   ]
 }

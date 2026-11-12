@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 
+import { subtractDecimals, toScale } from "@/shared/decimal/decimal";
+
 import type { ReportSection } from "../types";
 
 import { rowsOf, type ReportContext } from "./report-context";
@@ -23,6 +25,7 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
     cash: string;
     card: string;
     total: string;
+    refunded: string;
     distributed: string | null;
   }>(
     context,
@@ -37,6 +40,15 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
         JOIN orders o ON o.id = s.order_id
         WHERE ${tipScope}
         GROUP BY o.business_date
+      ), refunded AS (
+        -- Phase 20 (policy 18): tips handed back, by the order's business date.
+        SELECT o.business_date, SUM(r.tip_amount) AS refunded
+        FROM order_refunds r
+        JOIN orders o ON o.id = r.order_id
+        WHERE o.location_id = ${filters.locationId}
+          AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+          AND r.status = 'RECORDED' AND r.tip_amount > 0
+        GROUP BY o.business_date
       ), finalized AS (
         SELECT business_date, pool_total
         FROM tip_distributions
@@ -47,8 +59,11 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
              COALESCE(tips.cash, 0)::numeric(12,2)::text AS cash,
              COALESCE(tips.card, 0)::numeric(12,2)::text AS card,
              COALESCE(tips.total, 0)::numeric(12,2)::text AS total,
+             COALESCE(refunded.refunded, 0)::numeric(12,2)::text AS refunded,
              finalized.pool_total::text AS distributed
-      FROM tips FULL JOIN finalized ON finalized.business_date = tips.business_date
+      FROM tips
+      FULL JOIN finalized ON finalized.business_date = tips.business_date
+      LEFT JOIN refunded ON refunded.business_date = COALESCE(tips.business_date, finalized.business_date)
       ORDER BY 1
     `,
   );
@@ -67,6 +82,27 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
         ${filters.employeeId ? sql`AND o.assigned_server_employee_id = ${filters.employeeId}` : sql``}
       GROUP BY e.id, e.employee_number, e.preferred_name, e.first_name, e.last_name
       ORDER BY e.employee_number NULLS LAST
+    `,
+  );
+  // Phase 20 (policy 20): what employees declared they kept in cash. Never in the pool.
+  const declared = await rowsOf<{
+    business_date: string;
+    employee_number: string;
+    name: string;
+    amount: string;
+    note: string | null;
+  }>(
+    context,
+    sql`
+      SELECT d.business_date::text AS business_date, e.employee_number,
+             COALESCE(e.preferred_name, e.first_name) || ' ' || e.last_name AS name,
+             d.amount::text AS amount, d.note
+      FROM tip_declarations d
+      JOIN employees e ON e.id = d.employee_id
+      WHERE d.location_id = ${filters.locationId}
+        AND d.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        ${filters.employeeId ? sql`AND d.employee_id = ${filters.employeeId}` : sql``}
+      ORDER BY d.business_date, e.employee_number
     `,
   );
   const shares = await rowsOf<{
@@ -105,6 +141,8 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
         { key: "cashTips", label: "Cash tips", kind: "money" },
         { key: "cardTips", label: "Card tips", kind: "money" },
         { key: "tips", label: "Total tips", kind: "money" },
+        { key: "refunded", label: "Tips refunded", kind: "money" },
+        { key: "pool", label: "Pool (after refunds)", kind: "money" },
         { key: "distributed", label: "Distributed", kind: "money" },
         { key: "status", label: "Status", kind: "text" },
       ],
@@ -113,11 +151,13 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
         cashTips: row.cash,
         cardTips: row.card,
         tips: row.total,
+        refunded: row.refunded,
+        pool: toScale(subtractDecimals(row.total, row.refunded), 2),
         distributed: row.distributed,
         status:
           row.distributed === null
             ? "Not distributed"
-            : row.distributed === row.total
+            : row.distributed === toScale(subtractDecimals(row.total, row.refunded), 2)
               ? "Finalized"
               : "Changed after finalizing",
       })),
@@ -160,6 +200,26 @@ export async function tipsSections(context: ReportContext): Promise<ReportSectio
         workedHours: row.worked_hours,
         points: row.points,
         share: row.share,
+      })),
+    },
+    {
+      key: "declared",
+      title: "Declared cash tips",
+      description:
+        "Cash tips employees say they kept, by business date. Record only: never part of the pool and never paid out.",
+      columns: [
+        { key: "businessDate", label: "Business date", kind: "date" },
+        { key: "employeeNumber", label: "Employee number", kind: "text" },
+        { key: "employee", label: "Employee", kind: "text" },
+        { key: "amount", label: "Declared", kind: "money" },
+        { key: "note", label: "Note", kind: "text" },
+      ],
+      rows: declared.map((row) => ({
+        businessDate: row.business_date,
+        employeeNumber: row.employee_number,
+        employee: row.name,
+        amount: row.amount,
+        note: row.note,
       })),
     },
   ];

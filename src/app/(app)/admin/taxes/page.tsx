@@ -7,10 +7,9 @@ import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { actorHolds } from "@/modules/menu/services/access";
 import { getLocationTaxSetting, listTaxCategories, listTaxRates } from "@/modules/menu/services/tax-service";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
+import { formatInstant } from "@/shared/time/format-instant";
 
-function formatInstant(value: Date | null): string {
-  return value ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(value) : "—";
-}
 
 /**
  * Admin → Taxes (Phase 17 policy A). Tax categories are organization-wide; rates and the tax
@@ -25,14 +24,23 @@ export default async function TaxesPage() {
     listTaxCategories(database, actor),
     listTaxRates(database, actor),
   ]);
+  const timeZone = await getLocationTimeZone(database, location.locationId);
   const canManage = actorHolds(actor, "tax.manage");
 
   return (
     <>
       <PageHeader
         title="Taxes"
-        description={`Tax categories for the organization, and rates for ${location.locationName}. Tax is added on top of menu prices, on the amount after discounts, and frozen on each item when it is sent.`}
+        description={`Tax categories for the organization, and rates for ${location.locationName}. Each rate is either added on top of menu prices or already included in them; tax is worked out after discounts and frozen on each item when it is sent.`}
       />
+
+      {!canManage && (
+        <p role="note" className="mb-4 rounded-md border border-info-300 bg-info-50 p-3 text-sm text-info-800">
+          You can view taxes here. Adding categories, setting rates and switching tax on need the
+          &ldquo;Manage tax categories, rates and the location tax switch&rdquo; permission, which the Owner and General
+          Manager roles have.
+        </p>
+      )}
 
       <div className="grid gap-6">
         <Card aria-label="Tax at this location">
@@ -58,7 +66,11 @@ export default async function TaxesPage() {
         <Card aria-label="Tax categories">
           <CardTitle>Categories and rates</CardTitle>
           {categories.length === 0 ? (
-            <EmptyState title="No tax categories yet">Add one below, give it a rate, then assign it to menu items.</EmptyState>
+            <EmptyState title="No tax categories yet">
+              {canManage
+                ? "Add one under “Add a tax category” below. It then appears here with a form to set its rate. Then assign it to menu items on each item's page."
+                : "Someone who manages taxes adds categories and their rates."}
+            </EmptyState>
           ) : (
             <div className="grid gap-6">
               {categories.map((category) => {
@@ -71,7 +83,7 @@ export default async function TaxesPage() {
                       {category.name} ({category.code}){category.active ? "" : " · inactive"}
                     </h3>
                     <p className="text-sm">
-                      Rate here now: <span className="tabular font-medium">{current ? `${current.ratePercent}%` : "none"}</span>
+                      Rate here now: <span className="tabular font-medium">{current ? `${current.ratePercent}%, ${current.priceIncludesTax ? "already included in menu prices" : "added on top of menu prices"}` : "none"}</span>
                     </p>
                     {own.length > 0 && (
                       <TableFrame>
@@ -86,9 +98,11 @@ export default async function TaxesPage() {
                           <TBody>
                             {own.map((rate) => (
                               <Tr key={rate.id}>
-                                <Td className="tabular">{rate.ratePercent}%</Td>
-                                <Td>{formatInstant(rate.effectiveFrom)}</Td>
-                                <Td>{formatInstant(rate.effectiveTo)}</Td>
+                                <Td className="tabular">
+                                  {rate.ratePercent}% {rate.priceIncludesTax ? "(included in prices)" : "(added on top)"}
+                                </Td>
+                                <Td>{formatInstant(rate.effectiveFrom, timeZone) || "—"}</Td>
+                                <Td>{formatInstant(rate.effectiveTo, timeZone) || "—"}</Td>
                               </Tr>
                             ))}
                           </TBody>
@@ -106,6 +120,13 @@ export default async function TaxesPage() {
                           hidden={{ taxCategoryId: category.id, expectedCurrentRateId: current?.id ?? null }}
                           fields={[
                             { name: "ratePercent", label: "New rate (%)", required: true },
+                            {
+                              name: "priceIncludesTax",
+                              label:
+                                "Menu prices already include this tax (leave off to add tax on top: a $4.50 item at 6% then costs $4.77)",
+                              type: "checkbox",
+                              defaultValue: current?.priceIncludesTax ?? false,
+                            },
                             { name: "effectiveFrom", label: "Starting (blank: now)", type: "datetime-local" },
                           ]}
                         />
@@ -140,7 +161,7 @@ export default async function TaxesPage() {
               resetOnSuccess
               successMessage="Tax category added."
               fields={[
-                { name: "code", label: "Code (capitals, digits, _)", required: true },
+                { name: "code", label: "Code (letters, digits and _, no spaces; for example FOOD)", required: true },
                 { name: "name", label: "Name", required: true },
                 { name: "description", label: "Description" },
               ]}

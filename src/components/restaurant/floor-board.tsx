@@ -363,6 +363,7 @@ function SessionActions({
   const [moveTargets, setMoveTargets] = useState<string[]>([]);
   const [addTarget, setAddTarget] = useState("");
   const [capacityReason, setCapacityReason] = useState("");
+  const [holdReason, setHoldReason] = useState("");
   const [server, setServer] = useState("");
   const [scheduleReason, setScheduleReason] = useState("");
   const [cancelReason, setCancelReason] = useState("");
@@ -374,6 +375,8 @@ function SessionActions({
   const base = `/api/restaurant/sessions/${session.id}`;
   const version = { expectedVersion: session.version };
   const capacityOverride = capacityReason.trim() || null;
+  // Phase 20 (policy 8): moving or combining onto a held table follows the seating rule.
+  const holdOverride = holdReason.trim() || null;
 
   return (
     <div className="mt-3 grid gap-3">
@@ -397,6 +400,16 @@ function SessionActions({
                 <input
                   value={capacityReason}
                   onChange={(event) => setCapacityReason(event.target.value)}
+                  className={INPUT_CLASS}
+                />
+              </label>
+            )}
+            {abilities.holdOverride && (
+              <label className="grid gap-1 text-sm font-medium">
+                Hold override reason, if a table is held for a reservation
+                <input
+                  value={holdReason}
+                  onChange={(event) => setHoldReason(event.target.value)}
                   className={INPUT_CLASS}
                 />
               </label>
@@ -427,6 +440,7 @@ function SessionActions({
                     ...version,
                     tableIds: moveTargets,
                     capacityOverrideReason: capacityOverride,
+                    holdOverrideReason: holdOverride,
                   })
                 }
               >
@@ -460,6 +474,7 @@ function SessionActions({
                         ...version,
                         tableId: addTarget,
                         capacityOverrideReason: capacityOverride,
+                        holdOverrideReason: holdOverride,
                       })
                     }
                   >
