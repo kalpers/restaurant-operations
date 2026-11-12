@@ -38,6 +38,15 @@ All are validated in `src/config/env.ts`. The app refuses to start sign-in witho
 | `EMPLOYEE_DOCUMENT_MAX_BYTES` | Optional; default 10 MiB, max 50 MiB |
 | `OUTBOX_POLL_INTERVAL_MS` | Optional; default 1000. Do not set it to 0 in production, because that turns off realtime. |
 | `TEST_DATABASE_URL` | **Do not set.** Test tooling recreates that database. |
+| `MESSAGING_EMAIL_PROVIDER` | Phase 22: `smtp` or `off`. Required in production; `capture` is refused. |
+| `MESSAGING_SMS_PROVIDER` | Phase 22: `twilio` or `off`. Required in production; `capture` is refused. |
+| `MESSAGING_SMTP_URL`, `MESSAGING_FROM_EMAIL` | With `smtp`: the provider's `smtps://` URL (from the secret store; it holds a password) and the sending address. Any SMTP service works (SES, Azure Communication Services, SendGrid, Mailgun, Postmark). Set up SPF, DKIM and DMARC for the sending domain. |
+| `MESSAGING_TWILIO_ACCOUNT_SID`, `MESSAGING_TWILIO_AUTH_TOKEN`, `MESSAGING_TWILIO_FROM` | With `twilio`: the account, its token (secret store) and a sending number registered for business texting (US A2P 10DLC or toll-free verification). Keep Twilio's built-in STOP handling on. |
+| `MESSAGING_SUPPRESSION_KEY` | Required with a real provider: 32+ random characters from the secret store. **Never rotate it**: the opt-out list is keyed with it. |
+| `MESSAGE_DISPATCH_INTERVAL_MS`, `MESSAGE_MAX_ATTEMPTS`, `MESSAGE_RETENTION_DAYS` | Optional; defaults 2000, 8 and 90. |
+| `PUBLIC_BOOKING_IP_THRESHOLD`, `PUBLIC_BOOKING_CONTACT_THRESHOLD` | Optional; public booking attempts per hour (30 per IP behind `AUTH_CLIENT_IP_HEADER`, 5 per contact). |
+
+The public booking page (`/book/...`) and its APIs (`/api/public/...`) are reachable signed out. Put them behind the same HTTPS front door, set `AUTH_CLIENT_IP_HEADER` so per-IP throttling works, and consider a WAF rate rule for `/api/public/*`. Outbound HTTPS to Twilio and outbound SMTP (465 or 587) must be allowed from the app.
 
 ### Tooling on the deploy path
 

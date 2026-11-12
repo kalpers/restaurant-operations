@@ -11,10 +11,14 @@ import { currentRequestId } from "@/shared/http/request-context";
 import { type AuditAction, auditActionDefinition } from "../audit-actions";
 import { type AuditPayload, sanitizeAuditPayload } from "../rules/sanitize";
 
-/** A signed-in user acting at a location, or the system acting for an organization. */
+/**
+ * A signed-in user acting at a location, the system acting for an organization, or (Phase 22,
+ * D10) a guest on the public booking page, who has no user.
+ */
 export type AuditActor =
   | { userId: string; organizationId: string; locationId: string | null }
-  | { system: true; organizationId: string; locationId?: string | null };
+  | { system: true; organizationId: string; locationId?: string | null }
+  | { guest: true; organizationId: string; locationId: string };
 
 export type AuditInput = {
   action: AuditAction;
@@ -55,7 +59,7 @@ export async function recordAudit(
       return {
         organizationId: actor.organizationId,
         locationId: definition.scope === "ORGANIZATION" ? null : (actor.locationId ?? null),
-        actorType: userId ? "USER" : "SYSTEM",
+        actorType: userId ? "USER" : "guest" in actor ? "GUEST" : "SYSTEM",
         actorUserId: userId,
         actorEmployeeId,
         action: input.action,

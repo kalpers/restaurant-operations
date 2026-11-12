@@ -46,6 +46,13 @@ export class ConflictError extends AppError {
   }
 }
 
+/** Phase 22 (policy 10): too many public requests in the window. Says nothing about why. */
+export class TooManyRequestsError extends AppError {
+  constructor(message = "Too many requests. Please wait a while and try again.") {
+    super("TOO_MANY_REQUESTS", message, 429);
+  }
+}
+
 export class BusinessRuleError extends AppError {
   constructor(code: string, message: string, details?: unknown) {
     super(code, message, 422);

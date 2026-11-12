@@ -30,6 +30,12 @@ Reservation holds appear on the floor. An override may require a reason and the 
 
 **Guest profiles and allergies.** When booking or adding a walk-in, use **Find a guest profile**: type a name (or phone or email, if you can see contact details) and pick the guest, or choose **New profile for "…"**. Nothing links by itself, so check it's the right person. On a reservation or waitlist card, **Guest & allergies** shows the linked profile and the allergies for this visit: link or change the profile, and **Record allergy** (allergen, *Allergy* or *Severe*, an optional note). Tick **Also save to the profile** to keep it for next time. A profile's allergies are copied onto each visit linked to it. Cards show a **VIP** mark and an **Allergy** mark with the allergen names.
 
+**Texts and emails to guests.** The reservation and waitlist forms have two boxes, **Guest agreed to texts** and **Guest agreed to emails**. Tick one only when the guest said yes; they start unticked. With consent, the guest gets their confirmation, any change of date, time or party size, a cancellation notice and a reminder before the booking (only between 9 am and 9 pm), and, on the waitlist, a "your table is ready" message when you press **Notify (sends table-ready message)**. Without consent the button says **Mark notified** and the card reminds you to tell the guest in person. Texts need a mobile number we can use: 10 digits, or a number starting with + and the country code. Changing the phone or email stops messages to the old one until the guest agrees again.
+
+Each card has **Messages**: which channels the guest agreed to (with **Stop texts** or **Stop emails**), and every message with its status (*Waiting to send*, *Sent*, *Failed*, *Opted out* or *Not sent*). A failed message has **Retry**; a confirmed booking has **Send confirmation again**; a notified waitlist party has **Text again** (at most once a minute). You see the full phone or email only if you can see guest contact details. Messages never include notes, special requests or allergies. A guest who replies STOP, or uses the link in an email, gets no more messages at that address.
+
+**Online bookings.** Bookings guests make themselves show an **Online** mark. They have no table planned yet: plan tables as usual. If the restaurant holds online bookings for approval, they arrive as *Pending*; **Confirm** sends the guest their confirmation. Allergies the guest gave appear like any other. An online booking is never linked to a guest profile by itself; use **Guest & allergies** to link one. To remove the personal details of a booking with no profile (a guest's request), an owner or general manager chooses **Erase guest details** and gives a reason.
+
 ### 2. Seat the party
 
 1. Open **Restaurant floor** and check the table's status. Only clean, available tables can normally be selected.
@@ -191,6 +197,14 @@ Also in the reports: **Sales by hour** (by the hour each check was opened, from 
 
 Under **Admin → Taxes**, an owner or general manager adds tax categories (for example *Food* or *Alcohol*), sets each one's rate at this location (a new rate can start now or later; earlier sales keep the rate they were sent with), and switches tax on for the location. Tick **Menu prices already include this tax** on a rate when the menu price is tax-included (common for drinks): the app then takes the tax out of the price instead of adding it. Assign a category to each menu item on its page under **Tax category**. Once tax is on, an item with no category, or whose category has no rate here, can't be sent.
 
+### Online booking
+
+Managers open **Online booking** (the tab at the host stand) to let guests book on the restaurant's own page. The page's address is shown there; share it on your website.
+
+- **Settings.** Turn **Take bookings online** on; choose whether to hold bookings until a host confirms them, the largest party guests can book online, how many guests may start in one time slot, the slot length (15, 30 or 60 minutes), how far ahead guests can book (at least, and at most), the reminder time (0 for none), and an optional note shown on the page.
+- **Booking hours.** Add the hours, per day, when bookings may start, then **Save hours**. Guests see only times inside these hours that still have room. Hours on one day can't overlap.
+- **What guests see.** The page asks for the date, party size, a time, their name, a mobile number or email, whether they want texts or emails about the booking, any food allergies in the party and special requests. They get a reference and a private link to view or cancel the booking; cancelling frees the time for others. A guest with two upcoming online bookings is asked to call. The page never shows other bookings, tables or staff.
+
 ### Notifications
 
 The bell shows in-app notices for you: food and drinks ready, low stock, a published schedule with your shifts, an approved shift swap, a decision on your time off, a certification about to expire, being close to overtime this week, and (for managers) a missed clock-out. Each notice appears once. Times everywhere in the app are shown in the restaurant's time zone, whatever your device is set to.
@@ -206,6 +220,7 @@ The bell shows in-app notices for you: food and drinks ready, low stock, a publi
   - *What it shows:* how many realtime events are waiting, the oldest one's age, and any dead-lettered events, which are events delivery gave up on after repeated failures.
   - *Retry:* re-queues a dead-lettered event. An event only tells screens to refresh, so a dead-lettered one never blocks newer updates.
   - *Housekeeping:* published events are deleted automatically after 7 days. Order, kitchen, settlement and audit history is never deleted.
+  - *Guest messages:* how many texts and emails are waiting to send, and how many failed. Retry a failed one from the reservation or waitlist card. After 90 days a message keeps its kind, status and time, but no longer its address or text.
 
 ## Common Questions
 
@@ -224,7 +239,8 @@ The bell shows in-app notices for you: food and drinks ready, low stock, a publi
 ## Current Scope Notes
 
 - The application records settlement details but does not process payments.
-- Guest profiles have no loyalty points, marketing consent or messages to guests. Allergies apply to the whole party or check, not to one seat. Nutrition facts aren't shown.
+- Guest profiles have no loyalty points or marketing. Messages to guests are about their own booking only: no newsletters or offers, and guests can't reply except STOP. Staff notifications stay in the app; staff get no texts or emails. Allergies apply to the whole party or check, not to one seat. Nutrition facts aren't shown.
+- Online booking takes no deposits or card details, and isn't connected to OpenTable, Resy or similar services. Guests change a booking by cancelling and booking again, or by calling.
 - Compound or stacked taxes, service charges and splitting a check evenly by amount aren't supported.
 - A closed check can't be reopened; corrections after closing are refund records.
 - The time clock and tip pool are record only: no payroll, pay stubs or tip payouts. Overtime is weekly, plus daily if a manager sets a daily threshold; both are your own settings, not a labor-law calculation.

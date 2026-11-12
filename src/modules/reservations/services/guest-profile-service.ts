@@ -21,6 +21,7 @@ import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import { assertNoCardNumbers, normalizeGuestEmail, normalizePhone, searchAsPhone } from "../rules/guest-contact";
 import { actorHolds, assertPermission } from "./guest-access";
+import { eraseVisitMessaging } from "./guest-message-service";
 
 // Phase 21 guest profiles (policies 1-4, 7), owned by Reservations (D1). A profile is
 // organization-wide (D2); a visit (Guest Party) links to one by hand (D3). Every change is one
@@ -827,6 +828,9 @@ export async function eraseGuestProfile(
       await transaction.delete(guestPartyAllergies).where(inArray(guestPartyAllergies.guestPartyId, partyIds));
     }
 
+    // Phase 22 (policy 17): consents, message addresses and bodies, and manage links too.
+    await eraseVisitMessaging(transaction, partyIds, now);
+
     const personalData = {
       displayName: ERASED_NAME,
       phone: null,
@@ -886,5 +890,70 @@ export async function eraseGuestProfile(
     await announceAllergies(transaction, actor, partyIds, now);
 
     return { id: profile.id, partiesCleared: partyIds.length, mergedProfilesCleared: mergedIds.length };
+  });
+}
+
+/**
+ * Phase 22 (policy 17): erases one visit that was never linked to a profile, such as an online
+ * booking. Its name becomes "Erased guest"; phone, email, special requests and allergies go;
+ * its consents, message addresses and bodies and manage links are cleared. Its reservation,
+ * orders and history stay. A linked visit is erased with its profile instead.
+ */
+export async function eraseGuestVisit(
+  database: Database,
+  actor: Actor,
+  input: { guestPartyId: string; expectedVersion: number; reason: string },
+) {
+  assertPermission(actor, "guests.erase");
+
+  const reason = input.reason.trim();
+
+  if (reason.length === 0 || reason.length > 200) {
+    throw new BusinessRuleError("INVALID_REASON", "Give a reason of 1 to 200 characters.");
+  }
+
+  assertNoCardNumbers({ reason });
+
+  return withTransaction(database, async (transaction) => {
+    const now = new Date();
+    const [party] = await transaction
+      .select()
+      .from(guestParties)
+      .where(and(eq(guestParties.id, input.guestPartyId), eq(guestParties.locationId, actor.locationId)))
+      .for("update");
+
+    if (!party) {
+      throw new NotFoundError("guest party");
+    }
+
+    if (party.version !== input.expectedVersion) {
+      throw new ConcurrencyError("guest party", party.id);
+    }
+
+    if (party.guestProfileId) {
+      throw new BusinessRuleError("PARTY_HAS_PROFILE", "This visit belongs to a guest profile. Erase the profile instead.");
+    }
+
+    await transaction
+      .update(guestParties)
+      .set({
+        guestName: ERASED_NAME,
+        phone: null,
+        email: null,
+        specialRequests: null,
+        version: nextVersion(guestParties.version),
+        updatedAt: now,
+      })
+      .where(eq(guestParties.id, party.id));
+    await transaction.delete(guestPartyAllergies).where(eq(guestPartyAllergies.guestPartyId, party.id));
+    await eraseVisitMessaging(transaction, [party.id], now);
+    await recordAudit(transaction, actor, {
+      action: "guests.visit-erased",
+      entityId: party.id,
+      details: { guestPartyId: party.id, reason },
+    });
+    await announceAllergies(transaction, actor, [party.id], now);
+
+    return { id: party.id, erased: true };
   });
 }

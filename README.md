@@ -636,7 +636,9 @@ These are distinct calculations. A `NO_SHOW` is a manual transition allowed only
 
 Takeout must not be represented by a fake table.
 
-Phase 21 adds guest profiles, owned by this domain: a guest known across visits, organization-wide, with optional phone and email (normalized for lookup, not unique), a VIP flag, preferences, notes and allergies. A Guest Party links to a profile by hand (`guest_parties.guest_profile_id`); suggestions match phone, email or name, but nothing links itself. Linking copies the profile's allergies onto the visit (`guest_party_allergies`, source `PROFILE`); staff may add allergies for the visit only (`RECORDED`). Duplicates are merged by a manager (the duplicate becomes `MERGED`, never undone, with a `guest_profile_merges` row). Erasing a profile clears its personal data, that of profiles merged into it and the contact details of its visits, and keeps orders and history. Visit history is worked out on read from linked parties and order snapshots. Contact details need `guests.contact.view`; audit rows name fields and allergen codes only. Loyalty, marketing consent and guest messaging are not built. See section 33.
+Phase 21 adds guest profiles, owned by this domain: a guest known across visits, organization-wide, with optional phone and email (normalized for lookup, not unique), a VIP flag, preferences, notes and allergies. A Guest Party links to a profile by hand (`guest_parties.guest_profile_id`); suggestions match phone, email or name, but nothing links itself. Linking copies the profile's allergies onto the visit (`guest_party_allergies`, source `PROFILE`); staff may add allergies for the visit only (`RECORDED`). Duplicates are merged by a manager (the duplicate becomes `MERGED`, never undone, with a `guest_profile_merges` row). Erasing a profile clears its personal data, that of profiles merged into it and the contact details of its visits, and keeps orders and history. Visit history is worked out on read from linked parties and order snapshots. Contact details need `guests.contact.view`; audit rows name fields and allergen codes only. Loyalty and marketing consent are not built. See section 33.
+
+Phase 22 adds online booking and guest messaging to this domain. A location may take bookings on a public, signed-out page (`/book/{location code}`): off until a manager turns it on, times offered from booking hours (`online_booking_periods`) every 15, 30 or 60 minutes, limited by lead time, a booking window, a party size limit and pacing (covers starting per slot), checked again under a location lock when the booking is made. Online bookings are `source = 'ONLINE'` with no creating user (a `GUEST` actor in audit), `CONFIRMED` or, when the location requires approval, `PENDING`; tables are still planned by the host, and a booking is never linked to a profile automatically. Guests view or cancel through a private link whose token is stored only as a SHA-256 hash (`reservation_manage_links`). Service messages (confirmed, received, changed, cancelled, reminder, table ready) go by email or SMS only with the visit's consent per channel (`guest_party_message_consents`) and never to an address on the opt-out list (`message_suppressions`, a keyed hash). Erase also clears consents, message addresses and bodies, and manage links. See sections 22 and 33.
 
 ## 14. Domain 07: Menu Management
 
@@ -996,6 +998,8 @@ Audit data is append-only.
 
 Never include passwords, password hashes, session tokens, secrets, prohibited payment information, or unnecessary sensitive HR data. Phase 21 adds the `GUESTS` category: guest audit rows name changed fields and allergen codes, never contact details, notes, preferences or allergy notes.
 
+Phase 22 adds the `MESSAGING` category (consent, resends, opt-outs, online booking settings, online bookings and guest cancellations) and a third actor type, `GUEST`: a guest acting on the public booking page, with no user. Messaging audit rows name channels, kinds and reasons, never an address, a message body, a manage or unsubscribe token, or provider credentials.
+
 Audit access is permission controlled.
 
 ## 21. Domain 14: Reporting
@@ -1147,7 +1151,14 @@ INVENTORY_LOW
 CERTIFICATION_EXPIRING
 ```
 
-Do not introduce SMS/email/push integration during the POC unless intentionally added later.
+Staff notifications stay in-app only: no SMS, email or push to staff.
+
+Phase 22 intentionally adds email and SMS **to guests**, for service messages only (no marketing). The design:
+
+- **Port and adapters** (`src/infrastructure/messaging/`). `MessageSender` sends one message and returns a result, never throwing and never logging an address or body. Adapters: `capture` (writes JSON files under `MESSAGING_CAPTURE_PATH`, sends nothing; the default in development and tests, refused in production unless `MESSAGING_ALLOW_CAPTURE_IN_PRODUCTION=true`, which only the Playwright config sets), `smtp` (nodemailer, any SMTP service; see `docs/accepted-risks.md` DEV-004) and `twilio` (Twilio's REST API over fetch). Either channel can be `off`. Settings are parsed in `src/config/` and checked when messaging starts.
+- **Message outbox.** The change a message reports writes a `guest_messages` row in its own transaction (kind, channel, recipient address, rendered subject and body, a unique dedupe key per trigger). The dispatcher (`startMessageDispatcher`, from `src/instrumentation.ts`) claims due rows with `SKIP LOCKED`, sends with no transaction open, and records `SENT`, a retry (5 s doubling to 15 min), `FAILED` after `MESSAGE_MAX_ATTEMPTS`, or `SUPPRESSED` for a provider opt-out. `outbox_events` isn't used for messages: its payloads stay free of contact data.
+- **Consent and opt-out.** Nothing is queued without the visit's consent for the channel; nothing is sent to an address on the opt-out list (an HMAC of channel and address with `MESSAGING_SUPPRESSION_KEY`, never rotated). Emails carry a one-click unsubscribe link; texts say "Reply STOP", which Twilio enforces and reports.
+- **Retention.** The hourly maintenance run queues due reminders (09:00 to 21:00 local only) and clears the address and body of finished messages older than `MESSAGE_RETENTION_DAYS` (90).
 
 As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` (see section 33). Phase 19 adds `INVENTORY_LOW`, linked to its low-stock alert. Phase 20 adds the other example kinds and `TIME_OFF_DENIED`, `OVERTIME_APPROACHING` and `MISSED_CLOCK_OUT`: the schedule and time-off kinds are written with the change they report, and the time-based kinds by the hourly maintenance run, once per dedupe key and recipient.
 
@@ -1494,7 +1505,7 @@ Integration tests use `TEST_DATABASE_URL`, separate from `DATABASE_URL`. The tes
 
 Auth.js (`next-auth` Credentials provider) handles sign-in, encrypted JWT-backed eight-hour sessions, CSRF protection, and logout. The application stores only Argon2id password hashes. A JWT contains the authenticated user ID; every protected request resolves the active user, active organization/location, active location-scoped role assignments, and current role permissions from PostgreSQL. This makes account disablement and permission changes effective on the next protected request without trusting stale client authorization state. Production requires `NEXTAUTH_SECRET`; generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"` and configure it through the deployment secret environment. Do not commit it.
 
-Emails are normalized using Unicode NFKC normalization, trimming, and lowercase before lookup or uniqueness checks. Authentication failures use the same `Invalid email or password` message for unknown, disabled, and incorrect-password accounts. There is no public registration route.
+Emails are normalized using Unicode NFKC normalization, trimming, and lowercase before lookup or uniqueness checks. Authentication failures use the same `Invalid email or password` message for unknown, disabled, and incorrect-password accounts. There is no public registration route. Phase 22 adds the first public, signed-out business endpoints, for online booking only (`/api/public/...` and the `/book` and `/messages/unsubscribe` pages): they act as a `GUEST` with no permissions at one location, return nothing about staff, tables or other guests, and are throttled per contact and, behind the trusted proxy header, per IP (`public_throttles`).
 
 `npm run bootstrap:owner` is an interactive operator command. It prompts for the Owner email and reads the password without echo; use a password with at least 14 characters. It requires the Phase 2 organization, `MAIN` location, and `OWNER` role seeds, hashes with Argon2id, assigns the Owner role transactionally, and can be retried without replacing an existing account password. Do not pass the password as a command-line argument or store it in source control.
 
@@ -1913,6 +1924,18 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 22 Online Reservations and Guest Messaging
+
+Phase 22 builds the guest messaging and online booking group of section 39, with the Phase 21 leftovers, by owner decision on 2026-11-12 (plan approved with D1–D16 as recommended; nodemailer through a peer override, accepted as DEV-004). Marketing, two-way messaging, external reservation networks, deposits and staff email or SMS stay out. Plan: `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md` (16 amendments). Report: `docs/Phase-22-Completion-Report.md`. It supersedes section 22's "no SMS/email" line for guest service messages, and the Phase 6 and Phase 21 plans' bans on guest messaging; the ban on marketing stays.
+
+- **Messaging** (section 22): `guest_messages`, `message_suppressions`, `guest_party_message_consents`, the port and adapters, the dispatcher, and counts on Admin → System health. Staff record consent with two unticked boxes on the reservation and waitlist forms; a changed phone or email withdraws that channel.
+- **Staff messages.** Creating a confirmed reservation, confirming one, changing its date, time or party size, and cancelling it queue the matching message; no-shows and seating cancel what is waiting. Notify on the waitlist queues the table-ready message (SMS first, else email); "Text again" repeats it at most once a minute. Each reservation and waitlist card has a Messages panel: consent state, history (addresses masked without `guests.contact.view`), retry and send-again.
+- **Online booking** (section 13): `online_booking_settings`, `online_booking_periods`, `public_throttles`; `reservations.source` gains `ONLINE`, `created_by_user_id` is null only for it, `online_request_key_hash` makes a retried booking return the first one, and `cancelled_by_guest` marks a cancel through the link. Settings and hours at **Host → Online booking**. A filled spam-trap field gets a normal-looking answer and stores nothing; at most two upcoming online bookings per phone or email.
+- **Erase.** Erasing a profile also clears its visits' consents, message content and manage links; a visit with no profile can be erased on its own (`POST /api/guest-parties/{id}/erase`, `guests.erase`, audit `guests.visit-erased`).
+- **Permissions** (148 in all): `reservations.online.manage` (Owner, General Manager, Manager), `messages.view` and `messages.resend` (Owner, General Manager, Manager, Host), seeded by `security.guest-messaging-permissions`.
+- **Phase 21 leftovers.** The validation seed (`phase21.validation-guests-allergens`) and the demo seed add allergen tags, a declared `MAY_CONTAIN` and guest profiles; an integration test moves and shares an acknowledged item; `src/instrumentation.ts` tests `NEXT_RUNTIME` inline, so the Edge build no longer traces `node:crypto`.
+- **Migrations:** `0051`–`0052` (messages and suppressions, guards), `0053`–`0054` (consents and manage links, guards), `0055` (online booking settings, hours, throttles, the `ONLINE` source and `GUEST` actor).
+
 ### Phase 21 Guest Profiles and Allergens
 
 Phase 21 builds the CRM part of section 39 with allergen labeling, by owner decision on 2026-11-12 (plan approved with D1–D16 as recommended). Loyalty, marketing consent, guest messaging, online reservations, nutrition facts and per-seat allergies stay out. Plan: `docs/Phase-21-Guest-Profiles-and-Allergens.md`. Report: `docs/Phase-21-Completion-Report.md`. It supersedes the Phase 6 plan's "no customer profile" lines (sections 6 and 7); the bans on loyalty and marketing consent stay.
@@ -2125,6 +2148,12 @@ Guest profiles linked to Guest Parties by hand (contact details tiered, merge an
 
 Approved by the owner on 2026-11-12, with decisions D1–D16 as recommended in the plan. It supersedes the Phase 6 plan's lines against customer profiles and visit history.
 
+### Phase 22: Online Reservations and Guest Messaging
+
+A public online booking page per location (booking hours, pacing, a private view-or-cancel link), and email and SMS service messages to guests (confirmations, changes, cancellations, reminders and "table ready") through a provider-neutral port behind a message outbox, only with per-visit consent and never to an opted-out address. Plus the Phase 21 leftovers: seed data, the move-and-share test and the Edge build warning. Plan: `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md`.
+
+Approved by the owner on 2026-11-12, with decisions D1–D16 as recommended in the plan. It supersedes section 22's "no SMS/email" line for guest service messages and the Phase 6 and Phase 21 plans' bans on guest messaging.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2225,11 +2254,11 @@ Architect for, but do not implement unless specifically requested:
 - Customer loyalty (guest profiles were built in Phase 21)
 - Delivery integrations
 - DoorDash/Uber Eats integrations
-- External reservation integrations
+- External reservation integrations (OpenTable, Resy and the like; the restaurant's own online booking page was built in Phase 22)
 - Payment processing
 - Payroll processing
 - Accounting integrations
-- SMS/email notifications
+- SMS/email notifications to staff (guest service messages were built in Phase 22)
 - Full offline synchronization
 - Demand forecasting based on historical sales/reservations
 - Ingredient lots/FIFO/expiration-by-lot

@@ -78,6 +78,10 @@ export const PERMISSION_CATALOG = [
   { code: "waitlist.manage", name: "Manage the waitlist", category: "Waitlist" },
   { code: "waitlist.notify", name: "Record waitlist notifications", category: "Waitlist" },
   { code: "waitlist.seat", name: "Seat waitlist parties", category: "Waitlist" },
+  // Phase 22: online booking and guest messaging.
+  { code: "reservations.online.manage", name: "Manage online booking, booking hours and guest messaging settings", category: "Reservations" },
+  { code: "messages.view", name: "View guest message history and delivery status", category: "Guest messages" },
+  { code: "messages.resend", name: "Resend failed guest messages and confirmations", category: "Guest messages" },
   // Phase 21 guest profiles (policy 19, D13).
   { code: "guests.view", name: "View guest profiles, allergies and visit history", category: "Guests" },
   { code: "guests.contact.view", name: "View guest phone numbers and email addresses", category: "Guests" },

@@ -1904,3 +1904,7 @@ Do not collapse planned future table use into actual occupancy for implementatio
 ## Amendment (Phase 21, 2026-11-12)
 
 The owner approved Phase 21 Guest Profiles and Allergens on 2026-11-12. It supersedes "Do not turn this into a customer CRM profile" (section 6) and "Do not build ... customer-history profiling" (section 7): guest profiles now exist, owned by Reservations, linked to Guest Parties by hand, with visit history read from snapshots. Guest Party itself is unchanged apart from the nullable `guest_profile_id`. The bans on marketing consent and loyalty, and the rules on not logging or exposing contact data, still stand. See `docs/Phase-21-Guest-Profiles-and-Allergens.md`.
+
+## Amendment (Phase 22, 2026-11-12)
+
+The owner approved Phase 22 Online Reservations and Guest Messaging on 2026-11-12. It supersedes "Do not implement external SMS/email notification in Phase 6" and "Do not add third-party messaging ... packages" for guest service messages (confirmations, changes, cancellations, reminders and table-ready texts), sent only with the visit's consent through the provider-neutral messaging port, and adds a public online booking page. The rule against sending messages or calling outside systems inside seating or reservation transactions still stands: messages are queued in the transaction and sent by the dispatcher after commit. External reservation networks and marketing remain out. See `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md`.

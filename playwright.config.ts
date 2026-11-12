@@ -8,7 +8,7 @@ import {
   loadLocalEnv,
   requireTestDatabaseUrl,
 } from "./src/config/tooling-env";
-import { E2E_DOCUMENT_STORAGE_PATH } from "./tests/helpers/e2e-storage";
+import { E2E_DOCUMENT_STORAGE_PATH, E2E_MESSAGE_CAPTURE_PATH } from "./tests/helpers/e2e-storage";
 
 loadLocalEnv();
 
@@ -49,6 +49,13 @@ export default defineConfig({
       // Generated per run, so tests never depend on a developer's or a known secret.
       NEXTAUTH_SECRET: randomBytes(32).toString("base64url"),
       EMPLOYEE_DOCUMENT_STORAGE_PATH: E2E_DOCUMENT_STORAGE_PATH,
+      // Phase 22: guest messages are captured to files, never sent. CI mode serves a
+      // production build (`next start`), which allows capture only with this switch.
+      MESSAGING_EMAIL_PROVIDER: "capture",
+      MESSAGING_SMS_PROVIDER: "capture",
+      MESSAGING_ALLOW_CAPTURE_IN_PRODUCTION: "true",
+      MESSAGING_CAPTURE_PATH: E2E_MESSAGE_CAPTURE_PATH,
+      MESSAGE_DISPATCH_INTERVAL_MS: "250",
     },
     // A reused dev server would run the tests against the development database.
     reuseExistingServer: false,

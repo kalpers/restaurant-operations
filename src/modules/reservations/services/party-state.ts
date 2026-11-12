@@ -15,6 +15,7 @@ import { endAssignments } from "../repositories/reservation-repository";
 import { endWaitlistAssignments } from "../repositories/waitlist-repository";
 import { partyStatusForReservation } from "../rules/lifecycle";
 import type { ReservationStatus } from "../types";
+import { cancelQueuedMessages } from "./guest-message-service";
 
 // The Guest Party, its Reservation and its Waitlist entry change together. These functions
 // are what the seating workflows call inside their one transaction, and each expects the
@@ -47,6 +48,8 @@ export async function cancelOpenWaitlistEntry(
       version: nextVersion(waitlistEntries.version),
     })
     .where(eq(waitlistEntries.id, graph.waitlistEntry.id));
+  // Phase 22 (policy 2): a table-ready text for an entry that ended is never sent.
+  await cancelQueuedMessages(transaction, { waitlistEntryId: graph.waitlistEntry.id, now: at });
 }
 
 /** Refuses before any table is touched, so a party that can't be seated costs nothing. */
@@ -130,6 +133,8 @@ export async function markPartySeated(
     userId: actor.userId,
     occurredAt: at,
   });
+  // Phase 22 (policy 2): reminders and table-ready texts still waiting are no longer needed.
+  await cancelQueuedMessages(transaction, { guestPartyId: graph.party.id, now: at });
 }
 
 /** The visit is over: a seated party and its seated reservation become COMPLETED. */

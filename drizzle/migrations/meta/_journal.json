@@ -358,6 +358,41 @@
       "when": 1794498208766,
       "tag": "0050_guest_profiles_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794506515420,
+      "tag": "0051_guest_messaging",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794506533104,
+      "tag": "0052_guest_messaging_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794509831412,
+      "tag": "0053_guest_message_consents",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794509834870,
+      "tag": "0054_guest_message_consents_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794510527045,
+      "tag": "0055_online_booking",
+      "breakpoints": true
     }
   ]
 }

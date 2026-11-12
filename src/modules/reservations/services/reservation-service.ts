@@ -58,6 +58,13 @@ import {
   type ReservationSource,
   type ReservationStatus,
 } from "../types";
+import {
+  cancelQueuedMessages,
+  loadConsentFlags,
+  queueReservationMessage,
+  reconcilePartyConsents,
+  type ConsentChoice,
+} from "./guest-message-service";
 import { attachProfileToParty } from "./guest-profile-service";
 import { loadPartyGuestFacts, type PartyGuestFacts } from "./party-allergy-service";
 import { cancelOpenWaitlistEntry } from "./party-state";
@@ -79,6 +86,8 @@ export type CreateReservationInput = {
   tableIds?: readonly string[];
   /** Phase 21 (policy 2): the guest profile, linked by hand. Needs `guests.manage`. */
   guestProfileId?: string | null;
+  /** Phase 22 (policy 5): the guest agreed to texts or emails about this booking. */
+  messageConsent?: ConsentChoice;
 };
 
 export type UpdateReservationInput = {
@@ -94,6 +103,8 @@ export type UpdateReservationInput = {
   notes?: string | null;
   /** Left out, planned tables stay. An array replaces them. */
   tableIds?: readonly string[];
+  /** Phase 22: left out, consent stays (a changed address still withdraws its channel). */
+  messageConsent?: ConsentChoice;
 };
 
 type Versioned = { id: string; version: number };
@@ -250,6 +261,14 @@ export async function createReservation(
       await attachProfileToParty(transaction, actor, { guestPartyId: party!.id, guestProfileId: input.guestProfileId });
     }
 
+    await reconcilePartyConsents(transaction, { kind: "STAFF", actor }, {
+      guestPartyId: party!.id,
+      locationId: actor.locationId,
+      contact: { phone: blankToNull(input.phone), email: blankToNull(input.email) },
+      choice: input.messageConsent,
+      now,
+    });
+
     const [reservation] = await transaction
       .insert(reservations)
       .values({
@@ -273,6 +292,15 @@ export async function createReservation(
         partySize: input.partySize,
         tableIds: input.tableIds,
         context,
+        now,
+      });
+    }
+
+    if (status === "CONFIRMED") {
+      await queueReservationMessage(transaction, {
+        reservationId: reservation!.id,
+        kind: "RESERVATION_CONFIRMED",
+        trigger: `v${reservation!.version}`,
         now,
       });
     }
@@ -362,6 +390,13 @@ export async function updateReservation(
         version: nextVersion(guestParties.version),
       })
       .where(eq(guestParties.id, party.id));
+    await reconcilePartyConsents(transaction, { kind: "STAFF", actor }, {
+      guestPartyId: party.id,
+      locationId: actor.locationId,
+      contact: { phone: blankToNull(input.phone), email: blankToNull(input.email) },
+      choice: input.messageConsent,
+      now,
+    });
 
     const updated = await bumpReservation(transaction, reservationId, {
       reservationAt,
@@ -391,6 +426,20 @@ export async function updateReservation(
       });
     }
 
+    // Phase 22 (policy 13): the guest hears about a new date, time or party size.
+    const moved =
+      reservationAt.getTime() !== reservation.reservationAt.getTime() || input.partySize !== party.partySize;
+
+    if (moved && (reservation.status === "PENDING" || reservation.status === "CONFIRMED")) {
+      await cancelQueuedMessages(transaction, { reservationId, kinds: ["RESERVATION_REMINDER"], now });
+      await queueReservationMessage(transaction, {
+        reservationId,
+        kind: "RESERVATION_CHANGED",
+        trigger: `v${updated.version}`,
+        now,
+      });
+    }
+
     return updated;
   });
 }
@@ -413,7 +462,16 @@ export async function confirmReservation(
 
     assertReservationTransition(reservation.status as ReservationStatus, "CONFIRMED");
 
-    return bumpReservation(transaction, reservationId, { status: "CONFIRMED" });
+    const confirmed = await bumpReservation(transaction, reservationId, { status: "CONFIRMED" });
+
+    await queueReservationMessage(transaction, {
+      reservationId,
+      kind: "RESERVATION_CONFIRMED",
+      trigger: `v${confirmed.version}`,
+      now: new Date(),
+    });
+
+    return confirmed;
   });
 }
 
@@ -488,12 +546,23 @@ export async function cancelReservation(
       occurredAt: now,
     });
 
-    return bumpReservation(transaction, reservationId, {
+    const cancelled = await bumpReservation(transaction, reservationId, {
       status: "CANCELLED",
       cancelledAt: now,
       cancelledByUserId: actor.userId,
       cancelReason: blankToNull(input.reason),
     });
+
+    // Phase 22 (policy 13): nothing still waiting goes out, and the guest is told.
+    await cancelQueuedMessages(transaction, { reservationId, now });
+    await queueReservationMessage(transaction, {
+      reservationId,
+      kind: "RESERVATION_CANCELLED",
+      trigger: "cancelled",
+      now,
+    });
+
+    return cancelled;
   });
 }
 
@@ -540,6 +609,8 @@ export async function markReservationNoShow(
       userId: actor.userId,
       occurredAt: now,
     });
+
+    await cancelQueuedMessages(transaction, { reservationId, now });
 
     return bumpReservation(transaction, reservationId, {
       status: "NO_SHOW",
@@ -691,6 +762,8 @@ export type ReservationView = {
   noShowAllowedAt: string;
   /** Phase 21: the party's version, linked guest profile and this visit's allergies. */
   guest: PartyGuestView;
+  /** Phase 22: the channels the guest agreed to messages on for this visit. */
+  messageConsent: ConsentChoice;
 };
 
 export type PartyGuestView = { partyVersion: number } & PartyGuestFacts;
@@ -766,6 +839,7 @@ async function buildViews(
   const history = await allAssignments(executor, ids);
   const seating = await findActualSeating(executor, partyIds);
   const guests = await loadPartyGuestFacts(executor, partyIds);
+  const consents = await loadConsentFlags(executor, partyIds);
 
   return rows.map(({ reservation, party }) => {
     const sessions = new Map<
@@ -791,6 +865,7 @@ async function buildViews(
       version: reservation.version,
       guestPartyId: party.id,
       guest: { partyVersion: party.version, ...(guests.get(party.id) ?? { profile: null, allergies: [] }) },
+      messageConsent: consents.get(party.id) ?? { sms: false, email: false },
       guestName: party.guestName,
       partySize: party.partySize,
       phone: party.phone,

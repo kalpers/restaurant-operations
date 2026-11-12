@@ -1,5 +1,12 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { attachProfileToParty } from "./guest-profile-service";
+import {
+  cancelQueuedMessages,
+  loadConsentFlags,
+  queueTableReady,
+  reconcilePartyConsents,
+  type ConsentChoice,
+} from "./guest-message-service";
 import { loadPartyGuestFacts } from "./party-allergy-service";
 import type { PartyGuestView } from "./reservation-service";
 
@@ -58,6 +65,8 @@ export type AddToWaitlistInput = {
   notes?: string | null;
   /** Phase 21 (policy 2): the walk-in's guest profile, linked by hand. Needs `guests.manage`. */
   guestProfileId?: string | null;
+  /** Phase 22 (policy 5): the guest agreed to texts or emails while waiting. */
+  messageConsent?: ConsentChoice;
 };
 
 function blankToNull(value: string | null | undefined): string | null {
@@ -204,6 +213,14 @@ export async function addToWaitlist(
         if (input.guestProfileId) {
           await attachProfileToParty(transaction, actor, { guestPartyId: partyId, guestProfileId: input.guestProfileId });
         }
+
+        await reconcilePartyConsents(transaction, { kind: "STAFF", actor }, {
+          guestPartyId: partyId,
+          locationId: actor.locationId,
+          contact: { phone: blankToNull(input.phone), email: blankToNull(input.email) },
+          choice: input.messageConsent,
+          now,
+        });
       }
 
       const [entry] = await transaction
@@ -262,15 +279,16 @@ export async function updateWaitlistEntry(
 }
 
 /**
- * Records that staff contacted the party. Nothing is sent: there is no SMS, email or push
- * in this application.
+ * Records that staff contacted the party. Phase 22: also queues the table-ready message for
+ * a channel the guest agreed to (SMS first, else email); `messagesQueued` is 0 without consent,
+ * so the host tells the guest in person.
  */
 export async function notifyWaitlistEntry(
   database: Database,
   actor: Actor,
   entryId: string,
   input: { expectedVersion: number },
-): Promise<Versioned> {
+): Promise<Versioned & { messagesQueued: number }> {
   assertPermission(actor, "waitlist.notify");
 
   return withTransaction(database, async (transaction) => {
@@ -283,11 +301,20 @@ export async function notifyWaitlistEntry(
 
     assertWaitlistTransition(waitlistEntry.status as WaitlistStatus, "NOTIFIED");
 
-    return bumpEntry(transaction, entryId, {
+    const now = new Date();
+    const notified = await bumpEntry(transaction, entryId, {
       status: "NOTIFIED",
-      notifiedAt: new Date(),
+      notifiedAt: now,
       notifiedByUserId: actor.userId,
     });
+    // Phase 22 (policy 15): sent after commit by the dispatcher, only with consent.
+    const messagesQueued = await queueTableReady(transaction, {
+      waitlistEntryId: entryId,
+      trigger: `v${notified.version}`,
+      now,
+    });
+
+    return { ...notified, messagesQueued };
   });
 }
 
@@ -413,6 +440,8 @@ export async function removeWaitlistEntry(
       });
     }
 
+    await cancelQueuedMessages(transaction, { waitlistEntryId: entryId, now });
+
     return bumpEntry(transaction, entryId, {
       status: input.outcome,
       removedAt: now,
@@ -443,6 +472,8 @@ export type WaitlistView = {
   assignedTables: { id: string; tableNumber: string }[];
   /** Phase 21: the party's version, linked guest profile and this visit's allergies. */
   guest: PartyGuestView;
+  /** Phase 22: the channels the guest agreed to messages on for this visit. */
+  messageConsent: ConsentChoice;
 };
 
 /** The open entries, oldest first, or the day's entries with `includeClosed`. */
@@ -498,12 +529,17 @@ export async function listWaitlist(
     executor,
     visible.map(({ party }) => party.id),
   );
+  const consents = await loadConsentFlags(
+    executor,
+    visible.map(({ party }) => party.id),
+  );
 
   return visible.map(({ entry, party }) => ({
     id: entry.id,
     version: entry.version,
     guestPartyId: party.id,
     guest: { partyVersion: party.version, ...(guests.get(party.id) ?? { profile: null, allergies: [] }) },
+    messageConsent: consents.get(party.id) ?? { sms: false, email: false },
     guestName: party.guestName,
     partySize: party.partySize,
     phone: party.phone,

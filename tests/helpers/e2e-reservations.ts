@@ -39,6 +39,7 @@ import {
 import { createTable } from "../../src/modules/restaurant/services/table-service";
 import { localDateOf, localTimeOf } from "../../src/shared/time/zoned-time";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
+import { clearGuestMessagingForParties } from "../fixtures/messaging-cleanup";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -316,6 +317,9 @@ export async function removeReservationE2eData(): Promise<void> {
         ),
       );
     const sessionIds = sessionRows.map((row) => row.id);
+
+    // Phase 22: messages, consents and manage links reference the parties and reservations.
+    await clearGuestMessagingForParties(database, partyIds);
 
     if (reservationIds.length) {
       await database.delete(reservationHoldOverrides).where(inArray(reservationHoldOverrides.reservationId, reservationIds));

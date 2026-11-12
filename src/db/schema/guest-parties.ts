@@ -246,9 +246,8 @@ export const guestPartyAllergies = pgTable(
     severity: text("severity").notNull(),
     note: text("note"),
     source: text("source").notNull(),
-    recordedByUserId: uuid("recorded_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "restrict" }),
+    /** Phase 22 (D10): null only for an ONLINE allergy, given by the guest when booking. */
+    recordedByUserId: uuid("recorded_by_user_id").references(() => users.id, { onDelete: "restrict" }),
     recordedAt: timestamptz("recorded_at").notNull(),
     createdAt: createdAt(),
   },
@@ -260,7 +259,11 @@ export const guestPartyAllergies = pgTable(
     }).onDelete("restrict"),
     unique("guest_party_allergies_party_allergen_unique").on(table.guestPartyId, table.allergenId),
     check("guest_party_allergies_severity_valid", sql`${table.severity} IN ('SEVERE', 'ALLERGY')`),
-    check("guest_party_allergies_source_valid", sql`${table.source} IN ('PROFILE', 'RECORDED')`),
+    check("guest_party_allergies_source_valid", sql`${table.source} IN ('PROFILE', 'RECORDED', 'ONLINE')`),
+    check(
+      "guest_party_allergies_recorded_by_online_only",
+      sql`(${table.recordedByUserId} IS NULL) = (${table.source} = 'ONLINE')`,
+    ),
     check(
       "guest_party_allergies_note_valid",
       sql`${table.note} IS NULL OR (length(${table.note}) <= 200 AND ${table.note} !~ '[0-9]{13,}')`,

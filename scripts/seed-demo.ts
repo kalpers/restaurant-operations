@@ -16,6 +16,7 @@ import { updatePersonalContact } from "../src/modules/employees/services/persona
 import { createPosition } from "../src/modules/employees/services/reference-service";
 import { addRecurringAvailability } from "../src/modules/scheduling/services/availability-service";
 
+import { seedDeclaredAllergens, seedGuestProfiles, seedIngredientAllergens, type DemoProfile } from "./demo-guests-allergens";
 import { seedDemoKitchen } from "./demo-kitchen";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -79,6 +80,24 @@ async function seedDemoAvailability(actor: Actor): Promise<{ employees: number; 
 
   return { employees: added, windows };
 }
+
+/** Phase 21 demo guests (added in Phase 22, policy 24). */
+const DEMO_PROFILES: readonly DemoProfile[] = [
+  {
+    displayName: "Demo Guest Peanut",
+    vip: true,
+    vipReason: "Regular",
+    preferences: "Window table",
+    allergies: [{ allergen: "PEANUTS", severity: "SEVERE" }],
+  },
+  {
+    displayName: "Demo Guest Milk",
+    vip: false,
+    vipReason: null,
+    preferences: null,
+    allergies: [{ allergen: "MILK", severity: "ALLERGY" }],
+  },
+];
 
 async function main(): Promise<void> {
   loadLocalEnv();
@@ -192,6 +211,16 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo kitchen: ${kitchen.inventoryItems} inventory items, ${kitchen.supplierItems} supplier items, ${kitchen.orders} purchase orders, ${kitchen.menuItems} menu items, ${kitchen.recipes} recipes, ${kitchen.modifiers} modifiers added.`,
+    );
+
+    // Phase 21 data (added in Phase 22): allergen tags and guest profiles, skipped where present.
+    const allergenActor = await mainOwnerActor("recipes.allergens.manage");
+    const tagged = await seedIngredientAllergens(database, allergenActor);
+    const declared = await seedDeclaredAllergens(database, allergenActor);
+    const profiles = await seedGuestProfiles(database, await mainOwnerActor("guests.manage"), DEMO_PROFILES);
+
+    console.log(
+      `Demo guests and allergens: ${tagged} ingredients tagged, ${declared} declared allergen(s), ${profiles} guest profiles added; existing ones were left alone.`,
     );
   } finally {
     await closeDatabase();

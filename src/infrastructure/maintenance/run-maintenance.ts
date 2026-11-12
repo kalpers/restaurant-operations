@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { getEnv } from "@/config/env";
 import type { Database } from "@/db";
+import { queueDueReminders } from "@/modules/reservations/services/guest-message-service";
 import { notifyTimeBasedSignals } from "@/workflows/notify-time-based-signals/notify-time-based-signals";
 
 // Retention (Phase 16 policies 15-17). Purges only:
@@ -13,6 +14,9 @@ import { notifyTimeBasedSignals } from "@/workflows/notify-time-based-signals/no
 // Phase 20 (policy 14): the same run, under the same lock, writes the time-based
 // notifications (expiring certifications, approaching overtime, missed clock-outs). Each has
 // a dedupe key, so an hourly run sends each one once.
+// Phase 22 (policies 14 and 18): the run also queues due reservation reminders, clears the
+// address and body of guest messages older than MESSAGE_RETENTION_DAYS (never one still
+// waiting to send), and deletes expired manage links and public throttle windows.
 
 export const MAINTENANCE_BATCH_SIZE = 1000;
 
@@ -25,11 +29,23 @@ export type MaintenanceOptions = {
   batchSize?: number;
   /** Phase 20: false skips the time-based notification pass (retention-only runs and tests). */
   notify?: boolean;
+  /** Phase 22: days a sent guest message keeps its address and body. */
+  messageRetentionDays?: number;
 };
 
 export type MaintenanceResult =
   | { skipped: true }
-  | { skipped: false; outboxEventsDeleted: number; loginThrottlesDeleted: number; notificationsCreated: number };
+  | {
+      skipped: false;
+      outboxEventsDeleted: number;
+      loginThrottlesDeleted: number;
+      notificationsCreated: number;
+      /** Phase 22. */
+      remindersQueued: number;
+      messagesErased: number;
+      manageLinksDeleted: number;
+      publicThrottlesDeleted: number;
+    };
 
 export async function runMaintenance(
   database: Database,
@@ -43,6 +59,11 @@ export async function runMaintenance(
   const outboxCutoff = new Date(now.getTime() - retentionDays * 86_400_000).toISOString();
   const windowCutoff = new Date(now.getTime() - throttleWindowMs).toISOString();
   const nowText = now.toISOString();
+  const messageCutoff = new Date(
+    now.getTime() - (options.messageRetentionDays ?? env.MESSAGE_RETENTION_DAYS) * 86_400_000,
+  ).toISOString();
+  // A public throttle window lasts one hour (policy 10).
+  const publicThrottleCutoff = new Date(now.getTime() - 3_600_000).toISOString();
 
   // A session-level advisory lock needs one connection for the whole run. Every Database is
   // made by drizzle() over a postgres-js pool, which it exposes as `$client`.
@@ -94,10 +115,50 @@ export async function runMaintenance(
           )`,
       );
 
+      const messagesErased = await deleteInBatches(
+        () => connection`
+          UPDATE guest_messages
+          SET recipient_address = NULL, subject = NULL, body = NULL, unsubscribe_token_hash = NULL,
+              erased_at = ${nowText}::timestamptz, updated_at = ${nowText}::timestamptz
+          WHERE id IN (
+            SELECT id FROM guest_messages
+            WHERE erased_at IS NULL
+              AND status IN ('SENT', 'FAILED', 'SUPPRESSED', 'CANCELLED')
+              AND created_at < ${messageCutoff}::timestamptz
+            LIMIT ${batchSize}
+          )`,
+      );
+      const manageLinksDeleted = await deleteInBatches(
+        () => connection`
+          DELETE FROM reservation_manage_links
+          WHERE id IN (
+            SELECT id FROM reservation_manage_links WHERE expires_at <= ${nowText}::timestamptz LIMIT ${batchSize}
+          )`,
+      );
+      const publicThrottlesDeleted = await deleteInBatches(
+        () => connection`
+          DELETE FROM public_throttles
+          WHERE key_hash IN (
+            SELECT key_hash FROM public_throttles
+            WHERE window_started_at <= ${publicThrottleCutoff}::timestamptz
+            LIMIT ${batchSize}
+          )`,
+      );
+
       const { notificationsCreated } =
         options.notify === false ? { notificationsCreated: 0 } : await notifyTimeBasedSignals(database, now);
+      const remindersQueued = options.notify === false ? 0 : await queueDueReminders(database, now);
 
-      return { skipped: false, outboxEventsDeleted, loginThrottlesDeleted, notificationsCreated };
+      return {
+        skipped: false,
+        outboxEventsDeleted,
+        loginThrottlesDeleted,
+        notificationsCreated,
+        remindersQueued,
+        messagesErased,
+        manageLinksDeleted,
+        publicThrottlesDeleted,
+      };
     } finally {
       await connection`SELECT pg_advisory_unlock(${MAINTENANCE_LOCK_KEY})`;
     }

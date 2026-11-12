@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
@@ -48,13 +49,19 @@ export const reservations = pgTable(
       onDelete: "restrict",
     }),
     cancelReason: text("cancel_reason"),
+    /** Phase 22 (policy 11): cancelled by the guest through the manage link, with no user. */
+    cancelledByGuest: boolean("cancelled_by_guest").notNull().default(false),
+    /**
+     * Phase 22 (policy 9): SHA-256 of the location and the client's idempotency key for an
+     * online booking, so a retried request finds the first booking.
+     */
+    onlineRequestKeyHash: text("online_request_key_hash"),
     noShowAt: timestamptz("no_show_at"),
     noShowByUserId: uuid("no_show_by_user_id").references(() => users.id, {
       onDelete: "restrict",
     }),
-    createdByUserId: uuid("created_by_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "restrict" }),
+    /** Phase 22 (D10): null only for an ONLINE booking, made by the guest. */
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -73,7 +80,18 @@ export const reservations = pgTable(
     ),
     check(
       "reservations_source_valid",
-      sql`${table.source} IN ('PHONE', 'IN_PERSON', 'INTERNAL', 'WALK_IN_FUTURE')`,
+      sql`${table.source} IN ('PHONE', 'IN_PERSON', 'INTERNAL', 'WALK_IN_FUTURE', 'ONLINE')`,
+    ),
+    uniqueIndex("reservations_online_request_key_hash_unique")
+      .on(table.onlineRequestKeyHash)
+      .where(sql`${table.onlineRequestKeyHash} IS NOT NULL`),
+    check(
+      "reservations_online_request_key_online_only",
+      sql`${table.onlineRequestKeyHash} IS NULL OR (${table.source} = 'ONLINE' AND ${table.onlineRequestKeyHash} ~ '^[0-9a-f]{64}$')`,
+    ),
+    check(
+      "reservations_created_by_online_only",
+      sql`(${table.createdByUserId} IS NULL) = (${table.source} = 'ONLINE')`,
     ),
     check(
       "reservations_duration_positive",
@@ -81,7 +99,10 @@ export const reservations = pgTable(
     ),
     check(
       "reservations_cancelled_metadata",
-      sql`(${table.status} = 'CANCELLED') = (${table.cancelledAt} IS NOT NULL) AND (${table.cancelledAt} IS NULL) = (${table.cancelledByUserId} IS NULL)`,
+      sql`(${table.status} = 'CANCELLED') = (${table.cancelledAt} IS NOT NULL)
+        AND CASE WHEN ${table.cancelledAt} IS NULL
+          THEN ${table.cancelledByUserId} IS NULL AND NOT ${table.cancelledByGuest}
+          ELSE (${table.cancelledByUserId} IS NOT NULL) <> ${table.cancelledByGuest} END`,
     ),
     check(
       "reservations_no_show_metadata",

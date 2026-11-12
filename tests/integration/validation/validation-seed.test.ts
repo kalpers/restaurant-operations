@@ -18,6 +18,7 @@ import { assertLocalDevelopment } from "../../../scripts/local-seed-guard";
 import { seedValidationFixture } from "../../../scripts/validation-fixture";
 import { seedValidationLaborTips } from "../../../scripts/validation-labor";
 import { seedValidationMenuStock } from "../../../scripts/validation-menu-stock";
+import { seedValidationGuestsAllergens } from "../../../scripts/validation-guests-allergens";
 import { seedValidationServicePolish } from "../../../scripts/validation-service-polish";
 import { dropDatabase, recreateEmptyDatabase } from "../../helpers/prepare-test-database";
 
@@ -54,6 +55,14 @@ const COUNTED = [
   "notifications",
   "purchase_orders",
   "purchase_order_lines",
+  // Phase 21 additions (Phase 22 policy 24).
+  "guest_profiles",
+  "guest_profile_allergies",
+  "guest_profile_merges",
+  "inventory_item_allergens",
+  "ingredient_allergen_reviews",
+  "menu_item_allergens",
+  "menu_item_allergen_reviews",
 ] as const;
 
 /**
@@ -100,6 +109,8 @@ describe("Phase 13: opt-in validation seed", () => {
   let signalsSecond: Awaited<ReturnType<typeof seedValidationMenuStock>>;
   let polishFirst: Awaited<ReturnType<typeof seedValidationServicePolish>>;
   let polishSecond: Awaited<ReturnType<typeof seedValidationServicePolish>>;
+  let guestsFirst: Awaited<ReturnType<typeof seedValidationGuestsAllergens>>;
+  let guestsSecond: Awaited<ReturnType<typeof seedValidationGuestsAllergens>>;
 
   beforeAll(async () => {
     const url = await recreateEmptyDatabase(requireTestDatabaseUrl(), VALIDATION_DATABASE);
@@ -114,11 +125,13 @@ describe("Phase 13: opt-in validation seed", () => {
     laborFirst = await seedValidationLaborTips(database, await owner());
     signalsFirst = await seedValidationMenuStock(database, await owner());
     polishFirst = await seedValidationServicePolish(database, await owner());
+    guestsFirst = await seedValidationGuestsAllergens(database, await owner());
     afterFirst = await counts();
     second = await seedValidationFixture(database, await owner());
     laborSecond = await seedValidationLaborTips(database, await owner());
     signalsSecond = await seedValidationMenuStock(database, await owner());
     polishSecond = await seedValidationServicePolish(database, await owner());
+    guestsSecond = await seedValidationGuestsAllergens(database, await owner());
     afterSecond = await counts();
   }, 180_000);
 
@@ -131,6 +144,42 @@ describe("Phase 13: opt-in validation seed", () => {
     expect(first).toEqual({ skipped: false, employees: 4, schedule: true, dineIn: true, takeout: true, upcoming: true });
     expect(second).toEqual({ skipped: true });
     expect(afterSecond).toEqual(afterFirst);
+  });
+
+  it("adds the Phase 21 allergen tags, declared allergen and guest profiles once", async () => {
+    expect(guestsFirst).toEqual({ skipped: false, ingredientsTagged: 13, declared: 1, profiles: 3 });
+    expect(guestsSecond).toEqual({ skipped: true });
+
+    const profiles = await client<{ display_name: string; status: string; vip: boolean }[]>`
+      SELECT display_name, status, vip FROM guest_profiles WHERE display_name LIKE 'Phase 21 Validation%' ORDER BY display_name`;
+
+    expect(profiles).toEqual([
+      { display_name: "Phase 21 Validation Milk", status: "ACTIVE", vip: false },
+      { display_name: "Phase 21 Validation Milk (duplicate)", status: "MERGED", vip: false },
+      { display_name: "Phase 21 Validation Peanut", status: "ACTIVE", vip: true },
+    ]);
+
+    // The merge kept the more severe milk allergy on the kept profile.
+    const [milk] = await client<{ severity: string }[]>`
+      SELECT a.severity FROM guest_profile_allergies a
+      JOIN guest_profiles p ON p.id = a.guest_profile_id
+      WHERE p.display_name = 'Phase 21 Validation Milk'`;
+
+    expect(milk).toEqual({ severity: "SEVERE" });
+
+    const tags = await client<{ code: string; allergen: string }[]>`
+      SELECT i.code, al.code AS allergen FROM inventory_item_allergens t
+      JOIN inventory_items i ON i.id = t.inventory_item_id
+      JOIN allergens al ON al.id = t.allergen_id
+      WHERE i.code IN ('BRIOCHE_BUN', 'AMERICAN_CHEESE', 'SWISS_CHEESE') ORDER BY i.code, al.code`;
+
+    expect(tags.map((row) => `${row.code}:${row.allergen}`)).toEqual([
+      "AMERICAN_CHEESE:MILK",
+      "BRIOCHE_BUN:EGGS",
+      "BRIOCHE_BUN:SESAME",
+      "BRIOCHE_BUN:WHEAT",
+      "SWISS_CHEESE:MILK",
+    ]);
   });
 
   it("adds the Phase 20 modifier 86 once", async () => {

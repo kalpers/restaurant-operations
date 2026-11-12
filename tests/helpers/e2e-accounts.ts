@@ -5,8 +5,10 @@ import { and, eq, inArray, like } from "drizzle-orm";
 import { loadLocalEnv, pointAtTestDatabase } from "../../src/config/tooling-env";
 import { closeDatabase, getDatabase } from "../../src/db";
 import {
-  locations,
   locationSettings,
+  locations,
+  onlineBookingPeriods,
+  onlineBookingSettings,
   roles,
   userRoles,
   users,
@@ -155,6 +157,8 @@ export async function removeE2eAccounts(): Promise<void> {
   const ids = accounts.map((account) => account.id);
 
   if (ids.length > 0) {
+    // Phase 22: online booking settings name the user who saved them.
+    await database.delete(onlineBookingSettings).where(inArray(onlineBookingSettings.updatedByUserId, ids));
     await database.transaction((transaction) => clearStockSignalRows(transaction, { userIds: ids }));
     await database.delete(userRoles).where(inArray(userRoles.userId, ids));
     await clearAuditEvents(database, { userIds: ids });
@@ -168,6 +172,8 @@ export async function removeE2eAccounts(): Promise<void> {
   const locationIds = temporaryLocations.map((location) => location.id);
 
   if (locationIds.length > 0) {
+    await database.delete(onlineBookingPeriods).where(inArray(onlineBookingPeriods.locationId, locationIds));
+    await database.delete(onlineBookingSettings).where(inArray(onlineBookingSettings.locationId, locationIds));
     await database
       .delete(locationSettings)
       .where(inArray(locationSettings.locationId, locationIds));

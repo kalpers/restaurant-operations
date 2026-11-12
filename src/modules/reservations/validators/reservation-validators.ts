@@ -27,6 +27,8 @@ const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const tableIds = z.array(z.uuid()).max(3);
 const seatTableIds = z.array(z.uuid()).min(1).max(30);
+/** Phase 22 (policy 5): the guest agreed to texts or emails about this visit. */
+const messageConsent = z.object({ sms: z.boolean(), email: z.boolean() }).strict();
 
 const guestFields = {
   guestName: requiredText(120),
@@ -51,6 +53,7 @@ export const createReservationSchema = z.object({
   tableIds: tableIds.default([]),
   /** Phase 21: link the new visit to a guest profile. */
   guestProfileId: z.uuid().nullable().default(null),
+  messageConsent: messageConsent.optional(),
 });
 
 export const updateReservationSchema = z.object({
@@ -61,6 +64,8 @@ export const updateReservationSchema = z.object({
   notes: optionalText(500),
   /** Left out, the planned tables stay as they are. */
   tableIds: tableIds.optional(),
+  /** Left out, consent stays as it is (a changed address still withdraws its channel). */
+  messageConsent: messageConsent.optional(),
   expectedVersion,
 });
 
@@ -133,6 +138,7 @@ export const addToWaitlistSchema = z
     notes: optionalText(500),
     /** Phase 21: link the new walk-in to a guest profile. */
     guestProfileId: z.uuid().nullable().default(null),
+    messageConsent: messageConsent.optional(),
   })
   .refine(
     (value) => value.guestPartyId || (value.guestName && value.partySize),
@@ -217,3 +223,57 @@ export const mergeGuestProfilesSchema = z.object({
 });
 
 export const eraseGuestProfileSchema = z.object({ expectedVersion, reason: requiredText(200) });
+/** Phase 22 (policy 17): the party's version and why. */
+export const eraseGuestVisitSchema = z.object({ expectedVersion, reason: requiredText(200) });
+
+export const messageChannelParamsSchema = z.object({ partyId: z.uuid(), channel: z.enum(["SMS", "EMAIL"]) });
+export const messageIdParamsSchema = z.object({ messageId: z.uuid() });
+
+// Phase 22 online booking (policies 7-11). Shape only; the service checks the rules.
+const bookingTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const bookingPeriod = z.object({ weekday: z.int().min(0).max(6), startsAt: bookingTime, endsAt: bookingTime }).strict();
+
+export const onlineBookingSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    requiresApproval: z.boolean(),
+    maxPartySize: z.int().min(1).max(50),
+    minLeadMinutes: z.int().min(0).max(10080),
+    maxDaysAhead: z.int().min(1).max(365),
+    slotIntervalMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+    maxCoversPerSlot: z.int().min(1).max(1000),
+    reminderHoursBefore: z.int().min(0).max(168),
+    publicNote: optionalText(500),
+    expectedVersion: z.int().positive().nullable(),
+  })
+  .strict();
+
+export const bookingPeriodsSchema = z.object({ periods: z.array(bookingPeriod).max(42) }).strict();
+
+export const publicLocationParamsSchema = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) });
+export const publicTokenParamsSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+
+export const publicAvailabilityQuerySchema = z.object({
+  date: localDate,
+  partySize: z.coerce.number().int().min(1).max(50),
+});
+
+export const onlineBookingSchema = z
+  .object({
+    localDate,
+    localTime: bookingTime,
+    partySize: z.int().min(1).max(50),
+    guestName: requiredText(120),
+    phone: optionalText(40),
+    email: optionalText(200),
+    specialRequests: optionalText(500),
+    messageConsent,
+    allergies: z
+      .array(z.object({ code: z.string().regex(/^[A-Z0-9_]{1,40}$/), severity: z.enum(["SEVERE", "ALLERGY"]) }).strict())
+      .max(20)
+      .default([]),
+    /** The spam trap: hidden from people, filled by naive bots. */
+    website: z.string().max(200).default(""),
+    idempotencyKey: z.uuid(),
+  })
+  .strict();

@@ -33,6 +33,8 @@ export default async function ReservationsPage() {
     capacityOverride: actorHolds(actor, "restaurant.capacity.override"),
     guests: { view: actorHolds(actor, "guests.view"), manage: actorHolds(actor, "guests.manage") },
     allergens: (await listAllergens(database, actor.organizationId)).map(({ id, name, active }) => ({ id, name, active })),
+    messages: { view: actorHolds(actor, "messages.view"), resend: actorHolds(actor, "messages.resend") },
+    eraseVisit: actorHolds(actor, "guests.erase"),
   };
 
   return (
@@ -46,6 +48,7 @@ export default async function ReservationsPage() {
           reservations: true,
           waitlist: actorHolds(actor, "waitlist.view"),
           guests: actorHolds(actor, "guests.view"),
+          online: actorHolds(actor, "reservations.online.manage"),
         }}
       />
       <ReservationsBoard

@@ -65,6 +65,7 @@ import {
   createUserFixture,
 } from "./auth-fixtures";
 import { clearOrderData } from "./order-cleanup";
+import { clearGuestMessagingData } from "./messaging-cleanup";
 import { clearAuditEvents } from "./audit-cleanup";
 import { clearPhase20Notifications } from "./notification-cleanup";
 
@@ -201,6 +202,8 @@ export async function clearGuestProfileData(database: Database): Promise<void> {
 export async function clearRestaurantData(database: Database): Promise<void> {
   // Orders reference table sessions, guest parties and employees.
   await clearOrderData(database);
+  // Phase 22: messages reference reservations, waitlist entries and parties.
+  await clearGuestMessagingData(database);
   await database.delete(reservationHoldOverrides);
   await database.delete(waitlistTableAssignments);
   await database.delete(waitlistEntries);

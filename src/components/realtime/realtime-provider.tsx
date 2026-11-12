@@ -55,6 +55,9 @@ const EVENT_TYPES = [
   "menu.availability-changed",
   // Phase 21: a party's or check's allergies changed.
   "guest.allergies-changed",
+  // Phase 22: a guest booked or cancelled on the public page.
+  "reservation.online-booked",
+  "reservation.guest-cancelled",
 ];
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {

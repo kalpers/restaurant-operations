@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EnvValidationError, parseEnv } from "./env";
+import { EnvValidationError, messagingIssues, parseEnv } from "./env";
 
 const validEnv = {
   NODE_ENV: "development",
@@ -177,5 +177,90 @@ describe("Phase 16 hardening settings", () => {
 
     expect(message).toContain(name);
     expect(message).not.toContain(`=${value}`);
+  });
+});
+
+describe("guest messaging (Phase 22 policy 1, amendment 16)", () => {
+  const production = {
+    ...validEnv,
+    NODE_ENV: "production",
+    NEXTAUTH_SECRET: "s".repeat(32),
+  };
+  const twilio = {
+    MESSAGING_SMS_PROVIDER: "twilio",
+    MESSAGING_TWILIO_ACCOUNT_SID: `AC${"a".repeat(32)}`,
+    MESSAGING_TWILIO_AUTH_TOKEN: "secret-token-value-1234",
+    MESSAGING_TWILIO_FROM: "+15551234567",
+  };
+  const issuesOf = (source: Record<string, string | undefined>) => messagingIssues(parseEnv(source)).join("\n");
+
+  it("defaults both channels to unset outside production, and capture is allowed there", () => {
+    const env = parseEnv(validEnv);
+
+    expect(env.MESSAGING_EMAIL_PROVIDER).toBeUndefined();
+    expect(env.MESSAGING_SMS_PROVIDER).toBeUndefined();
+    expect(messagingIssues(env)).toEqual([]);
+    expect(issuesOf({ ...validEnv, MESSAGING_EMAIL_PROVIDER: "capture" })).toBe("");
+    expect(env.MESSAGE_DISPATCH_INTERVAL_MS).toBe(2000);
+    expect(env.MESSAGE_MAX_ATTEMPTS).toBe(8);
+    expect(env.MESSAGE_RETENTION_DAYS).toBe(90);
+  });
+
+  it("lets a production build parse without providers, and refuses them unset when messaging starts", () => {
+    expect(() => parseEnv(production)).not.toThrow();
+    expect(issuesOf(production)).toContain("MESSAGING_EMAIL_PROVIDER: is required in production");
+    expect(issuesOf(production)).toContain("MESSAGING_SMS_PROVIDER: is required in production");
+  });
+
+  it("refuses capture in production unless tests allow it", () => {
+    const capture = { ...production, MESSAGING_EMAIL_PROVIDER: "capture", MESSAGING_SMS_PROVIDER: "capture" };
+
+    expect(issuesOf(capture)).toContain("MESSAGING_EMAIL_PROVIDER: must not be capture in production");
+    expect(issuesOf({ ...capture, MESSAGING_ALLOW_CAPTURE_IN_PRODUCTION: "true" })).toBe("");
+  });
+
+  it("needs SMTP settings for smtp and Twilio settings for twilio", () => {
+    const message = issuesOf({ ...validEnv, MESSAGING_EMAIL_PROVIDER: "smtp", MESSAGING_SMS_PROVIDER: "twilio" });
+
+    expect(message).toContain("MESSAGING_SMTP_URL: is required");
+    expect(message).toContain("MESSAGING_FROM_EMAIL: is required");
+    expect(message).toContain("MESSAGING_TWILIO_ACCOUNT_SID: is required");
+    expect(message).toContain("MESSAGING_TWILIO_AUTH_TOKEN: is required");
+    expect(message).toContain("MESSAGING_TWILIO_FROM: is required");
+  });
+
+  it("accepts a complete SMTP and Twilio production configuration", () => {
+    expect(
+      issuesOf({
+        ...production,
+        ...twilio,
+        MESSAGING_EMAIL_PROVIDER: "smtp",
+        MESSAGING_SMTP_URL: "smtps://user:pass@smtp.example.com:465",
+        MESSAGING_FROM_EMAIL: "bookings@example.com",
+        MESSAGING_SUPPRESSION_KEY: "k".repeat(32),
+      }),
+    ).toBe("");
+  });
+
+  it("requires a suppression key in production when a real provider is set", () => {
+    expect(issuesOf({ ...production, ...twilio, MESSAGING_EMAIL_PROVIDER: "off" })).toContain(
+      "MESSAGING_SUPPRESSION_KEY: is required in production",
+    );
+  });
+
+  it("names bad values without echoing them", () => {
+    const message = errorMessageFor({
+      ...validEnv,
+      MESSAGING_SMTP_URL: "http://user:hunter2@mail.example.com",
+      MESSAGING_TWILIO_ACCOUNT_SID: "not-a-sid-hunter2",
+      MESSAGING_TWILIO_FROM: "5551234567",
+      MESSAGE_DISPATCH_INTERVAL_MS: "-1",
+    });
+
+    expect(message).toContain("MESSAGING_SMTP_URL");
+    expect(message).toContain("MESSAGING_TWILIO_ACCOUNT_SID");
+    expect(message).toContain("MESSAGING_TWILIO_FROM");
+    expect(message).toContain("MESSAGE_DISPATCH_INTERVAL_MS");
+    expect(message).not.toContain("hunter2");
   });
 });

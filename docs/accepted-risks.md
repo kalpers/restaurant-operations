@@ -114,3 +114,39 @@ Reevaluate this risk when:
 - `eslint`, `eslint-config-next`, `drizzle-kit`, or Next.js is upgraded.
 - An audit advisory is published against any of these packages.
 - Before any cloud deployment (see `docs/Cloud-Deployment-Guide.md`).
+
+## DEV-004: `nodemailer` peer range override for `next-auth`
+
+Accepted by the project owner on 2026-11-12, during Phase 22 (online reservations and guest messaging).
+
+### Scope
+
+Production dependency tree. Phase 22 sends guest email over SMTP with `nodemailer` (plan decision D1). `next-auth` 4.24.15 declares an optional peer dependency `nodemailer@^7.0.7`. Every release in that range, and all through 10.1.3, has open high-severity advisories (among them GHSA-c7w3-x93f-qmm8, SMTP command injection, and GHSA-268h-hp4c-crq3, header injection). Installing 7.0.13 made `npm audit --omit=dev` report 2 high findings.
+
+`package.json` therefore pins `nodemailer` 10.5.0 and adds:
+
+```json
+"overrides": { "next-auth": { "nodemailer": "$nodemailer" } }
+```
+
+so `next-auth`'s optional peer resolves to the same patched version. `npm audit --omit=dev` reports 0 vulnerabilities with it.
+
+### Decision
+
+Accept the override. `next-auth` loads `nodemailer` only in `next-auth/providers/email.js` (its passwordless Email provider). This application uses only the Credentials provider (`src/modules/auth/auth-options.ts`) and never imports the Email provider, so `next-auth` never runs `nodemailer` code and can't meet the 7-to-10 API differences. `npm audit fix --force` and `--legacy-peer-deps` weren't used.
+
+### Controls
+
+- Only `src/infrastructure/messaging/smtp-sender.ts` imports `nodemailer`.
+- Never import `next-auth/providers/email`. Sign-in stays Credentials-only (README section 9).
+- `nodemailer` is pinned exactly. Upgrades are reviewed, and `npm audit --omit=dev` must stay clean.
+- The SMTP adapter sends plain text only, with addresses the app has normalized. It never passes `raw`, attachments, file or URL content, DKIM keys, or caller-supplied headers.
+
+### Review Triggers
+
+Reevaluate this risk when:
+
+- `next-auth` is upgraded (version 5 or a 4.x release that widens the peer range; then remove the override).
+- `nodemailer` is upgraded, or an advisory is published against 10.5.x.
+- Anyone proposes the Email provider or any other `next-auth` provider.
+- Before any cloud deployment (see `docs/Cloud-Deployment-Guide.md`).

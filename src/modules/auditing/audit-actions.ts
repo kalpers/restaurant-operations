@@ -609,12 +609,70 @@ export const AUDIT_ACTIONS = {
     scope: "ORGANIZATION",
     fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "reason"],
   },
+  // Phase 22 (policy 17): one unlinked visit's personal data erased.
+  "guests.visit-erased": {
+    category: "GUESTS",
+    entityType: "guest_party",
+    scope: "LOCATION",
+    fields: ["guestPartyId", "reason"],
+  },
   // Phase 21 (policy 14): a server sent an item despite a conflict with recorded allergies.
   "orders.allergen-acknowledged": {
     category: "ORDERS",
     entityType: "order",
     scope: "LOCATION",
     fields: ["orderNumber", "orderItemId", "itemCode", "allergenCodes", "severity", "incompleteLabel"],
+  },
+
+  // Phase 22 guest messaging (policy 20). Channels, kinds and reasons only: never an address,
+  // a message body, a manage or unsubscribe token, or provider credentials.
+  "reservations.online-booked": {
+    category: "MESSAGING",
+    entityType: "reservation",
+    scope: "LOCATION",
+    fields: ["status", "partySize", "allergyCount"],
+  },
+  "reservations.guest-cancelled": {
+    category: "MESSAGING",
+    entityType: "reservation",
+    scope: "LOCATION",
+    fields: ["status"],
+  },
+  "reservations.online-settings-changed": {
+    category: "MESSAGING",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: ["changedFields", "enabled"],
+  },
+  "reservations.booking-hours-changed": {
+    category: "MESSAGING",
+    entityType: "location",
+    scope: "LOCATION",
+    fields: ["periodCount", "weekdays"],
+  },
+  "messages.consent-recorded": {
+    category: "MESSAGING",
+    entityType: "guest_party",
+    scope: "LOCATION",
+    fields: ["guestPartyId", "channel", "source"],
+  },
+  "messages.consent-withdrawn": {
+    category: "MESSAGING",
+    entityType: "guest_party",
+    scope: "LOCATION",
+    fields: ["guestPartyId", "channel", "reason"],
+  },
+  "messages.resent": {
+    category: "MESSAGING",
+    entityType: "guest_message",
+    scope: "LOCATION",
+    fields: ["kind", "channel", "mode"],
+  },
+  "messages.suppressed": {
+    category: "MESSAGING",
+    entityType: "guest_party",
+    scope: "LOCATION",
+    fields: ["guestPartyId", "channel", "reason"],
   },
 
   // Reporting

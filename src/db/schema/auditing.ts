@@ -23,6 +23,8 @@ export const AUDIT_CATEGORIES = [
   "ORGANIZATION",
   // Phase 21: guest profiles (policy 20).
   "GUESTS",
+  // Phase 22: consent, resends, opt-outs and online booking settings (policy 20).
+  "MESSAGING",
 ] as const;
 
 /**
@@ -63,9 +65,10 @@ export const auditEvents = pgTable(
     check("audit_events_action_format", sql`${table.action} ~ '^[a-z]+[.][a-z-]+$'`),
     check(
       "audit_events_category_valid",
-      sql`${table.category} IN ('ACCESS', 'SECURITY', 'HR', 'SCHEDULING', 'ORDERS', 'MENU', 'INVENTORY', 'SETTLEMENTS', 'REPORTING', 'SYSTEM', 'ORGANIZATION', 'GUESTS')`,
+      sql`${table.category} IN ('ACCESS', 'SECURITY', 'HR', 'SCHEDULING', 'ORDERS', 'MENU', 'INVENTORY', 'SETTLEMENTS', 'REPORTING', 'SYSTEM', 'ORGANIZATION', 'GUESTS', 'MESSAGING')`,
     ),
-    check("audit_events_actor_type_valid", sql`${table.actorType} IN ('USER', 'SYSTEM')`),
+    // Phase 22 (D10): GUEST is a guest acting on the public booking page, with no user.
+    check("audit_events_actor_type_valid", sql`${table.actorType} IN ('USER', 'SYSTEM', 'GUEST')`),
     check(
       "audit_events_actor_consistent",
       sql`(${table.actorType} = 'USER') = (${table.actorUserId} IS NOT NULL)`,

@@ -20,6 +20,8 @@ import { createOrder } from "@/modules/orders/services/order-service";
 import { setIngredientAllergens } from "@/modules/recipes/services/allergen-service";
 import { createGuestProfile } from "@/modules/reservations/services/guest-profile-service";
 import { addToWaitlist } from "@/modules/reservations/services/waitlist-service";
+import { moveOrderItems } from "@/workflows/move-order-items/move-order-items";
+import { splitOrderItem } from "@/workflows/split-order-item/split-order-item";
 import { sendOrderItems } from "@/workflows/submit-order/submit-order";
 import { seatParty } from "@/workflows/seat-party/seat-party";
 
@@ -89,7 +91,7 @@ describe("allergy warning at SEND (Phase 21)", () => {
     });
     const order = await createOrder(database(), server, { orderType: "DINE_IN", tableSessionId: session.id });
 
-    return { profile, order, guestPartyId: row!.guestPartyId };
+    return { profile, order, guestPartyId: row!.guestPartyId, sessionId: session.id };
   }
 
   async function addBurger(order: { id: string; version: number }) {
@@ -269,5 +271,83 @@ describe("allergy warning at SEND (Phase 21)", () => {
         note: null,
       }),
     ).rejects.toMatchObject({ code: "ORDER_HAS_PARTY" });
+  });
+
+  // Phase 22 (policy 25): the Phase 21 leftover. Moves and shares stay within one table
+  // session, so one party and one set of allergies (Phase 21 amendment 9).
+  it("moves and shares an acknowledged item with its allergen snapshot, acknowledgment and ticket alert", async () => {
+    const { order, sessionId } = await milkAllergicTable();
+    const second = await createOrder(database(), server, { orderType: "DINE_IN", tableSessionId: sessionId });
+    const added = await addBurger(order);
+
+    await sendOrderItems(database(), server, order.id, {
+      expectedVersion: added.orderVersion,
+      idempotencyKey: newKey(),
+      acknowledgedAllergenItemIds: [added.itemId],
+    });
+
+    const snapshot = async () => ({
+      item: (await database().select().from(orderItems).where(eq(orderItems.id, added.itemId)))[0]!,
+      allergens: (await database().select().from(orderItemAllergens).where(eq(orderItemAllergens.orderItemId, added.itemId)))
+        .map((row) => `${row.allergenCodeSnapshot}:${row.kind}:${row.source}`)
+        .sort(),
+      alerts: (await database().select().from(kitchenTicketItems).where(eq(kitchenTicketItems.orderItemId, added.itemId))).map(
+        (ticket) => ticket.allergyAlertSnapshot,
+      ),
+    });
+    const before = await snapshot();
+
+    expect(before.item.allergyConflictSnapshot).toBe("ALLERGY: Milk (severe)");
+
+    await moveOrderItems(database(), scenario.owner, order.id, {
+      itemIds: [added.itemId],
+      expectedVersion: (await orderRow(database(), order.id)).version,
+      idempotencyKey: newKey(),
+      target: { orderId: second.id, expectedVersion: (await orderRow(database(), second.id)).version },
+    });
+
+    const moved = await snapshot();
+
+    expect(moved.item.orderId).toBe(second.id);
+    expect(moved.allergens).toEqual(before.allergens);
+    expect(moved.alerts).toEqual(["ALLERGY: Milk (severe)"]);
+    expect(moved.item).toMatchObject({
+      allergyAcknowledgedByUserId: before.item.allergyAcknowledgedByUserId,
+      allergyAcknowledgedAt: before.item.allergyAcknowledgedAt,
+      allergyConflictSnapshot: before.item.allergyConflictSnapshot,
+      allergenLabelIncompleteSnapshot: before.item.allergenLabelIncompleteSnapshot,
+    });
+
+    // The new check shows the same party allergies, and the item's acknowledgment travels with it.
+    const view = await loadOrderAllergenView(database(), scenario.organizationId, await orderRow(database(), second.id), [
+      {
+        id: added.itemId,
+        status: moved.item.status,
+        menuItemId: burger.menuItem.id,
+        allergenLabelIncompleteSnapshot: moved.item.allergenLabelIncompleteSnapshot,
+        allergyAcknowledgedAt: moved.item.allergyAcknowledgedAt,
+        allergyConflictSnapshot: moved.item.allergyConflictSnapshot,
+      },
+    ]);
+
+    expect(view.allergies).toMatchObject({ source: "PARTY", allergies: [expect.objectContaining({ code: "MILK" })] });
+
+    await splitOrderItem(database(), scenario.owner, second.id, added.itemId, {
+      shareCount: 2,
+      targets: [
+        { orderId: second.id, expectedVersion: (await orderRow(database(), second.id)).version },
+        { orderId: order.id, expectedVersion: (await orderRow(database(), order.id)).version },
+      ],
+      expectedVersion: (await orderRow(database(), second.id)).version,
+      idempotencyKey: newKey(),
+    });
+
+    const shared = await snapshot();
+
+    expect(shared.item.status).toBe("SPLIT");
+    expect(shared.allergens).toEqual(before.allergens);
+    expect(shared.alerts).toEqual(["ALLERGY: Milk (severe)"]);
+    expect(shared.item.allergyConflictSnapshot).toBe("ALLERGY: Milk (severe)");
+    expect(shared.item.allergyAcknowledgedAt).toEqual(before.item.allergyAcknowledgedAt);
   });
 });

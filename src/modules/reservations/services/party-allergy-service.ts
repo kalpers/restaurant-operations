@@ -18,7 +18,7 @@ import { ALLERGIES_CHANGED_EVENT, FINISHED_PARTY_STATUSES, requireAllergenCodes 
 // Phase 21 (policy 8): a visit's allergies, which the order warning checks. Hosts record them
 // under `guests.manage`, servers under `orders.edit`. Changing them never touches sent items.
 
-export type PartyAllergyView = RecordedAllergy & { note: string | null; source: "PROFILE" | "RECORDED" };
+export type PartyAllergyView = RecordedAllergy & { note: string | null; source: "PROFILE" | "RECORDED" | "ONLINE" };
 
 export type PartyGuestFacts = {
   profile: { id: string; profileNumber: number; displayName: string; vip: boolean } | null;

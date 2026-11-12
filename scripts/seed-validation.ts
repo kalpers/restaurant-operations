@@ -3,12 +3,14 @@ import { closeDatabase, getDatabase } from "../src/db";
 import {
   VALIDATION_LABOR_SEED_KEY,
   VALIDATION_MENU_STOCK_SEED_KEY,
+  VALIDATION_GUESTS_ALLERGENS_SEED_KEY,
   VALIDATION_SEED_KEY,
   VALIDATION_SERVICE_POLISH_SEED_KEY,
 } from "../src/db/demo/validation-fixture";
 
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 import { seedValidationFixture } from "./validation-fixture";
+import { seedValidationGuestsAllergens } from "./validation-guests-allergens";
 import { seedValidationLaborTips } from "./validation-labor";
 import { seedValidationMenuStock } from "./validation-menu-stock";
 import { seedValidationServicePolish } from "./validation-service-polish";
@@ -67,6 +69,15 @@ async function main(): Promise<void> {
       polish.skipped
         ? `Service polish: ${VALIDATION_SERVICE_POLISH_SEED_KEY} already applied; nothing to do.`
         : `Service polish: Extra Bacon ${polish.modifierOut ? "86'd" : "already 86'd"}. Recorded as ${VALIDATION_SERVICE_POLISH_SEED_KEY}.`,
+    );
+
+    // Phase 21 (added in Phase 22), under its own key, so an earlier database gets it too.
+    const guests = await seedValidationGuestsAllergens(getDatabase(), await mainOwnerActor("guests.manage"));
+
+    console.log(
+      guests.skipped
+        ? `Guests and allergens: ${VALIDATION_GUESTS_ALLERGENS_SEED_KEY} already applied; nothing to do.`
+        : `Guests and allergens: ${guests.ingredientsTagged} ingredients tagged, ${guests.declared} declared allergen(s), ${guests.profiles} guest profiles. Recorded as ${VALIDATION_GUESTS_ALLERGENS_SEED_KEY}.`,
     );
   } finally {
     await closeDatabase();

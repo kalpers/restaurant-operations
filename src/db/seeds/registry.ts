@@ -34,6 +34,7 @@ import {
   recipesAllergenFoundationSeed,
   securityGuestProfilesPermissionsSeed,
 } from "./guest-profiles-permissions";
+import { securityGuestMessagingPermissionsSeed } from "./guest-messaging-permissions";
 
 /** Seeds run in this order. Later phases register their seeds here. */
 export const seeds: readonly Seed[] = [
@@ -62,4 +63,5 @@ export const seeds: readonly Seed[] = [
   securityServicePolishPermissionsSeed,
   securityGuestProfilesPermissionsSeed,
   recipesAllergenFoundationSeed,
+  securityGuestMessagingPermissionsSeed,
 ];

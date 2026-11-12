@@ -140,6 +140,10 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "guests.manage",
       "guests.merge",
       "recipes.allergens.manage",
+      // Phase 22: online booking and guest messages.
+      "reservations.online.manage",
+      "messages.view",
+      "messages.resend",
       "menu.view",
       "menu.edit",
       "menu.pricing.view",
@@ -248,6 +252,9 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "guests.view",
       "guests.contact.view",
       "guests.manage",
+      // Phase 22: guest message history and resend.
+      "messages.view",
+      "messages.resend",
       ...SCHEDULE_SELF_SERVICE,
     ],
   },

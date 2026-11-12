@@ -27,13 +27,18 @@ export function startMaintenanceRunner(): void {
 
       if (
         !result.skipped &&
-        (result.outboxEventsDeleted > 0 || result.loginThrottlesDeleted > 0 || result.notificationsCreated > 0)
+        (result.outboxEventsDeleted > 0 ||
+          result.loginThrottlesDeleted > 0 ||
+          result.notificationsCreated > 0 ||
+          result.remindersQueued > 0 ||
+          result.messagesErased > 0 ||
+          result.manageLinksDeleted > 0)
       ) {
         writeLog({
           severity: "info",
           module: "maintenance",
           operation: "run",
-          message: `Maintenance purged ${result.outboxEventsDeleted} published outbox events and ${result.loginThrottlesDeleted} expired sign-in throttles, and sent ${result.notificationsCreated} notifications.`,
+          message: `Maintenance purged ${result.outboxEventsDeleted} published outbox events and ${result.loginThrottlesDeleted} expired sign-in throttles, sent ${result.notificationsCreated} notifications, queued ${result.remindersQueued} guest reminders, cleared ${result.messagesErased} old guest messages and deleted ${result.manageLinksDeleted} expired manage links.`,
         });
       }
     } catch (error) {

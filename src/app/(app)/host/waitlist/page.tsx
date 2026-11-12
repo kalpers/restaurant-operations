@@ -48,6 +48,7 @@ export default async function WaitlistPage() {
     capacityOverride: actorHolds(actor, "restaurant.capacity.override"),
     guests: { view: actorHolds(actor, "guests.view"), manage: actorHolds(actor, "guests.manage") },
     allergens: (await listAllergens(database, actor.organizationId)).map(({ id, name, active }) => ({ id, name, active })),
+    messages: { view: actorHolds(actor, "messages.view"), resend: actorHolds(actor, "messages.resend") },
   };
 
   return (

@@ -12,7 +12,7 @@ async function main(): Promise<void> {
     console.log(
       result.skipped
         ? "Maintenance skipped: another run holds the maintenance lock."
-        : `Maintenance complete: ${result.outboxEventsDeleted} published outbox events and ${result.loginThrottlesDeleted} expired sign-in throttles deleted; ${result.notificationsCreated} notifications sent.`,
+        : `Maintenance complete: ${result.outboxEventsDeleted} published outbox events and ${result.loginThrottlesDeleted} expired sign-in throttles deleted; ${result.notificationsCreated} notifications sent; ${result.remindersQueued} guest reminders queued; ${result.messagesErased} old guest messages cleared; ${result.manageLinksDeleted} expired manage links deleted.`,
     );
   } finally {
     await closeDatabase();

@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 export type HostTabsProps = {
-  active: "floor" | "reservations" | "waitlist" | "guests";
-  abilities: { floor: boolean; reservations: boolean; waitlist: boolean; guests?: boolean };
+  active: "floor" | "reservations" | "waitlist" | "guests" | "online";
+  abilities: { floor: boolean; reservations: boolean; waitlist: boolean; guests?: boolean; online?: boolean };
 };
 
 const TABS = [
@@ -11,6 +11,8 @@ const TABS = [
   { key: "waitlist", href: "/host/waitlist", label: "Waitlist" },
   // Phase 21: guest profiles.
   { key: "guests", href: "/host/guests", label: "Guests" },
+  // Phase 22: online booking settings.
+  { key: "online", href: "/host/online-booking", label: "Online booking" },
 ] as const;
 
 /** Moves among the host's views. Usability only: each page checks its own permission. */

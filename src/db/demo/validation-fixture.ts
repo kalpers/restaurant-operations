@@ -12,6 +12,8 @@ export const VALIDATION_LABOR_SEED_KEY = "phase18.validation-labor-tips";
 export const VALIDATION_MENU_STOCK_SEED_KEY = "phase19.validation-menu-stock";
 /** Phase 20: the Extra Bacon modifier 86'd at MAIN. */
 export const VALIDATION_SERVICE_POLISH_SEED_KEY = "phase20.validation-service-polish";
+/** Phase 21 (added in Phase 22): allergen tags, a declared MAY_CONTAIN and guest profiles. */
+export const VALIDATION_GUESTS_ALLERGENS_SEED_KEY = "phase21.validation-guests-allergens";
 
 export const VALIDATION_EMPLOYEES = [
   { employeeNumber: "P13-SERVER", firstName: "Vera", lastName: "Validation", position: "SERVER", hourlyRate: "12.00" },

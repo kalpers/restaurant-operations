@@ -40,7 +40,7 @@ export default async function SystemHealthPage() {
     <>
       <PageHeader
         title="System health"
-        description="Realtime event delivery for this organization. An event only tells screens to refresh, so a stuck event never blocks later ones."
+        description="Realtime event delivery and guest message sending for this organization. An event only tells screens to refresh, so a stuck event never blocks later ones."
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -55,6 +55,17 @@ export default async function SystemHealthPage() {
         <Card>
           <p className="text-sm text-neutral-700">Dead-lettered</p>
           <p className="tabular text-2xl font-semibold" data-testid="outbox-dead">{health.deadLetteredCount}</p>
+        </Card>
+      </div>
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <Card>
+          <p className="text-sm text-neutral-700">Guest messages waiting to send</p>
+          <p className="tabular text-2xl font-semibold" data-testid="messages-queued">{health.guestMessages.queuedCount}</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-neutral-700">Guest messages failed</p>
+          <p className="tabular text-2xl font-semibold" data-testid="messages-failed">{health.guestMessages.failedCount}</p>
         </Card>
       </div>
 

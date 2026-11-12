@@ -20,6 +20,7 @@ import {
 } from "./shared";
 import { GuestPicker, type PickedGuest } from "./guest-picker";
 import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbilities } from "./party-guest-panel";
+import { GuestMessagesPanel, MessageConsentFields, type HostMessageAbilities, type MessageConsent } from "./guest-messages";
 import { StatusBadge } from "@/components/format/status-badge";
 
 export type WaitlistAbilities = {
@@ -31,6 +32,8 @@ export type WaitlistAbilities = {
   /** Phase 21: guest profiles and visit allergies at the host stand. */
   guests: HostGuestAbilities;
   allergens: AllergenOption[];
+  /** Phase 22: message history and resend. */
+  messages: HostMessageAbilities;
 };
 
 type WaitlistBoardProps = {
@@ -67,6 +70,8 @@ function AddForm({
   const [name, setName] = useState("");
   const [size, setSize] = useState("2");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [consent, setConsent] = useState<MessageConsent>({ sms: false, email: false });
   const [quote, setQuote] = useState("");
   const [area, setArea] = useState("");
   const [suggestion, setSuggestion] = useState<string | null>(null);
@@ -112,6 +117,8 @@ function AddForm({
         })
       : await submit("POST", "/api/waitlist", {
           ...guest,
+          email: email || null,
+          messageConsent: consent,
           quotedWaitMinutes: quote === "" ? null : Number(quote),
           preferredAreaId: area || null,
         });
@@ -119,6 +126,8 @@ function AddForm({
     if (saved) {
       setName("");
       setPhone("");
+      setEmail("");
+      setConsent({ sms: false, email: false });
       setQuote("");
       setSuggestion(null);
       setChosen([]);
@@ -182,6 +191,20 @@ function AddForm({
         Phone (optional)
         <input value={phone} onChange={(event) => setPhone(event.target.value)} className={INPUT_CLASS} />
       </label>
+      {!seatNow && (
+        <>
+          <label className="grid gap-1 text-sm font-medium">
+            Email (optional)
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={INPUT_CLASS}
+            />
+          </label>
+          <MessageConsentFields value={consent} onChange={setConsent} />
+        </>
+      )}
       <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
         <input
           type="checkbox"
@@ -453,7 +476,8 @@ function EntryCard({
   abilities: WaitlistAbilities;
 }) {
   const { submit, pending, error } = useSubmit();
-  const [panel, setPanel] = useState<"seat" | "quote" | "guest" | null>(null);
+  const [panel, setPanel] = useState<"seat" | "quote" | "guest" | "messages" | null>(null);
+  const canMessage = entry.messageConsent.sms || entry.messageConsent.email;
   const close = () => setPanel(null);
   const base = `/api/waitlist/${entry.id}`;
   const version = { expectedVersion: entry.version };
@@ -484,7 +508,13 @@ function EntryCard({
       </p>
       {entry.phone && <p className="text-sm">Phone: {entry.phone}</p>}
       {entry.notifiedAt && (
-        <p className="text-sm">Notified at {formatTime(entry.notifiedAt, timeZone)}</p>
+        <p className="text-sm">
+          Notified at {formatTime(entry.notifiedAt, timeZone)}
+          {entry.status === "NOTIFIED" &&
+            (canMessage
+              ? ` · table-ready ${entry.messageConsent.sms ? "text" : "email"} sent to the guest`
+              : " · no texts or emails agreed: tell the guest in person")}
+        </p>
       )}
       {entry.assignedTables.length > 0 && (
         <p className="text-sm">
@@ -512,12 +542,17 @@ function EntryCard({
             className={BUTTON_CLASS}
             onClick={() => submit("POST", `${base}/notify`, version)}
           >
-            Mark notified
+            {canMessage ? "Notify (sends table-ready message)" : "Mark notified"}
           </button>
         )}
         {abilities.seat && (
           <button type="button" className={BUTTON_CLASS} onClick={() => setPanel("seat")}>
             Seat
+          </button>
+        )}
+        {(abilities.messages.view || abilities.manage) && (
+          <button type="button" className={BUTTON_CLASS} onClick={() => setPanel(panel === "messages" ? null : "messages")}>
+            Messages
           </button>
         )}
         {abilities.manage && (
@@ -543,6 +578,16 @@ function EntryCard({
       </div>
       <ErrorText error={error} />
       {panel === "quote" && <QuoteForm entry={entry} onDone={close} />}
+      {panel === "messages" && (
+        <GuestMessagesPanel
+          subject={{ type: "waitlist", id: entry.id, status: entry.status }}
+          partyId={entry.guestPartyId}
+          consent={entry.messageConsent}
+          canManageConsent={abilities.manage}
+          abilities={abilities.messages}
+          timeZone={timeZone}
+        />
+      )}
       {panel === "guest" && (
         <PartyGuestPanel
           partyId={entry.guestPartyId}

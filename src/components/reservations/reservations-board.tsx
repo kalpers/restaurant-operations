@@ -21,6 +21,7 @@ import {
 } from "./shared";
 import { GuestPicker, type PickedGuest } from "./guest-picker";
 import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbilities } from "./party-guest-panel";
+import { GuestMessagesPanel, MessageConsentFields, type HostMessageAbilities, type MessageConsent } from "./guest-messages";
 import { StatusBadge } from "@/components/format/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -32,6 +33,10 @@ export type ReservationAbilities = {
   /** Phase 21: guest profiles and visit allergies at the host stand. */
   guests: HostGuestAbilities;
   allergens: AllergenOption[];
+  /** Phase 22: message history and resend. */
+  messages: HostMessageAbilities;
+  /** Phase 22 (policy 17): `guests.erase`, for a visit with no guest profile. */
+  eraseVisit: boolean;
 };
 
 type ReservationsBoardProps = {
@@ -150,6 +155,10 @@ function ReservationForm({
   const [planned, setPlanned] = useState<string[]>(
     mode.type === "edit" ? mode.reservation.plannedTables.map((table) => table.id) : [],
   );
+  // Phase 22 (policy 6): unticked unless the guest agreed.
+  const [consent, setConsent] = useState<MessageConsent>(
+    mode.type === "edit" ? mode.reservation.messageConsent : { sms: false, email: false },
+  );
   const change = (name: string, value: string) =>
     setValues((current) => ({ ...current, [name]: value }));
 
@@ -166,6 +175,7 @@ function ReservationForm({
       localTime: values.localTime,
       expectedDurationMinutes: Number(values.expectedDurationMinutes),
       notes: values.notes || null,
+      messageConsent: consent,
     };
     const saved =
       mode.type === "create"
@@ -218,6 +228,7 @@ function ReservationForm({
         </div>
       )}
       <GuestFields values={values} onChange={change} />
+      <MessageConsentFields value={consent} onChange={setConsent} />
       {mode.type === "create" && (
         <>
           <label className="grid gap-1 text-sm font-medium">
@@ -551,6 +562,48 @@ function CancelPanel({
   );
 }
 
+function EraseVisitPanel({ reservation, onDone }: { reservation: ReservationView; onDone: () => void }) {
+  const { submit, pending, error } = useSubmit();
+  const [reason, setReason] = useState("");
+
+  return (
+    <form
+      aria-label="Erase guest details"
+      className="mt-3 grid gap-3 rounded-md border border-danger-300 p-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+
+        if (
+          await submit("POST", `/api/guest-parties/${reservation.guestPartyId}/erase`, {
+            reason,
+            expectedVersion: reservation.guest.partyVersion,
+          })
+        ) {
+          onDone();
+        }
+      }}
+    >
+      <p className="text-sm">
+        Removes this guest&apos;s name, phone, email, requests, allergies and message history text. The booking and its
+        history stay. This can&apos;t be undone.
+      </p>
+      <label className="grid gap-1 text-sm font-medium">
+        Reason
+        <input required maxLength={200} value={reason} onChange={(event) => setReason(event.target.value)} className={INPUT_CLASS} />
+      </label>
+      <ErrorText error={error} />
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending} className={PRIMARY_CLASS}>
+          Erase guest details
+        </button>
+        <button type="button" onClick={onDone} className={BUTTON_CLASS}>
+          Keep
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ReservationCard({
   reservation,
   tables,
@@ -567,7 +620,7 @@ function ReservationCard({
   defaultDurationMinutes: number;
 }) {
   const { submit, pending, error } = useSubmit();
-  const [panel, setPanel] = useState<"edit" | "plan" | "seat" | "cancel" | "guest" | null>(null);
+  const [panel, setPanel] = useState<"edit" | "plan" | "seat" | "cancel" | "guest" | "messages" | "erase" | null>(null);
   const close = () => setPanel(null);
   const active = ACTIVE.includes(reservation.status);
   const version = { expectedVersion: reservation.version };
@@ -600,6 +653,9 @@ function ReservationCard({
           </h3>
           <GuestMarks guest={reservation.guest} />
           <p className="text-sm">
+            {reservation.source === "ONLINE" && (
+              <span className="mr-2 rounded bg-brand-700 px-2 py-0.5 text-xs font-medium text-white">Online</span>
+            )}
             Party of {reservation.partySize} · {reservation.expectedDurationMinutes} min
             {reservation.hasSpecialRequests && (
               <span className="ml-2 rounded bg-neutral-900 px-2 py-0.5 text-xs font-medium text-white">
@@ -686,7 +742,36 @@ function ReservationCard({
           )}
         </div>
       )}
+      {(abilities.messages.view || abilities.manage || (abilities.eraseVisit && !reservation.guest.profile)) && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(abilities.messages.view || abilities.manage) && (
+            <button
+              type="button"
+              className={BUTTON_CLASS}
+              onClick={() => setPanel(panel === "messages" ? null : "messages")}
+            >
+              Messages
+            </button>
+          )}
+          {abilities.eraseVisit && !reservation.guest.profile && reservation.guestName !== "Erased guest" && (
+            <button type="button" className={BUTTON_CLASS} onClick={() => setPanel(panel === "erase" ? null : "erase")}>
+              Erase guest details
+            </button>
+          )}
+        </div>
+      )}
+      {panel === "erase" && <EraseVisitPanel reservation={reservation} onDone={close} />}
       <ErrorText error={error} />
+      {panel === "messages" && (
+        <GuestMessagesPanel
+          subject={{ type: "reservation", id: reservation.id, status: reservation.status }}
+          partyId={reservation.guestPartyId}
+          consent={reservation.messageConsent}
+          canManageConsent={abilities.manage && active}
+          abilities={abilities.messages}
+          timeZone={timeZone}
+        />
+      )}
       {panel === "edit" && (
         <div className="mt-3">
           <ReservationForm

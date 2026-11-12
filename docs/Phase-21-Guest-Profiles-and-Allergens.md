@@ -170,6 +170,10 @@ Recorded on 2026-11-12 while building. None changes a decision; each says how a 
 10. **Migrations.** Step 1 has its own migration (`0048`); steps 2 to 5 share one generated migration (`0049`) and one custom guards migration (`0050`), so the same tables weren't regenerated several times.
 11. **The host tab row wraps**, so the new Guests tab fits at phone width.
 
+## Later amendment (Phase 22, 2026-11-12)
+
+Phase 22 supersedes this plan's exclusion of guest messaging and consent ("Left out on purpose", policy 23): guests may now get email and SMS service messages about their own visit, with consent recorded per visit and channel (`guest_party_message_consents`) and an opt-out list. Erase (policy 4) now also clears consents, message addresses and bodies, and manage links. Loyalty, marketing and guest list export are still out. See `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md`.
+
 ## 1. Objectives
 
 Deliver policies 1–23, the migrations, the tests in sections 5–7, README, CLAUDE.md and User Guide updates, and `docs/Phase-21-Completion-Report.md`.

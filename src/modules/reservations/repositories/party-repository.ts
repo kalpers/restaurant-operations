@@ -118,7 +118,8 @@ export async function appendPartyHistory(
     partyId: string;
     status: GuestPartyStatus;
     reason?: string | null;
-    userId: string;
+    /** Null for a guest acting on the public booking page (Phase 22). */
+    userId: string | null;
     occurredAt: Date;
   },
 ): Promise<void> {
@@ -141,7 +142,8 @@ export async function changePartyStatus(
     party: Pick<PartyRow, "id" | "status">;
     status: GuestPartyStatus;
     reason?: string | null;
-    userId: string;
+    /** Null for a guest acting on the public booking page (Phase 22). */
+    userId: string | null;
     occurredAt: Date;
   },
 ): Promise<void> {

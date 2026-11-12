@@ -135,7 +135,8 @@ export async function endAssignments(
   input: {
     reservationId: string;
     reason: "REPLACED" | "CANCELLED" | "NO_SHOW" | "SEATED" | "REMOVED";
-    userId: string;
+    /** Null when the guest cancelled online (Phase 22). */
+    userId: string | null;
     at: Date;
     tableIds?: readonly string[];
   },

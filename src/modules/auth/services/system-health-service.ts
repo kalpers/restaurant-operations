@@ -5,6 +5,7 @@ import {
   requeueDeadLetteredEvent,
   type OutboxHealth,
 } from "@/infrastructure/outbox/outbox-health";
+import { getGuestMessageHealth, type GuestMessageHealth } from "@/infrastructure/messaging/message-health";
 import { recordAudit } from "@/modules/auditing";
 import { AuthorizationError, NotFoundError } from "@/shared/errors/app-error";
 
@@ -20,11 +21,19 @@ function assertHolds(actor: Actor, permission: "admin.system.view" | "admin.syst
   }
 }
 
-/** Counts and the 50 most recent dead-lettered events. Never a payload. */
-export function getSystemHealth(executor: DatabaseExecutor, actor: Actor, now: Date = new Date()): Promise<OutboxHealth> {
+export type SystemHealth = OutboxHealth & { guestMessages: GuestMessageHealth };
+
+/**
+ * Counts and the 50 most recent dead-lettered events, plus guest message counts (Phase 22).
+ * Never a payload, address or message body.
+ */
+export function getSystemHealth(executor: DatabaseExecutor, actor: Actor, now: Date = new Date()): Promise<SystemHealth> {
   assertHolds(actor, "admin.system.view");
 
-  return getOutboxHealth(executor, actor.organizationId, now);
+  return Promise.all([
+    getOutboxHealth(executor, actor.organizationId, now),
+    getGuestMessageHealth(executor, actor.organizationId),
+  ]).then(([outbox, guestMessages]) => ({ ...outbox, guestMessages }));
 }
 
 /** Requeues a dead-lettered event and records `system.outbox-event-retried` atomically. */
