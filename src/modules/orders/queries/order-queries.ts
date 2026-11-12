@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import {
   employees,
+  guestParties,
   orderDiscounts,
   orderItemDiscounts,
   orderItemModifiers,
@@ -18,6 +19,7 @@ import { tableNumbersForSessions } from "@/modules/restaurant/queries/session-fa
 import { NotFoundError } from "@/shared/errors/app-error";
 
 import { findOrder } from "../repositories/order-repository";
+import { loadOrderAllergenView } from "./order-allergens";
 import { assertPermission } from "../services/access";
 import type { OrderStatus, OrderType } from "../types";
 
@@ -186,6 +188,27 @@ export type OrderDetail = OrderSummary & {
   }[];
   batches: { id: string; batchNumber: number; sentAt: string; itemCount: number }[];
   history: { status: string; reason: string | null; occurredAt: string }[];
+  /** Phase 21 (policies 8, 11-13): the allergies the warning checks, and each item's label. */
+  allergy: OrderAllergyContext;
+};
+
+export type OrderAllergyContext = {
+  /** PARTY: the visit's allergies (edited on the party). ORDER: this check's own. */
+  source: "PARTY" | "ORDER";
+  guestPartyId: string | null;
+  partyVersion: number | null;
+  /** Only with `guests.view`. */
+  profile: { id: string; profileNumber: number; displayName: string; vip: boolean } | null;
+  allergies: { allergenId: string; code: string; name: string; severity: "SEVERE" | "ALLERGY"; note: string | null }[];
+  items: Record<
+    string,
+    {
+      allergens: { id: string; code: string; name: string; kind: "CONTAINS" | "MAY_CONTAIN" }[];
+      incomplete: boolean;
+      conflict: { description: string; severity: "SEVERE" | "ALLERGY" } | null;
+      acknowledged: { at: string; description: string } | null;
+    }
+  >;
 };
 
 export type AppliedDiscount = {
@@ -294,8 +317,40 @@ export async function readOrderDetail(
     )
     .orderBy(asc(orderItemShares.orderItemId), asc(orderItemShares.shareNumber));
 
+  const allergenView = await loadOrderAllergenView(
+    executor,
+    actor.organizationId,
+    order,
+    items.map(({ item }) => item),
+  );
+  const [party] = allergenView.allergies.guestPartyId
+    ? await executor
+        .select({ version: guestParties.version })
+        .from(guestParties)
+        .where(eq(guestParties.id, allergenView.allergies.guestPartyId))
+    : [];
+  const allergy: OrderAllergyContext = {
+    source: allergenView.allergies.source,
+    guestPartyId: allergenView.allergies.guestPartyId,
+    partyVersion: party?.version ?? null,
+    profile: actor.permissions.has("guests.view") ? allergenView.allergies.profile : null,
+    allergies: allergenView.allergies.allergies,
+    items: Object.fromEntries(
+      [...allergenView.items].map(([itemId, view]) => [
+        itemId,
+        {
+          allergens: view.label.allergens.map(({ id, code, name, kind }) => ({ id, code, name, kind })),
+          incomplete: view.label.incomplete,
+          conflict: view.conflict ? { description: view.conflict.description, severity: view.conflict.severity } : null,
+          acknowledged: view.acknowledged,
+        },
+      ]),
+    ),
+  };
+
   return {
     ...summary!,
+    allergy,
     voidedAt: order.voidedAt?.toISOString() ?? null,
     voidReason: order.voidReason,
     items: items.map(({ item, batchNumber, disposition }) => ({

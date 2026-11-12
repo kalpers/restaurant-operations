@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import {
+  orderItemAllergens,
   orderItemInventoryConsumption,
   orderItemModifiers,
   orderItems,
@@ -30,6 +31,9 @@ import {
   recomputeAndBumpOrder,
 } from "@/modules/orders/repositories/order-repository";
 import { planLineConsumption } from "@/modules/orders/rules/consumption-plan";
+import { loadOrderAllergies } from "@/modules/orders/services/order-allergy-service";
+import { loadAllergenLabels } from "@/modules/recipes/queries/allergen-facts";
+import { describeConflict, findAllergenConflicts } from "@/modules/recipes/rules/allergen-label";
 import { assertOrderOpen, buildKitchenInstructions } from "@/modules/orders/rules/order-lifecycle";
 import { assertPermission } from "@/modules/orders/services/access";
 import { draftColumns } from "@/modules/orders/services/draft-item-service";
@@ -52,21 +56,34 @@ export type SendResult = {
  *
  *   authorize -> claim idempotency key -> lock order and check version -> lock drafts
  *   -> re-resolve price and modifiers (operational menu) -> resolve recipe revision
- *   -> apply modifier effects -> tax snapshot (Phase 17) -> create batch -> freeze snapshots -> consumption
+ *   -> apply modifier effects -> allergen labels and allergy conflicts (Phase 21) -> tax snapshot
+ *   (Phase 17) -> create batch -> freeze snapshots -> consumption
  *   snapshots and CONSUME postings (with balances) -> kitchen/bar tickets (Phase 10)
  *   -> totals -> histories -> outbox events -> audit event -> store result
  *
  * Any failure rolls everything back, including the idempotency claim. A retry with the
  * same key returns the first result and changes nothing.
+ *
+ * Phase 21 (policy 14): an item whose allergen label conflicts with the order's recorded
+ * allergies is refused with ALLERGEN_ACKNOWLEDGMENT_REQUIRED before anything is written, unless
+ * the request names it in `acknowledgedAllergenItemIds`. The refusal also rolls back the key's
+ * claim, so the acknowledged retry may reuse the same key.
  */
 export async function sendOrderItems(
   database: Database,
   actor: Actor,
   orderId: string,
-  input: { expectedVersion: number; idempotencyKey: string; fire?: FireMode },
+  input: {
+    expectedVersion: number;
+    idempotencyKey: string;
+    fire?: FireMode;
+    /** Phase 21: draft items the server confirmed despite an allergy conflict. */
+    acknowledgedAllergenItemIds?: readonly string[];
+  },
 ): Promise<SendResult & { replayed: boolean }> {
   assertPermission(actor, "orders.submit");
 
+  const acknowledged = new Set(input.acknowledgedAllergenItemIds ?? []);
   const outcome = await withTransaction(database, (transaction) =>
     runIdempotent<SendResult>(
       transaction,
@@ -81,6 +98,8 @@ export async function sendOrderItems(
           orderId,
           expectedVersion: input.expectedVersion,
           ...(input.fire && input.fire !== "ALL" ? { fire: input.fire } : {}),
+          // Joins the fingerprint only when present, so earlier keys still match their retries.
+          ...(acknowledged.size > 0 ? { acknowledgedAllergenItemIds: [...acknowledged].sort() } : {}),
         },
       },
       async (idempotencyRecordId) => {
@@ -149,6 +168,47 @@ export async function sendOrderItems(
           });
 
           resolved.push({ draft, sellable, revision, consumption });
+        }
+
+        // Phase 21 (policies 11, 12, 14): each item's label from the ingredients it will consume,
+        // and its conflicts with the order's allergies. Unacknowledged conflicts stop the round.
+        const labels = await loadAllergenLabels(
+          transaction,
+          actor.organizationId,
+          resolved.map(({ draft, consumption }) => ({
+            key: draft.id,
+            menuItemId: draft.menuItemId,
+            ingredientIds: consumption.map((entry) => entry.inventoryItemId),
+          })),
+        );
+        const allergies = await loadOrderAllergies(transaction, order);
+        const conflicts = new Map(
+          findAllergenConflicts(
+            resolved.map(({ draft }) => ({ itemId: draft.id, label: labels.get(draft.id)! })),
+            allergies.allergies,
+          ).map((conflict) => [conflict.itemId, { ...conflict, description: describeConflict(conflict, allergies.allergies) }]),
+        );
+        const unacknowledged = resolved.filter(({ draft }) => conflicts.has(draft.id) && !acknowledged.has(draft.id));
+
+        if (unacknowledged.length > 0) {
+          throw new BusinessRuleError(
+            "ALLERGEN_ACKNOWLEDGMENT_REQUIRED",
+            "Some items may contain the guest's allergens. Check with the guest, then confirm to send.",
+            {
+              items: unacknowledged.map(({ draft, sellable }) => {
+                const conflict = conflicts.get(draft.id)!;
+
+                return {
+                  orderItemId: draft.id,
+                  name: sellable.item.name,
+                  allergens: conflict.matched.map((entry) => entry.code),
+                  severity: conflict.severity,
+                  incompleteLabel: conflict.incompleteLabel,
+                  description: conflict.description,
+                };
+              }),
+            },
+          );
         }
 
         // Phase 17 tax snapshot (policy A3/A4): the rate in force now, or none when the
@@ -233,12 +293,35 @@ export async function sendOrderItems(
               taxIncludedSnapshot: taxes.get(draft.menuItemId)?.priceIncludesTax ?? false,
               menuCategoryId: sellable.category.id,
               menuCategoryNameSnapshot: sellable.category.name,
+              allergenLabelIncompleteSnapshot: labels.get(draft.id)!.incomplete,
+              ...(conflicts.has(draft.id)
+                ? {
+                    allergyAcknowledgedByUserId: actor.userId,
+                    allergyAcknowledgedAt: sentAt,
+                    allergyConflictSnapshot: conflicts.get(draft.id)!.description,
+                  }
+                : {}),
               sendBatchId: batch!.id,
               submittedAt: sentAt,
               version: sql`${orderItems.version} + 1`,
               updatedAt: sentAt,
             })
             .where(eq(orderItems.id, draft.id));
+        }
+
+        const allergenRows = resolved.flatMap(({ draft }) =>
+          labels.get(draft.id)!.allergens.map((allergen) => ({
+            orderItemId: draft.id,
+            allergenId: allergen.id,
+            allergenCodeSnapshot: allergen.code,
+            allergenNameSnapshot: allergen.name,
+            kind: allergen.kind,
+            source: allergen.source,
+          })),
+        );
+
+        if (allergenRows.length > 0) {
+          await transaction.insert(orderItemAllergens).values(allergenRows);
         }
 
         const lines = resolved.flatMap(({ draft, consumption }) =>
@@ -316,6 +399,7 @@ export async function sendOrderItems(
               draft.specialInstructions,
             ),
             prepStationIds: sellable.item.prepStationIds,
+            allergyAlertSnapshot: conflicts.get(draft.id)?.description ?? null,
             modifiers: sellable.selections.map((selection) => ({
               groupName: selection.modifierGroupName,
               code: selection.modifier.code,
@@ -349,6 +433,7 @@ export async function sendOrderItems(
               sendBatchId: batch!.id,
               batchNumber: batch!.batchNumber,
               orderItemIds: drafts.map((draft) => draft.id),
+              allergyAcknowledgedItemIds: [...conflicts.keys()],
             },
             occurredAt: sentAt,
           },
@@ -366,6 +451,26 @@ export async function sendOrderItems(
             orderItemIds: drafts.map((draft) => draft.id),
           },
         });
+
+        for (const { draft, sellable } of resolved) {
+          const conflict = conflicts.get(draft.id);
+
+          if (conflict) {
+            await recordAudit(transaction, actor, {
+              action: "orders.allergen-acknowledged",
+              entityId: orderId,
+              occurredAt: sentAt,
+              details: {
+                orderNumber: order.orderNumber,
+                orderItemId: draft.id,
+                itemCode: sellable.item.code,
+                allergenCodes: conflict.matched.map((entry) => entry.code),
+                severity: conflict.severity,
+                incompleteLabel: conflict.incompleteLabel,
+              },
+            });
+          }
+        }
 
         return {
           orderId,

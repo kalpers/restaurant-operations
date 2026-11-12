@@ -10,6 +10,11 @@ import { getItemConfiguration, listUnitChoices } from "@/modules/inventory/servi
 import { listSupplierItems } from "@/modules/inventory/services/supplier-service";
 import { NotFoundError } from "@/shared/errors/app-error";
 import { Breadcrumbs } from "@/components/ui/page-header";
+import { AllergenTagsForm } from "@/components/allergens/allergen-tags-form";
+import { Badge } from "@/components/ui/badge";
+import { listAllergens, getIngredientAllergens } from "@/modules/recipes/queries/allergen-facts";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
+import { formatInstant } from "@/shared/time/format-instant";
 
 export default async function InventoryItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   const { location, actor } = await requirePageActor("inventory.configure");
@@ -40,6 +45,16 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
         (entry) => entry.active || entry.id === here?.preferredSupplierItemId,
       )
     : [];
+  // Phase 21 (policy 18): allergen tags and the review mark.
+  const canTagAllergens = location.permissions.includes("recipes.allergens.manage");
+  const [allergenChoices, ingredientAllergens, timeZone] = await Promise.all([
+    listAllergens(database, actor.organizationId),
+    getIngredientAllergens(database, actor.organizationId, item.id),
+    getLocationTimeZone(database, location.locationId),
+  ]);
+  const taggedNames = allergenChoices
+    .filter((entry) => ingredientAllergens.allergenIds.includes(entry.id))
+    .map((entry) => entry.name);
 
   return (
     <>
@@ -64,6 +79,31 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
             { name: "active", label: "Active", type: "checkbox", defaultValue: item.active },
           ]}
         />
+      </section>
+
+      <section aria-label="Allergens" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Allergens</h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          {ingredientAllergens.review ? (
+            <>Reviewed {formatInstant(ingredientAllergens.review.reviewedAt, timeZone)}. Menu items made with it list these allergens.</>
+          ) : (
+            <>
+              <Badge tone="danger">Not reviewed</Badge> Menu items made with this item show &quot;Allergens incomplete&quot;
+              until it&apos;s reviewed, even if it contains none.
+            </>
+          )}
+        </p>
+        {canTagAllergens ? (
+          <AllergenTagsForm
+            mode="tags"
+            url={`/api/inventory/items/${item.id}/allergens`}
+            allergens={allergenChoices}
+            selected={ingredientAllergens.allergenIds}
+            reviewVersion={ingredientAllergens.review?.version ?? null}
+          />
+        ) : (
+          <p className="text-sm">{taggedNames.length > 0 ? taggedNames.join(", ") : "None tagged."}</p>
+        )}
       </section>
 
       <section aria-label="Stock levels here" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">

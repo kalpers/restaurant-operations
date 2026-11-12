@@ -94,6 +94,28 @@ export async function seatingSections(context: ReportContext): Promise<ReportSec
     `,
   );
 
+  // Phase 21 (D16): seated sessions whose party is linked to a guest profile, and how many of
+  // those guests had been seated before. Counts only: no names or contact details.
+  const [guests] = await rowsOf<{ seated: number; with_profile: number; returning: number }>(
+    context,
+    sql`
+      SELECT (COUNT(*))::int AS seated,
+             (COUNT(*) FILTER (WHERE gp.guest_profile_id IS NOT NULL))::int AS with_profile,
+             (COUNT(*) FILTER (WHERE gp.guest_profile_id IS NOT NULL AND EXISTS (
+               SELECT 1 FROM table_sessions earlier
+               JOIN guest_parties egp ON egp.id = earlier.guest_party_id
+               WHERE egp.guest_profile_id = gp.guest_profile_id
+                 AND earlier.status <> 'CANCELLED'
+                 AND earlier.seated_at < ts.seated_at
+             )))::int AS returning
+      FROM table_sessions ts
+      LEFT JOIN guest_parties gp ON gp.id = ts.guest_party_id
+      WHERE ts.location_id = ${filters.locationId}
+        AND ts.status <> 'CANCELLED'
+        AND ts.seated_at >= ${context.start}::timestamptz AND ts.seated_at < ${context.end}::timestamptz
+    `,
+  );
+
   const totalReservations = reservations.reduce((sum, row) => sum + row.reservations, 0);
   const cancelledReservations = reservations.find((row) => row.status === "CANCELLED")?.reservations ?? 0;
   const noShows = reservations.find((row) => row.status === "NO_SHOW")?.reservations ?? 0;
@@ -159,6 +181,24 @@ export async function seatingSections(context: ReportContext): Promise<ReportSec
         quoted: minutes(row.quoted),
         waited: minutes(row.waited),
       })),
+    },
+    {
+      key: "guests",
+      title: "Guests",
+      description:
+        "Seated parties linked to a guest profile, and those whose guest had been seated before (at any location).",
+      columns: [
+        { key: "seated", label: "Seated parties", kind: "count" },
+        { key: "withProfile", label: "With a guest profile", kind: "count" },
+        { key: "returning", label: "Returning guests", kind: "count" },
+      ],
+      rows: [
+        {
+          seated: guests?.seated ?? 0,
+          withProfile: guests?.with_profile ?? 0,
+          returning: guests?.returning ?? 0,
+        },
+      ],
     },
   ];
 }

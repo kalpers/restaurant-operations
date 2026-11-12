@@ -27,6 +27,13 @@ import { actorHolds } from "@/modules/menu/services/access";
 import { listRecipes } from "@/modules/recipes/services/recipe-service";
 import { NotFoundError } from "@/shared/errors/app-error";
 import { Breadcrumbs } from "@/components/ui/page-header";
+import { AllergenLabelBadges } from "@/components/allergens/allergen-label";
+import { AllergenTagsForm } from "@/components/allergens/allergen-tags-form";
+import {
+  getDeclaredAllergens,
+  listAllergens,
+  loadBaseAllergenLabels,
+} from "@/modules/recipes/queries/allergen-facts";
 
 export default async function MenuItemEditorPage({
   params,
@@ -77,6 +84,13 @@ export default async function MenuItemEditorPage({
   const attachedIds = new Set(attachments.map((attachment) => attachment.modifierGroupId));
   const modifierName = new Map(modifiers.map((modifier) => [modifier.id, modifier]));
   const activeStations = stations.filter((station) => station.active);
+  // Phase 21 (policies 10, 11, 18): the label as sold with no modifiers, and the declarations.
+  const [allergenChoices, declared, baseLabels] = await Promise.all([
+    listAllergens(database, actor.organizationId),
+    getDeclaredAllergens(database, actor.organizationId, itemId),
+    loadBaseAllergenLabels(database, actor.organizationId, [itemId], new Date()),
+  ]);
+  const baseLabel = baseLabels.get(itemId)!;
 
   return (
     <>
@@ -303,6 +317,33 @@ export default async function MenuItemEditorPage({
           stations={activeStations.map((station) => ({ id: station.id, code: station.code, name: station.name }))}
           selectedIds={routing.filter((row) => row.active).map((row) => row.prepStationId)}
         />
+      </section>
+
+      <section aria-label="Allergens" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Allergens</h2>
+        <p className="mb-2 text-sm text-neutral-600">
+          Worked out from the recipe in effect now and its ingredients&apos; tags, plus what you declare here.
+          Modifiers can add or remove allergens; the order screen shows the label for the choices made.
+        </p>
+        <p className="mb-4">
+          <AllergenLabelBadges label={baseLabel} />
+        </p>
+        {actorHolds(actor, "recipes.allergens.manage") ? (
+          <>
+            <h3 className="mb-2 font-semibold">Declared allergens</h3>
+            <p className="mb-3 text-sm text-neutral-600">
+              &quot;Contains&quot; for what the recipe doesn&apos;t show (an item with no recipe). &quot;May contain&quot;
+              for cross-contact, such as a shared fryer. An item with no recipe is incomplete until this is saved.
+            </p>
+            <AllergenTagsForm
+              mode="declared"
+              url={`/api/menu/items/${item.id}/allergens`}
+              allergens={allergenChoices}
+              declared={declared.declared}
+              reviewVersion={declared.review?.version ?? null}
+            />
+          </>
+        ) : null}
       </section>
 
       {recipe && (

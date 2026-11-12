@@ -21,6 +21,8 @@ export type SentItemForTickets = {
   modifiers: readonly ModifierSnapshot[];
   /** Phase 17: the item's course, 1 to 5. */
   courseNumber: number;
+  /** Phase 21 (policy 14): set when the server acknowledged an allergy conflict. */
+  allergyAlertSnapshot?: string | null;
 };
 
 /** Phase 17 SEND option: fire everything now, or only the lowest course in the round. */
@@ -141,6 +143,7 @@ export async function createTicketsForSendBatch(
           menuItemNameSnapshot: item.menuItemNameSnapshot,
           modifierSnapshots: item.modifiers,
           kitchenInstructionsSnapshot: item.kitchenInstructionsSnapshot,
+          allergyAlertSnapshot: item.allergyAlertSnapshot ?? null,
           submittedAt: at,
           createdAt: at,
           updatedAt: at,

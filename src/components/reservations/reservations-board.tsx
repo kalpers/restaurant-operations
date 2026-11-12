@@ -19,6 +19,8 @@ import {
   useSubmit,
   type HostTableOption,
 } from "./shared";
+import { GuestPicker, type PickedGuest } from "./guest-picker";
+import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbilities } from "./party-guest-panel";
 import { StatusBadge } from "@/components/format/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -27,6 +29,9 @@ export type ReservationAbilities = {
   seat: boolean;
   overrideHold: boolean;
   capacityOverride: boolean;
+  /** Phase 21: guest profiles and visit allergies at the host stand. */
+  guests: HostGuestAbilities;
+  allergens: AllergenOption[];
 };
 
 type ReservationsBoardProps = {
@@ -128,14 +133,18 @@ function ReservationForm({
   initial,
   mode,
   onDone,
+  guests,
 }: {
   tables: readonly HostTableOption[];
   initial: Record<string, string>;
   mode: { type: "create" } | { type: "edit"; reservation: ReservationView };
   onDone: () => void;
+  guests?: HostGuestAbilities;
 }) {
   const { submit, pending, error } = useSubmit();
   const [values, setValues] = useState(initial);
+  // Phase 21 (policy 2): the guest profile the new visit links to, picked by the host.
+  const [profile, setProfile] = useState<PickedGuest | null>(null);
   const [source, setSource] = useState("PHONE");
   const [status, setStatus] = useState("CONFIRMED");
   const [planned, setPlanned] = useState<string[]>(
@@ -165,6 +174,7 @@ function ReservationForm({
             source,
             status,
             tableIds: planned,
+            guestProfileId: profile?.id ?? null,
           })
         : await submit("PUT", `/api/reservations/${mode.reservation.id}`, {
             ...common,
@@ -186,6 +196,27 @@ function ReservationForm({
       <h2 className="font-semibold">
         {mode.type === "create" ? "New reservation" : "Edit reservation"}
       </h2>
+      {mode.type === "create" && guests?.manage && (
+        <div className="rounded border border-neutral-200 p-3">
+          {profile ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm">
+              Guest profile: <span className="font-medium">{profile.displayName}</span>
+              <span className="text-neutral-500">#{profile.profileNumber}</span>
+              <button type="button" className={BUTTON_CLASS} onClick={() => setProfile(null)}>
+                Clear
+              </button>
+            </p>
+          ) : (
+            <GuestPicker
+              canCreate
+              onPick={(picked) => {
+                setProfile(picked);
+                setValues((current) => (current.guestName ? current : { ...current, guestName: picked.displayName }));
+              }}
+            />
+          )}
+        </div>
+      )}
       <GuestFields values={values} onChange={change} />
       {mode.type === "create" && (
         <>
@@ -536,7 +567,7 @@ function ReservationCard({
   defaultDurationMinutes: number;
 }) {
   const { submit, pending, error } = useSubmit();
-  const [panel, setPanel] = useState<"edit" | "plan" | "seat" | "cancel" | null>(null);
+  const [panel, setPanel] = useState<"edit" | "plan" | "seat" | "cancel" | "guest" | null>(null);
   const close = () => setPanel(null);
   const active = ACTIVE.includes(reservation.status);
   const version = { expectedVersion: reservation.version };
@@ -567,6 +598,7 @@ function ReservationCard({
           <h3 className="text-lg font-semibold">
             {formatTime(reservation.reservationAt, timeZone)} · {reservation.guestName}
           </h3>
+          <GuestMarks guest={reservation.guest} />
           <p className="text-sm">
             Party of {reservation.partySize} · {reservation.expectedDurationMinutes} min
             {reservation.hasSpecialRequests && (
@@ -632,6 +664,11 @@ function ReservationCard({
           <button type="button" className={BUTTON_CLASS} onClick={() => setPanel("cancel")}>
             Cancel
           </button>
+          {(abilities.guests.manage || abilities.guests.view) && (
+            <button type="button" className={BUTTON_CLASS} onClick={() => setPanel(panel === "guest" ? null : "guest")}>
+              Guest &amp; allergies
+            </button>
+          )}
           {reservation.status === "CONFIRMED" && (
             <button
               type="button"
@@ -667,6 +704,15 @@ function ReservationCard({
         <SeatPanel reservation={reservation} tables={tables} abilities={abilities} onDone={close} />
       )}
       {panel === "cancel" && <CancelPanel reservation={reservation} onDone={close} />}
+      {panel === "guest" && (
+        <PartyGuestPanel
+          partyId={reservation.guestPartyId}
+          guestName={reservation.guestName}
+          guest={reservation.guest}
+          allergens={abilities.allergens}
+          abilities={abilities.guests}
+        />
+      )}
     </li>
   );
 }
@@ -727,6 +773,7 @@ export function ReservationsBoard({
           }}
           mode={{ type: "create" }}
           onDone={() => setCreating(false)}
+          guests={abilities.guests}
         />
       )}
       {checkedIn.length > 0 && (

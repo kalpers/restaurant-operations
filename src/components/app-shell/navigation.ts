@@ -49,7 +49,9 @@ export type NavigationIcon =
   | "time-clock"
   | "tips"
   | "eighty-six"
-  | "suggested-orders";
+  | "suggested-orders"
+  | "guests"
+  | "allergens";
 
 export type NavigationItem = {
   href: string;
@@ -84,6 +86,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/restaurant/floor", label: "Floor", permission: "restaurant.view", group: "service", icon: "floor" },
   { href: "/host/reservations", label: "Reservations", permission: "reservations.view", group: "service", icon: "reservations" },
   { href: "/host/waitlist", label: "Waitlist", permission: "waitlist.view", group: "service", icon: "waitlist" },
+  { href: "/host/guests", label: "Guests", permission: "guests.view", group: "service", icon: "guests" },
   { href: "/orders", label: "Orders", permission: "orders.view", group: "service", icon: "orders" },
   { href: "/kitchen", label: "Kitchen", permission: "kitchen.view", group: "service", icon: "kitchen" },
   { href: "/bar", label: "Bar", permission: "bar.view", group: "service", icon: "bar" },
@@ -97,6 +100,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/menu/modifiers", label: "Modifiers", permission: "menu.modifiers.manage", group: "back-of-house", icon: "modifiers" },
   { href: "/menu/stations", label: "Prep stations", permission: "prep-stations.manage", group: "back-of-house", icon: "stations" },
   { href: "/recipes", label: "Recipes", permission: "recipes.view", group: "back-of-house", icon: "recipes" },
+  { href: "/recipes/allergens", label: "Allergens", permission: "recipes.allergens.manage", group: "back-of-house", icon: "allergens" },
   { href: "/inventory", label: "Inventory", permission: "inventory.view", group: "back-of-house", icon: "inventory" },
   { href: "/inventory/counts", label: "Inventory counts", permission: "inventory.count", group: "back-of-house", icon: "counts" },
   { href: "/inventory/items", label: "Inventory items", permission: "inventory.configure", group: "back-of-house", icon: "items" },

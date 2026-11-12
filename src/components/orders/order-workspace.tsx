@@ -19,7 +19,9 @@ import type { OperationalMenuItem } from "@/modules/menu/queries/operational-men
 import type { OrderDetail } from "@/modules/orders/queries/order-queries";
 import { sumDecimals } from "@/shared/decimal/decimal";
 
+import { AllergyPanel, ItemAllergenNote, type AllergenChoice } from "./allergy-panel";
 import { callOrderApi, formatMoney, newIdempotencyKey, ORDER_TYPE_LABELS } from "./order-api";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // The order screen. It shows what the server returns and sends what staff choose; every
 // rule (sellability, modifier limits, prices, stock, permissions) is decided on the server.
@@ -38,6 +40,8 @@ export type WorkspaceAbilities = {
   newCheck: boolean;
   /** Phase 20: `tax.exempt`, mark the check tax exempt. */
   taxExempt: boolean;
+  /** Phase 21: may tick "save to profile" when recording a party allergy (`guests.manage`). */
+  saveAllergyToProfile: boolean;
 };
 
 export type OtherCheck = { id: string; orderNumber: number; version: number };
@@ -71,6 +75,8 @@ type Props = {
   heldCourses: number[];
   /** Phase 17: the other OPEN checks at this table. */
   otherChecks: OtherCheck[];
+  /** Phase 21: the allergen list, for recording allergies. */
+  allergens: AllergenChoice[];
 };
 
 type ActionError = { code: string; message: string; requestId?: string };
@@ -487,6 +493,7 @@ function DraftLine({ order, item, canEdit }: { order: OrderDetail; item: OrderDe
         <span className="tabular">{formatMoney(item.lineTotal)}</span>
       </p>
       <ModifierLines item={item} />
+      <ItemAllergenNote order={order} itemId={item.id} />
       <p className="text-xs font-medium tracking-wide text-warning-900 uppercase">
         Course {item.courseNumber} · Not sent · price shown is today&apos;s
       </p>
@@ -694,6 +701,7 @@ function SentLine({
         <span className={cn("tabular", (voided || split) && "line-through")}>{formatMoney(item.lineTotal)}</span>
       </p>
       <ModifierLines item={item} />
+      {!voided && <ItemAllergenNote order={order} itemId={item.id} />}
       <p className="text-xs tracking-wide uppercase">
         {voided
           ? `Voided${item.voidDisposition === "UNPREPARED" ? " · not prepared" : " · prepared or discarded"} · ${item.voidReason}`
@@ -1070,8 +1078,12 @@ function AppliedDiscountLine({
   );
 }
 
+type AllergenRefusal = { orderItemId: string; name: string; description: string; severity: string }[];
+
 function SendButton({ order, drafts }: { order: OrderDetail; drafts: OrderDetail["items"] }) {
-  const { run, pending, error } = useAction();
+  const { run, pending, error, clearError } = useAction();
+  // Phase 21 (policy 14): items the server refused until the server confirms with the guest.
+  const [refused, setRefused] = useState<{ fire: "ALL" | "FIRST_COURSE"; items: AllergenRefusal } | null>(null);
   const toast = useToast();
   const draftCount = drafts.length;
   // One key per attempt at this order version and mode, reused if a retry is needed, so a
@@ -1079,17 +1091,27 @@ function SendButton({ order, drafts }: { order: OrderDetail; drafts: OrderDetail
   const attempt = useRef<{ version: number; fire: string; key: string } | null>(null);
   const courses = [...new Set(drafts.map((item) => item.courseNumber))].sort((a, b) => a - b);
 
-  async function send(fire: "ALL" | "FIRST_COURSE") {
+  async function send(fire: "ALL" | "FIRST_COURSE", acknowledgedAllergenItemIds?: string[]) {
     if (attempt.current?.version !== order.version || attempt.current.fire !== fire) {
       attempt.current = { version: order.version, fire, key: newIdempotencyKey() };
     }
 
+    // A refusal stores nothing for the key, so the confirmed retry reuses it.
     const result = await run(
       "POST",
       `/api/orders/${order.id}/send`,
-      { expectedVersion: order.version, fire },
+      { expectedVersion: order.version, fire, ...(acknowledgedAllergenItemIds ? { acknowledgedAllergenItemIds } : {}) },
       { "Idempotency-Key": attempt.current.key },
     );
+
+    if (!result.ok && result.code === "ALLERGEN_ACKNOWLEDGMENT_REQUIRED") {
+      clearError();
+      setRefused({ fire, items: (result.details as { items?: AllergenRefusal } | undefined)?.items ?? [] });
+
+      return;
+    }
+
+    setRefused(null);
 
     if (result.ok) {
       toast.success(
@@ -1112,6 +1134,30 @@ function SendButton({ order, drafts }: { order: OrderDetail; drafts: OrderDetail
         </Button>
       )}
       <ErrorText error={error} />
+      <ConfirmDialog
+        open={refused !== null}
+        title="Allergy check before sending"
+        tone="danger"
+        cancelLabel="Don't send yet"
+        confirmLabel="Guest confirmed, send"
+        pending={pending}
+        error={<ErrorText error={error} />}
+        body={
+          <div className="grid gap-2">
+            <p>These items may contain what the guest is allergic to. Check with the guest before sending.</p>
+            <ul className="grid gap-1">
+              {refused?.items.map((entry) => (
+                <li key={entry.orderItemId} className="font-semibold text-danger-800">
+                  {entry.name}: {entry.description}
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-neutral-700">The kitchen ticket will show the allergy alert.</p>
+          </div>
+        }
+        onClose={() => setRefused(null)}
+        onConfirm={() => refused && send(refused.fire, refused.items.map((entry) => entry.orderItemId))}
+      />
     </div>
   );
 }
@@ -1300,9 +1346,20 @@ const FULFILLMENT_EVENTS = [
   "order.closed",
   "kitchen.course-fired",
   "order.items-moved",
+  // Phase 21: a party's or check's allergies changed.
+  "guest.allergies-changed",
 ];
 
-export function OrderWorkspace({ order, categories, abilities, discounts, fulfillment, heldCourses, otherChecks }: Props) {
+export function OrderWorkspace({
+  order,
+  categories,
+  abilities,
+  discounts,
+  fulfillment,
+  heldCourses,
+  otherChecks,
+  allergens,
+}: Props) {
   useRealtimeRefresh(FULFILLMENT_EVENTS, 60_000);
   const open = order.status === "OPEN";
   const drafts = order.items.filter((item) => item.status === "DRAFT");
@@ -1340,6 +1397,13 @@ export function OrderWorkspace({ order, categories, abilities, discounts, fulfil
             {order.customerName ? ` · ${order.customerName}` : ""}
           </p>
         </div>
+
+        <AllergyPanel
+          order={order}
+          allergens={allergens}
+          canEdit={open && abilities.edit}
+          canSaveToProfile={abilities.saveAllergyToProfile}
+        />
 
         <section aria-label="Unsent items" className="grid gap-2">
           <h2 className="flex items-center gap-2 font-semibold">

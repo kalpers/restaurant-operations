@@ -1900,3 +1900,7 @@ Phase 5 Table Session
 ```
 
 Do not collapse planned future table use into actual occupancy for implementation convenience.
+
+## Amendment (Phase 21, 2026-11-12)
+
+The owner approved Phase 21 Guest Profiles and Allergens on 2026-11-12. It supersedes "Do not turn this into a customer CRM profile" (section 6) and "Do not build ... customer-history profiling" (section 7): guest profiles now exist, owned by Reservations, linked to Guest Parties by hand, with visit history read from snapshots. Guest Party itself is unchanged apart from the nullable `guest_profile_id`. The bans on marketing consent and loyalty, and the rules on not logging or exposing contact data, still stand. See `docs/Phase-21-Guest-Profiles-and-Allergens.md`.

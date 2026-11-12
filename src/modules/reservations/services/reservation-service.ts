@@ -58,6 +58,8 @@ import {
   type ReservationSource,
   type ReservationStatus,
 } from "../types";
+import { attachProfileToParty } from "./guest-profile-service";
+import { loadPartyGuestFacts, type PartyGuestFacts } from "./party-allergy-service";
 import { cancelOpenWaitlistEntry } from "./party-state";
 
 export type CreateReservationInput = {
@@ -75,6 +77,8 @@ export type CreateReservationInput = {
   /** A reservation is confirmed unless staff say it is still tentative. */
   status?: "PENDING" | "CONFIRMED";
   tableIds?: readonly string[];
+  /** Phase 21 (policy 2): the guest profile, linked by hand. Needs `guests.manage`. */
+  guestProfileId?: string | null;
 };
 
 export type UpdateReservationInput = {
@@ -241,6 +245,10 @@ export async function createReservation(
       userId: actor.userId,
       occurredAt: now,
     });
+
+    if (input.guestProfileId) {
+      await attachProfileToParty(transaction, actor, { guestPartyId: party!.id, guestProfileId: input.guestProfileId });
+    }
 
     const [reservation] = await transaction
       .insert(reservations)
@@ -681,7 +689,11 @@ export type ReservationView = {
   } | null;
   /** The seating this reservation can be moved to, and when its no-show window opens. */
   noShowAllowedAt: string;
+  /** Phase 21: the party's version, linked guest profile and this visit's allergies. */
+  guest: PartyGuestView;
 };
+
+export type PartyGuestView = { partyVersion: number } & PartyGuestFacts;
 
 export async function listReservations(
   executor: DatabaseExecutor,
@@ -753,6 +765,7 @@ async function buildViews(
   const planned = await activeAssignments(executor, ids);
   const history = await allAssignments(executor, ids);
   const seating = await findActualSeating(executor, partyIds);
+  const guests = await loadPartyGuestFacts(executor, partyIds);
 
   return rows.map(({ reservation, party }) => {
     const sessions = new Map<
@@ -777,6 +790,7 @@ async function buildViews(
       id: reservation.id,
       version: reservation.version,
       guestPartyId: party.id,
+      guest: { partyVersion: party.version, ...(guests.get(party.id) ?? { profile: null, allergies: [] }) },
       guestName: party.guestName,
       partySize: party.partySize,
       phone: party.phone,

@@ -65,6 +65,8 @@ const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   // Read-only Expo and station context, to see when food and drinks are ready.
   "kitchen.view",
   "bar.view",
+  // Phase 21: look up the guest at the table.
+  "guests.view",
 ];
 
 /** The starting role-permission matrix. Later changes use a new versioned seed. */
@@ -132,6 +134,12 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "waitlist.manage",
       "waitlist.notify",
       "waitlist.seat",
+      // Phase 21: guest profiles and allergen labels.
+      "guests.view",
+      "guests.contact.view",
+      "guests.manage",
+      "guests.merge",
+      "recipes.allergens.manage",
       "menu.view",
       "menu.edit",
       "menu.pricing.view",
@@ -236,6 +244,10 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "waitlist.manage",
       "waitlist.notify",
       "waitlist.seat",
+      // Phase 21: guest profiles at the host stand.
+      "guests.view",
+      "guests.contact.view",
+      "guests.manage",
       ...SCHEDULE_SELF_SERVICE,
     ],
   },
@@ -265,6 +277,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "menu.view",
       "kitchen.view",
       "bar.view",
+      // Phase 21: see a guest's allergies when running food.
+      "guests.view",
       ...SCHEDULE_SELF_SERVICE,
     ],
   },
@@ -287,6 +301,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "purchasing.submit",
       "suppliers.manage",
       "menu.view",
+      // Phase 21: tag ingredients with their allergens.
+      "recipes.allergens.manage",
       ...SCHEDULE_SELF_SERVICE,
       "reports.view",
       "reports.inventory",

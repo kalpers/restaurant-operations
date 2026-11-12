@@ -378,6 +378,25 @@ export const AUDIT_ACTIONS = {
     scope: "LOCATION",
     fields: ["revisionId", "versionNumber", "status"],
   },
+  // Phase 21 allergen labels (policy 20): codes only, organization-wide configuration.
+  "recipes.allergen-changed": {
+    category: "MENU",
+    entityType: "allergen",
+    scope: "ORGANIZATION",
+    fields: ["code", "name", "active"],
+  },
+  "recipes.ingredient-allergens-changed": {
+    category: "MENU",
+    entityType: "inventory_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "allergenCodes"],
+  },
+  "recipes.menu-item-allergens-changed": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "declared"],
+  },
 
   // Inventory
   // Phase 20 (policy 6): stocking an item at a location, or changing its levels or supplier.
@@ -538,6 +557,64 @@ export const AUDIT_ACTIONS = {
     entityType: "tip_declaration",
     scope: "LOCATION",
     fields: ["employeeId", "businessDate", "changed"],
+  },
+
+  // Phase 21 guest profiles (policy 20). Field names and allergen codes only: never contact
+  // details, notes, preferences or allergy notes.
+  "guests.profile-created": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "vip"],
+  },
+  "guests.profile-updated": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "changedFields"],
+  },
+  "guests.vip-changed": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "vip"],
+  },
+  "guests.allergies-changed": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "guestPartyId", "orderId", "added", "removed"],
+  },
+  "guests.party-linked": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "LOCATION",
+    fields: ["profileNumber", "guestPartyId"],
+  },
+  "guests.party-unlinked": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "LOCATION",
+    fields: ["profileNumber", "guestPartyId"],
+  },
+  "guests.profile-merged": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "keptProfileNumber", "partiesMoved", "allergiesAdded", "reason"],
+  },
+  "guests.profile-erased": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "reason"],
+  },
+  // Phase 21 (policy 14): a server sent an item despite a conflict with recorded allergies.
+  "orders.allergen-acknowledged": {
+    category: "ORDERS",
+    entityType: "order",
+    scope: "LOCATION",
+    fields: ["orderNumber", "orderItemId", "itemCode", "allergenCodes", "severity", "incompleteLabel"],
   },
 
   // Reporting

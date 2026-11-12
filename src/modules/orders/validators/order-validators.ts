@@ -66,7 +66,19 @@ export const sendOrderSchema = z.object({
   idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
   /** Phase 17: ALL (default) fires everything; FIRST_COURSE holds later courses. */
   fire: z.enum(["ALL", "FIRST_COURSE"]).default("ALL"),
+  /** Phase 21: draft items confirmed despite an allergy conflict. */
+  acknowledgedAllergenItemIds: z.array(z.uuid()).max(100).optional(),
 });
+
+/** Phase 21 (policy 8): an allergy on a check with no guest party. */
+export const orderAllergySchema = z.object({
+  expectedVersion,
+  allergenId: z.uuid(),
+  severity: z.enum(["SEVERE", "ALLERGY"]),
+  note: z.string().trim().max(200).nullable().default(null),
+});
+
+export const removeOrderAllergySchema = z.object({ expectedVersion });
 
 export const fireCourseParamsSchema = z.object({ orderId: z.uuid(), course: z.coerce.number().int().min(1).max(5) });
 

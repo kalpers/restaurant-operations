@@ -13,6 +13,7 @@ import {
   readLocationClock,
 } from "@/modules/restaurant/services/access";
 import { addDays } from "@/shared/time/zoned-time";
+import { listAllergens } from "@/modules/recipes/queries/allergen-facts";
 
 export default async function ReservationsPage() {
   const { location, actor } = await requirePageActor("reservations.view");
@@ -30,6 +31,8 @@ export default async function ReservationsPage() {
     seat: actorHolds(actor, "restaurant.seat"),
     overrideHold: actorHolds(actor, "reservations.override-hold"),
     capacityOverride: actorHolds(actor, "restaurant.capacity.override"),
+    guests: { view: actorHolds(actor, "guests.view"), manage: actorHolds(actor, "guests.manage") },
+    allergens: (await listAllergens(database, actor.organizationId)).map(({ id, name, active }) => ({ id, name, active })),
   };
 
   return (
@@ -42,6 +45,7 @@ export default async function ReservationsPage() {
           floor: actorHolds(actor, "restaurant.view"),
           reservations: true,
           waitlist: actorHolds(actor, "waitlist.view"),
+          guests: actorHolds(actor, "guests.view"),
         }}
       />
       <ReservationsBoard

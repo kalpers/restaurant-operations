@@ -1,4 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { attachProfileToParty } from "./guest-profile-service";
+import { loadPartyGuestFacts } from "./party-allergy-service";
+import type { PartyGuestView } from "./reservation-service";
 
 import type { Database } from "@/db";
 import { isUniqueViolation } from "@/db/helpers/database-errors";
@@ -53,6 +56,8 @@ export type AddToWaitlistInput = {
   quotedWaitMinutes?: number | null;
   preferredAreaId?: string | null;
   notes?: string | null;
+  /** Phase 21 (policy 2): the walk-in's guest profile, linked by hand. Needs `guests.manage`. */
+  guestProfileId?: string | null;
 };
 
 function blankToNull(value: string | null | undefined): string | null {
@@ -195,6 +200,10 @@ export async function addToWaitlist(
           userId: actor.userId,
           occurredAt: now,
         });
+
+        if (input.guestProfileId) {
+          await attachProfileToParty(transaction, actor, { guestPartyId: partyId, guestProfileId: input.guestProfileId });
+        }
       }
 
       const [entry] = await transaction
@@ -432,6 +441,8 @@ export type WaitlistView = {
   hasReservation: boolean;
   /** Tables the host picked. Planning only; nothing is occupied. */
   assignedTables: { id: string; tableNumber: string }[];
+  /** Phase 21: the party's version, linked guest profile and this visit's allergies. */
+  guest: PartyGuestView;
 };
 
 /** The open entries, oldest first, or the day's entries with `includeClosed`. */
@@ -483,10 +494,16 @@ export async function listWaitlist(
       : [],
   );
 
+  const guests = await loadPartyGuestFacts(
+    executor,
+    visible.map(({ party }) => party.id),
+  );
+
   return visible.map(({ entry, party }) => ({
     id: entry.id,
     version: entry.version,
     guestPartyId: party.id,
+    guest: { partyVersion: party.version, ...(guests.get(party.id) ?? { profile: null, allergies: [] }) },
     guestName: party.guestName,
     partySize: party.partySize,
     phone: party.phone,

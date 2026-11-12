@@ -207,6 +207,8 @@ export async function remakeOrderItem(
               menuItemNameSnapshot: first.menuItemNameSnapshot,
               modifierSnapshots: first.modifierSnapshots,
               kitchenInstructionsSnapshot: first.kitchenInstructionsSnapshot,
+              // Phase 21: a remade dish keeps its allergy alert.
+              allergyAlertSnapshot: first.allergyAlertSnapshot,
               submittedAt: at,
               createdAt: at,
               updatedAt: at,

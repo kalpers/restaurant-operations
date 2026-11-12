@@ -85,6 +85,15 @@ function ItemRow({ item }: { item: QueueItem }) {
               </span>
             )}
           </p>
+          {item.allergyAlert && (
+            <p
+              role="alert"
+              data-testid="ticket-allergy-alert"
+              className="mt-1 rounded border-2 border-danger-600 bg-danger-50 px-2 py-1 text-base font-bold text-danger-800"
+            >
+              {item.allergyAlert}
+            </p>
+          )}
           {item.modifiers.length > 0 && (
             <ul className="text-base">
               {item.modifiers.map((modifier, index) => (

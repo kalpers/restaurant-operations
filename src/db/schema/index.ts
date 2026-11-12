@@ -1,4 +1,5 @@
 // Drizzle schema entry point. Each domain gets one file here, re-exported below.
+export * from "./allergens";
 export * from "./auditing";
 export * from "./auth";
 export * from "./drawers";

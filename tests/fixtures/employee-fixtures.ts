@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { eq, inArray, ne } from "drizzle-orm";
+import { eq, inArray, ne, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 import type { Database } from "@/db";
@@ -19,6 +19,11 @@ import {
   employees,
   employeeStatusHistory,
   guestParties,
+  guestPartyAllergies,
+  guestProfileAllergies,
+  guestProfileMerges,
+  guestProfileNumberCounters,
+  guestProfiles,
   locations,
   partyStatusHistory,
   reservationHoldOverrides,
@@ -166,6 +171,27 @@ export function createEmployeeFixture(
 }
 
 /**
+ * Phase 21: visit allergies, guest parties, and guest profiles with their allergies, merges and
+ * counters. Profiles and merges are guarded against deletes, so the guards are lifted for this
+ * transaction only (test database).
+ */
+export async function clearGuestProfileData(database: Database): Promise<void> {
+  await database.transaction(async (transaction) => {
+    await transaction.execute(sql`ALTER TABLE guest_profiles DISABLE TRIGGER guest_profiles_guard`);
+    await transaction.execute(sql`ALTER TABLE guest_profile_merges DISABLE TRIGGER guest_profile_merges_guard`);
+    await transaction.delete(guestPartyAllergies);
+    await transaction.delete(guestParties);
+    await transaction.delete(guestProfileMerges);
+    await transaction.delete(guestProfileAllergies);
+    await transaction.update(guestProfiles).set({ mergedIntoProfileId: null });
+    await transaction.delete(guestProfiles);
+    await transaction.delete(guestProfileNumberCounters);
+    await transaction.execute(sql`ALTER TABLE guest_profile_merges ENABLE TRIGGER guest_profile_merges_guard`);
+    await transaction.execute(sql`ALTER TABLE guest_profiles ENABLE TRIGGER guest_profiles_guard`);
+  });
+}
+
+/**
  * Everything a test created on the floor. The seeded floor at MAIN is kept, so a table
  * only goes if a fixture location owns it: tests run on their own fixture locations.
  */
@@ -181,7 +207,7 @@ export async function clearRestaurantData(database: Database): Promise<void> {
   await database.delete(tableSessionTables);
   await database.delete(tableSessions);
   await database.delete(partyStatusHistory);
-  await database.delete(guestParties);
+  await clearGuestProfileData(database);
   await database.delete(serverSectionAssignments);
 
   const main = await database

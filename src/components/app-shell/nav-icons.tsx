@@ -1,5 +1,7 @@
 import {
   Activity,
+  BookUser,
+  Wheat,
   Ban,
   PackagePlus,
   Percent,
@@ -93,6 +95,8 @@ export const NAV_ICONS: Record<NavigationIcon, LucideIcon> = {
   tips: HandCoins,
   "eighty-six": Ban,
   "suggested-orders": PackagePlus,
+  guests: BookUser,
+  allergens: Wheat,
   tables: LayoutGrid,
   sections: Square,
 };

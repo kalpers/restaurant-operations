@@ -83,3 +83,38 @@ export const addIngredientSchema = z.object({ inventoryItemId: z.uuid(), ...ingr
 export const updateIngredientSchema = z.object(ingredientFields);
 export const removeIngredientSchema = z.object({ expectedVersion });
 export const copyIngredientsSchema = z.object({ fromRevisionId: z.uuid(), expectedVersion });
+
+// Phase 21 allergen setup (policies 6, 9, 10).
+const allergenCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z][A-Z0-9_]{0,39}$/, "Start with a letter; use capital letters, digits and underscores.");
+const reviewVersion = z.int().positive().nullable();
+
+export const allergenIdParamsSchema = z.object({ allergenId: z.uuid() });
+
+export const createAllergenSchema = z.object({
+  code: allergenCode,
+  name: requiredText(60),
+  displayOrder: z.int().min(0).max(9999).default(0),
+});
+
+export const updateAllergenSchema = z.object({
+  name: requiredText(60),
+  displayOrder: z.int().min(0).max(9999),
+  active: z.boolean(),
+  expectedVersion,
+});
+
+export const setIngredientAllergensSchema = z.object({
+  allergenIds: z.array(z.uuid()).max(50),
+  expectedReviewVersion: reviewVersion,
+});
+
+export const setMenuItemAllergensSchema = z.object({
+  declared: z
+    .array(z.object({ allergenId: z.uuid(), kind: z.enum(["CONTAINS", "MAY_CONTAIN"]) }))
+    .max(50),
+  expectedReviewVersion: reviewVersion,
+});

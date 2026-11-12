@@ -15,6 +15,7 @@ import { getOperationalMenu } from "@/modules/menu/queries/operational-menu";
 import { getOrderDetail, listOrders } from "@/modules/orders/queries/order-queries";
 import { actorHolds } from "@/modules/orders/services/access";
 import { listDiscountDefinitions } from "@/modules/orders/services/discount-service";
+import { listAllergens } from "@/modules/recipes/queries/allergen-facts";
 import { NotFoundError } from "@/shared/errors/app-error";
 
 export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
@@ -44,7 +45,9 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     move: actorHolds(actor, "orders.move-items"),
     newCheck: actorHolds(actor, "orders.move-items") && actorHolds(actor, "orders.create"),
     taxExempt: actorHolds(actor, "tax.exempt"),
+    saveAllergyToProfile: actorHolds(actor, "guests.manage"),
   };
+  const allergens = (await listAllergens(database, actor.organizationId)).map(({ id, name, active }) => ({ id, name, active }));
   const heldCourses = order.status === "OPEN" ? await heldCoursesForOrder(database, order.id) : [];
   // Other open checks at the same table, for moving items between them (Phase 17).
   const otherChecks =
@@ -106,6 +109,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
         fulfillment={fulfillment}
         heldCourses={heldCourses}
         otherChecks={otherChecks}
+        allergens={allergens}
       />
     </>
   );

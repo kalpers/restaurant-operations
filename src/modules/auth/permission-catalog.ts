@@ -78,6 +78,12 @@ export const PERMISSION_CATALOG = [
   { code: "waitlist.manage", name: "Manage the waitlist", category: "Waitlist" },
   { code: "waitlist.notify", name: "Record waitlist notifications", category: "Waitlist" },
   { code: "waitlist.seat", name: "Seat waitlist parties", category: "Waitlist" },
+  // Phase 21 guest profiles (policy 19, D13).
+  { code: "guests.view", name: "View guest profiles, allergies and visit history", category: "Guests" },
+  { code: "guests.contact.view", name: "View guest phone numbers and email addresses", category: "Guests" },
+  { code: "guests.manage", name: "Create and edit guest profiles and link them to parties", category: "Guests" },
+  { code: "guests.merge", name: "Merge duplicate guest profiles", category: "Guests" },
+  { code: "guests.erase", name: "Erase a guest profile's personal data", category: "Guests" },
 
   { code: "menu.view", name: "View menu", category: "Menu" },
   { code: "menu.edit", name: "Edit menu", category: "Menu" },
@@ -93,6 +99,8 @@ export const PERMISSION_CATALOG = [
 
   { code: "recipes.view", name: "View recipes", category: "Recipes" },
   { code: "recipes.edit", name: "Edit and publish recipes", category: "Recipes" },
+  // Phase 21 allergen labeling (policy 19).
+  { code: "recipes.allergens.manage", name: "Manage allergens, ingredient allergen tags and declared menu allergens", category: "Recipes" },
 
   { code: "inventory.view", name: "View inventory", category: "Inventory" },
   { code: "inventory.receive", name: "Receive inventory", category: "Inventory" },

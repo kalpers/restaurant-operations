@@ -28,6 +28,8 @@ This is the usual path from a guest's arrival through closing their table. Takeo
 
 Reservation holds appear on the floor. An override may require a reason and the appropriate permission.
 
+**Guest profiles and allergies.** When booking or adding a walk-in, use **Find a guest profile**: type a name (or phone or email, if you can see contact details) and pick the guest, or choose **New profile for "…"**. Nothing links by itself, so check it's the right person. On a reservation or waitlist card, **Guest & allergies** shows the linked profile and the allergies for this visit: link or change the profile, and **Record allergy** (allergen, *Allergy* or *Severe*, an optional note). Tick **Also save to the profile** to keep it for next time. A profile's allergies are copied onto each visit linked to it. Cards show a **VIP** mark and an **Allergy** mark with the allergen names.
+
 ### 2. Seat the party
 
 1. Open **Restaurant floor** and check the table's status. Only clean, available tables can normally be selected.
@@ -57,6 +59,8 @@ The check on the right stays in view while you scroll the menu. It shows how man
 **Sharing one item.** To split one sent item (a bottle of wine, a shared platter) between guests, choose **Share between checks** on it, pick the number of shares (2 to 10) and the check each share goes on. The price is split into equal shares, to the cent, with its tax. The item is still made once: its kitchen work and stock stay with it. A discounted item can't be shared; remove the discount first. To take a share off a check, choose **Void share** under **Shared items**; it removes the money only.
 
 **Tax-exempt checks.** A manager can choose **Make tax exempt** under the totals, give a reason and, if the guest has one, an exemption certificate reference (never a card number). The check then pays no tax; items whose price includes tax are reduced by that tax. **Remove tax exemption** undoes it while the check is open. Neither can change while the check is being settled.
+
+**Allergies on the check.** The **Allergies** box at the top of the check shows the party's allergies (from the host stand or the guest's profile), or, on a takeout or bar check with no party, the check's own; choose **Add allergy** to record one. Each item shows its allergens (and **May contain …** for cross-contact). An item that matches an allergy, or whose allergens haven't been fully reviewed (**Allergens incomplete**), shows a red warning. When you send, a window lists those items: check with the guest, then choose **Guest confirmed, send**, or **Don't send yet** to change the order. Confirmed items show **Sent after allergy check**, and the kitchen ticket shows the allergy alert at the top of the item.
 
 Submitted items are historical records. To void one, choose **Void item** on it: a window asks for a reason and whether it was prepared, and for a final confirmation. Choose **Not prepared** only when it was not prepared; prepared or discarded food remains consumed.
 
@@ -137,6 +141,17 @@ Open **Employees** to view or manage employee records according to your permissi
 
 Open **Menu** to review currently available, priced menu items and their modifiers. Users with configuration access can choose **Configure menu** or open **Menu & Recipes** to manage menu and recipe data. Orders already submitted retain their recorded item, price, modifier, and recipe-related snapshots when configuration later changes.
 
+### Guests
+
+Open **Guests** (under **Service**, or the tab at the host stand) to find a guest by name, or by phone or email if you can see contact details. A profile shows visits (date, location, party, what was ordered and the check total), no-shows, average spend, allergies, preferences and notes. Hosts and managers edit profiles; servers can look guests up but don't see phone or email. Never record payment details on a profile.
+
+- **Merge:** a manager opens the duplicate, finds the profile to keep, gives a reason and confirms. Visits and allergies move over (the more severe allergy wins), and the duplicate closes. A merge can't be undone.
+- **Erase:** when a guest asks to be forgotten, an owner or general manager chooses **Erase personal data**. The name becomes "Erased guest" and contact details, notes, preferences and allergies are removed from the profile, any profile merged into it and its past visits. Orders and reports are kept. Don't put the guest's name in the reason.
+
+### Allergens
+
+Managers and inventory managers set allergens up. On each inventory item, under **Allergens**, tick what the ingredient contains and choose **Save and mark reviewed**, even when it contains none. On a menu item, the **Allergens** section shows the label worked out from its recipe; declare **Contains** for what the recipe doesn't show (an item with no recipe) and **May contain** for cross-contact, then save. **Allergens** under **Back of house** lists ingredients in current recipes that nobody has reviewed, and manages the allergen list. Until every ingredient of an item is reviewed, the item shows **Allergens incomplete**, which servers treat as a possible match. Labels are only as good as this data.
+
 ### The 86 board
 
 Open **86 board** to see what can't be sold at your location right now, what is running low (five portions or fewer, from recorded stock and the current recipe), what is being sold anyway today, and what was restored today. Everyone with menu access can see it.
@@ -209,6 +224,7 @@ The bell shows in-app notices for you: food and drinks ready, low stock, a publi
 ## Current Scope Notes
 
 - The application records settlement details but does not process payments.
+- Guest profiles have no loyalty points, marketing consent or messages to guests. Allergies apply to the whole party or check, not to one seat. Nutrition facts aren't shown.
 - Compound or stacked taxes, service charges and splitting a check evenly by amount aren't supported.
 - A closed check can't be reopened; corrections after closing are refund records.
 - The time clock and tip pool are record only: no payroll, pay stubs or tip payouts. Overtime is weekly, plus daily if a manager sets a daily threshold; both are your own settings, not a labor-law calculation.

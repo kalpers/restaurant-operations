@@ -53,6 +53,8 @@ const EVENT_TYPES = [
   "drawer.movement-recorded",
   // Phase 19: an item 86'd, restored or set to sell anyway.
   "menu.availability-changed",
+  // Phase 21: a party's or check's allergies changed.
+  "guest.allergies-changed",
 ];
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {

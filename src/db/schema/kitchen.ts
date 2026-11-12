@@ -140,6 +140,8 @@ export const kitchenTicketItems = pgTable(
     /** [{ groupName, code, name, preparationInstruction }] in selection order. */
     modifierSnapshots: jsonb("modifier_snapshots").notNull(),
     kitchenInstructionsSnapshot: text("kitchen_instructions_snapshot"),
+    /** Phase 21 (policy 14): "ALLERGY: ..." when the server acknowledged a conflict at SEND. */
+    allergyAlertSnapshot: text("allergy_alert_snapshot"),
     submittedAt: timestamptz("submitted_at").notNull(),
     startedAt: timestamptz("started_at"),
     startedByUserId: uuid("started_by_user_id").references(() => users.id, { onDelete: "restrict" }),

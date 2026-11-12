@@ -19,6 +19,7 @@ import { activeColumn, uuidPrimaryKey } from "../helpers/columns";
 import { money, quantity } from "../helpers/numeric";
 import { businessDate, createdAt, timestamptz, updatedAt } from "../helpers/timestamps";
 import { versionColumn } from "../helpers/versioning";
+import { allergens } from "./allergens";
 import { users } from "./auth";
 import { employees } from "./employees";
 import { guestParties } from "./guest-parties";
@@ -293,6 +294,17 @@ export const orderItems = pgTable(
       onDelete: "restrict",
     }),
     menuCategoryNameSnapshot: text("menu_category_name_snapshot"),
+    /**
+     * Phase 21 (policy 14): whether the allergen label was incomplete at SEND (null for drafts
+     * and items sent before), and the server's acknowledgment of a conflict with the order's
+     * allergies: who, when, and what it was. All frozen with the other snapshots.
+     */
+    allergenLabelIncompleteSnapshot: boolean("allergen_label_incomplete_snapshot"),
+    allergyAcknowledgedByUserId: uuid("allergy_acknowledged_by_user_id").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    allergyAcknowledgedAt: timestamptz("allergy_acknowledged_at"),
+    allergyConflictSnapshot: text("allergy_conflict_snapshot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -350,6 +362,13 @@ export const orderItems = pgTable(
       "order_items_category_snapshot_fields",
       sql`(${table.menuCategoryId} IS NULL) = (${table.menuCategoryNameSnapshot} IS NULL)
         AND (${table.status} <> 'DRAFT' OR ${table.menuCategoryId} IS NULL)`,
+    ),
+    check(
+      "order_items_allergy_snapshot_fields",
+      sql`(${table.allergyAcknowledgedAt} IS NULL) = (${table.allergyAcknowledgedByUserId} IS NULL)
+        AND (${table.allergyAcknowledgedAt} IS NULL) = (${table.allergyConflictSnapshot} IS NULL)
+        AND (${table.allergyAcknowledgedAt} IS NULL OR ${table.allergenLabelIncompleteSnapshot} IS NOT NULL)
+        AND (${table.status} <> 'DRAFT' OR (${table.allergenLabelIncompleteSnapshot} IS NULL AND ${table.allergyAcknowledgedAt} IS NULL))`,
     ),
     index("order_items_order_status_idx").on(table.orderId, table.status),
     index("order_items_send_batch_idx").on(table.sendBatchId),
@@ -759,5 +778,68 @@ export const orderItemShares = pgTable(
         AND (${table.taxRateSnapshot} IS NOT NULL OR NOT ${table.taxIncludedSnapshot})`,
     ),
     index("order_item_shares_order_idx").on(table.orderId, table.status),
+  ],
+);
+
+/**
+ * Phase 21 (policy 11): an item's allergen label as it was at SEND, one row per allergen.
+ * Written once with the send and never changed (guard trigger, migration 0050).
+ */
+export const orderItemAllergens = pgTable(
+  "order_item_allergens",
+  {
+    id: uuidPrimaryKey(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItems.id, { onDelete: "restrict" }),
+    allergenId: uuid("allergen_id")
+      .notNull()
+      .references(() => allergens.id, { onDelete: "restrict" }),
+    allergenCodeSnapshot: text("allergen_code_snapshot").notNull(),
+    allergenNameSnapshot: text("allergen_name_snapshot").notNull(),
+    kind: text("kind").notNull(),
+    source: text("source").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("order_item_allergens_item_allergen_unique").on(table.orderItemId, table.allergenId),
+    check("order_item_allergens_kind_valid", sql`${table.kind} IN ('CONTAINS', 'MAY_CONTAIN')`),
+    check("order_item_allergens_source_valid", sql`${table.source} IN ('DERIVED', 'DECLARED')`),
+  ],
+);
+
+/**
+ * Phase 21 (policy 8): allergies recorded on a check with no guest party (takeout, a bar tab),
+ * which the order warning checks. Removed rows are gone; sent items keep their snapshots.
+ */
+export const orderAllergies = pgTable(
+  "order_allergies",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: uuid("organization_id").notNull(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "restrict" }),
+    allergenId: uuid("allergen_id").notNull(),
+    severity: text("severity").notNull(),
+    note: text("note"),
+    recordedByUserId: uuid("recorded_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    recordedAt: timestamptz("recorded_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "order_allergies_allergen_org_fk",
+      columns: [table.allergenId, table.organizationId],
+      foreignColumns: [allergens.id, allergens.organizationId],
+    }).onDelete("restrict"),
+    unique("order_allergies_order_allergen_unique").on(table.orderId, table.allergenId),
+    check("order_allergies_severity_valid", sql`${table.severity} IN ('SEVERE', 'ALLERGY')`),
+    check(
+      "order_allergies_note_valid",
+      sql`${table.note} IS NULL OR (length(${table.note}) <= 200 AND ${table.note} !~ '[0-9]{13,}')`,
+    ),
   ],
 );

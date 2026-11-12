@@ -47,6 +47,7 @@ export default async function FloorPage() {
           floor: true,
           reservations: actorHolds(actor, "reservations.view"),
           waitlist: actorHolds(actor, "waitlist.view"),
+          guests: actorHolds(actor, "guests.view"),
         }}
       />
       <FloorBoard

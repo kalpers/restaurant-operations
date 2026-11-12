@@ -49,6 +49,8 @@ export const createReservationSchema = z.object({
   notes: optionalText(500),
   status: z.enum(CREATABLE_RESERVATION_STATUSES).default("CONFIRMED"),
   tableIds: tableIds.default([]),
+  /** Phase 21: link the new visit to a guest profile. */
+  guestProfileId: z.uuid().nullable().default(null),
 });
 
 export const updateReservationSchema = z.object({
@@ -113,6 +115,8 @@ export const seatWaitlistSchema = z.object({
 export const seatWalkInSchema = z.object({
   ...guestFields,
   ...seatOptions,
+  /** Phase 21: link the walk-in to a guest profile. */
+  guestProfileId: z.uuid().nullable().default(null),
 });
 
 export const addToWaitlistSchema = z
@@ -127,6 +131,8 @@ export const addToWaitlistSchema = z
     quotedWaitMinutes: z.int().min(0).max(24 * 60).nullable().default(null),
     preferredAreaId: z.uuid().nullable().default(null),
     notes: optionalText(500),
+    /** Phase 21: link the new walk-in to a guest profile. */
+    guestProfileId: z.uuid().nullable().default(null),
   })
   .refine(
     (value) => value.guestPartyId || (value.guestName && value.partySize),
@@ -160,3 +166,54 @@ export const recommendationQuerySchema = z.object({
 export const quoteQuerySchema = z.object({
   partySize: z.coerce.number().int().min(1).max(500),
 });
+
+// Phase 21 guest profiles (policies 1-8). Shape only; the services apply the rules.
+const severity = z.enum(["SEVERE", "ALLERGY"]);
+const allergy = z.object({ allergenId: z.uuid(), severity, note: optionalText(200) });
+
+export const guestProfileIdParamsSchema = z.object({ profileId: z.uuid() });
+export const guestPartyIdParamsSchema = z.object({ partyId: z.uuid() });
+
+const profileFields = {
+  displayName: requiredText(120),
+  phone: optionalText(40),
+  email: optionalText(254),
+  vip: z.boolean().default(false),
+  vipReason: optionalText(200),
+  preferences: optionalText(500),
+  notes: optionalText(1000),
+  otherDietaryNeeds: optionalText(500),
+};
+
+export const createGuestProfileSchema = z.object({
+  ...profileFields,
+  allergies: z.array(allergy).max(30).default([]),
+});
+
+export const updateGuestProfileSchema = z.object({ ...profileFields, expectedVersion });
+
+export const setGuestAllergiesSchema = z.object({ allergies: z.array(allergy).max(30), expectedVersion });
+
+export const guestSearchSchema = z.object({ q: z.string().trim().max(120).default("") });
+
+export const linkPartySchema = z.object({ guestProfileId: z.uuid(), expectedPartyVersion: expectedVersion });
+export const unlinkPartySchema = z.object({ expectedPartyVersion: expectedVersion });
+
+export const partyAllergySchema = z.object({
+  expectedPartyVersion: expectedVersion,
+  allergenId: z.uuid(),
+  severity,
+  note: optionalText(200),
+  saveToProfile: z.boolean().default(false),
+});
+
+export const removePartyAllergySchema = z.object({ expectedPartyVersion: expectedVersion, allergenId: z.uuid() });
+
+export const mergeGuestProfilesSchema = z.object({
+  keptProfileId: z.uuid(),
+  duplicateVersion: expectedVersion,
+  keptVersion: expectedVersion,
+  reason: requiredText(200),
+});
+
+export const eraseGuestProfileSchema = z.object({ expectedVersion, reason: requiredText(200) });

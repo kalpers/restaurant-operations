@@ -1,20 +1,22 @@
 import Link from "next/link";
 
 export type HostTabsProps = {
-  active: "floor" | "reservations" | "waitlist";
-  abilities: { floor: boolean; reservations: boolean; waitlist: boolean };
+  active: "floor" | "reservations" | "waitlist" | "guests";
+  abilities: { floor: boolean; reservations: boolean; waitlist: boolean; guests?: boolean };
 };
 
 const TABS = [
   { key: "floor", href: "/restaurant/floor", label: "Floor" },
   { key: "reservations", href: "/host/reservations", label: "Reservations" },
   { key: "waitlist", href: "/host/waitlist", label: "Waitlist" },
+  // Phase 21: guest profiles.
+  { key: "guests", href: "/host/guests", label: "Guests" },
 ] as const;
 
-/** Moves among the host's three views. Usability only: each page checks its own permission. */
+/** Moves among the host's views. Usability only: each page checks its own permission. */
 export function HostTabs({ active, abilities }: HostTabsProps) {
   return (
-    <nav aria-label="Host views" className="mb-4 flex gap-2">
+    <nav aria-label="Host views" className="mb-4 flex flex-wrap gap-2">
       {TABS.filter((tab) => abilities[tab.key]).map((tab) => (
         <Link
           key={tab.key}

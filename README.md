@@ -571,6 +571,11 @@ reservation_hold_overrides
 waitlist_entries
 waitlist_table_assignments
 party_status_history
+guest_profiles
+guest_profile_number_counters
+guest_profile_allergies
+guest_profile_merges
+guest_party_allergies
 ```
 
 `waitlist_table_assignments` keeps the host's planned table selection as replaceable history, and `reservation_hold_overrides` is the append-only record of a manager seating an unrelated party under a hold. Neither is an audit log, and the Guest Party link is a nullable `table_sessions.guest_party_id`.
@@ -630,6 +635,8 @@ Walk-in hold protection:
 These are distinct calculations. A `NO_SHOW` is a manual transition allowed only for `CONFIRMED` reservations at or after the configured post-grace time; record actor/time and release planned table assignments. It never undoes actual seating. Combined-table recommendations use at most three tables from one Restaurant Area and never reserve or occupy them.
 
 Takeout must not be represented by a fake table.
+
+Phase 21 adds guest profiles, owned by this domain: a guest known across visits, organization-wide, with optional phone and email (normalized for lookup, not unique), a VIP flag, preferences, notes and allergies. A Guest Party links to a profile by hand (`guest_parties.guest_profile_id`); suggestions match phone, email or name, but nothing links itself. Linking copies the profile's allergies onto the visit (`guest_party_allergies`, source `PROFILE`); staff may add allergies for the visit only (`RECORDED`). Duplicates are merged by a manager (the duplicate becomes `MERGED`, never undone, with a `guest_profile_merges` row). Erasing a profile clears its personal data, that of profiles merged into it and the contact details of its visits, and keeps orders and history. Visit history is worked out on read from linked parties and order snapshots. Contact details need `guests.contact.view`; audit rows name fields and allergen codes only. Loyalty, marketing consent and guest messaging are not built. See section 33.
 
 ## 14. Domain 07: Menu Management
 
@@ -693,6 +700,11 @@ recipes
 recipe_versions
 recipe_version_ingredients
 modifier_inventory_effects
+allergens
+inventory_item_allergens
+ingredient_allergen_reviews
+menu_item_allergens
+menu_item_allergen_reviews
 ```
 
 Recipe identity (`recipes`), immutable revisions (`recipe_versions`) and the unit vocabulary arrive in Phase 7. `recipe_version_ingredients` (a revision's requirements) and `modifier_inventory_effects` (how a modifier changes one Menu Item's requirements) reference Inventory Items and arrive in Phase 8. See sections 33 (Phase 7 and Phase 8 policies).
@@ -720,6 +732,8 @@ Substitution should generally be represented as multiple ingredient adjustments.
 Remove American Cheese
 Add Swiss Cheese
 ```
+
+Phase 21 adds allergen labels. Ingredients are tagged with what they contain from the organization's allergen list (seeded with the nine major US allergens), and each ingredient's tags carry a review mark. A menu item's label is worked out on read from the ingredients left after its current recipe and the chosen modifiers, plus allergens the item declares by hand (`CONTAINS`, or `MAY_CONTAIN` for cross-contact). A label is incomplete while any ingredient is unreviewed, or, for an item with no ingredients, until its declarations are reviewed; an incomplete label is never shown as allergen free. SEND snapshots the label. See section 33.
 
 ## 16. Domain 09: Inventory and Purchasing
 
@@ -847,8 +861,11 @@ Submitted order items store:
 - Recipe ID used
 - Consumption snapshot
 - Relevant kitchen instructions
+- Allergen label (Phase 21: `order_item_allergens`, and whether it was incomplete)
 
 Never recalculate historical consumption from the current recipe.
+
+Phase 21: an item whose label matches the order's recorded allergies (the guest party's, or the check's own `order_allergies` for takeout and bar tabs), or whose label is incomplete while the order has any allergy, is refused at SEND with `ALLERGEN_ACKNOWLEDGMENT_REQUIRED` until the request names it as acknowledged. The refusal writes nothing, so the confirmed retry may reuse its idempotency key. The acknowledgment (who, when, what) is frozen on the item and its kitchen ticket shows an allergy alert.
 
 ### Voids and physical inventory
 
@@ -909,6 +926,8 @@ Support architecturally:
 As built in Phase 10, the approved Phase 10 policies replace recall with an explicit Remake (a new linked attempt). Phase 17 added courses and hold/fire without a new item state: a ticket holds one course of one send batch, and SEND can hold the courses above the round's lowest. A held ticket's items stay `NEW`, off the station queues, until its course is fired; inventory was already consumed at SEND. See section 33.
 
 Overall order state and kitchen fulfillment state remain separate.
+
+Phase 21: a ticket item sent after an allergy acknowledgment carries `allergy_alert_snapshot` ("ALLERGY: Peanuts (severe)"), shown at the top of the item; a remake keeps it.
 
 ## 19. Domain 12: Order Settlement
 
@@ -975,7 +994,7 @@ Audit attributes include:
 
 Audit data is append-only.
 
-Never include passwords, password hashes, session tokens, secrets, prohibited payment information, or unnecessary sensitive HR data.
+Never include passwords, password hashes, session tokens, secrets, prohibited payment information, or unnecessary sensitive HR data. Phase 21 adds the `GUESTS` category: guest audit rows name changed fields and allergen codes, never contact details, notes, preferences or allergy notes.
 
 Audit access is permission controlled.
 
@@ -1103,6 +1122,8 @@ Reporting is:
 Hidden UI is not authorization.
 
 Reporting APIs must independently enforce authorization.
+
+Phase 21: the seating report counts seated parties linked to a guest profile and returning guests. Reports never show or export guest names or contact details.
 
 ## 22. Notifications
 
@@ -1892,6 +1913,17 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 21 Guest Profiles and Allergens
+
+Phase 21 builds the CRM part of section 39 with allergen labeling, by owner decision on 2026-11-12 (plan approved with D1–D16 as recommended). Loyalty, marketing consent, guest messaging, online reservations, nutrition facts and per-seat allergies stay out. Plan: `docs/Phase-21-Guest-Profiles-and-Allergens.md`. Report: `docs/Phase-21-Completion-Report.md`. It supersedes the Phase 6 plan's "no customer profile" lines (sections 6 and 7); the bans on loyalty and marketing consent stay.
+
+- **Guest profiles (Reservations).** `guest_profiles` (organization-wide; human-readable `profile_number` from a per-organization counter; ACTIVE, MERGED or ERASED, guarded by a trigger), `guest_profile_allergies` (allergen, `SEVERE` or `ALLERGY`, note). A party links by hand at reservation or walk-in creation, or later (`PUT/DELETE /api/guest-parties/{id}/profile`), while it isn't finished. Search: an exact phone or email match first (only with `guests.contact.view`), then names. Editing a profile's allergies refreshes the `PROFILE` allergies of its unfinished visits. Merge moves visits and missing allergies (the more severe wins); erase clears the profile, every profile merged into it (a MERGED profile may change once more, only to be erased) and its visits' contact details and allergies. Free text refuses 13 or more digits in a row.
+- **Allergen labels (Recipes).** `allergens` (seeded by `recipes.allergen-foundation`), `inventory_item_allergens` with `ingredient_allergen_reviews`, `menu_item_allergens` with `menu_item_allergen_reviews` (the review marks live in Recipes tables, so `inventory_items` stays Inventory's). `resolveItemAllergens` builds every label from the requirements SEND consumes (`applyModifierEffects`), so the order screen, the menu item page and SEND agree. The Allergens page lists ingredients in current or draft recipes still to review.
+- **Allergies on an order.** The visit's (`guest_party_allergies`, recorded by hosts under `guests.manage` or servers under `orders.edit`) or, for a check with no party, the check's (`order_allergies`). The order screen shows them, each item's label and any conflict. `guest.allergies-changed` refreshes open screens.
+- **SEND.** After recipe and modifier resolution, conflicts are found with `findAllergenConflicts`; unacknowledged ones refuse the round before any write. Acknowledged items get `allergy_acknowledged_by_user_id`, `allergy_acknowledged_at` and `allergy_conflict_snapshot`; every sent item gets `allergen_label_incomplete_snapshot` and its `order_item_allergens` rows (insert-only, while its send batch is created). Ticket items get the alert. Audit: `orders.allergen-acknowledged`. All frozen; moves and shares keep them.
+- **Permissions** (145 in all): `guests.view`, `guests.contact.view`, `guests.manage`, `guests.merge`, `guests.erase`, `recipes.allergens.manage`, seeded by `security.guest-profiles-permissions`.
+- **Migrations:** `0048` (allergen tables), `0049` (guest profiles, visit and check allergies, SEND snapshots, the `GUESTS` audit category), `0050` (guards).
+
 ### Phase 20 Service Polish and Deferred Features
 
 Phase 20 closed the work left open by Phases 6 to 19, by owner decision on 2026-11-11 (plan approved with D1–D23 as recommended). Reopening a CLOSED check, payments, the section 39 capabilities and cloud deployment stay out. Plan: `docs/Phase-20-Service-Polish-and-Deferred-Features.md`. Report: `docs/Phase-20-Completion-Report.md`.
@@ -2087,6 +2119,12 @@ Close the work left open by Phases 6 to 19. Menu and stock: a category snapshot 
 
 Approved by the owner on 2026-11-11, with decisions D1–D23 as recommended in the plan. It supersedes the Phase 17 and 18 scope lines for tax-inclusive pricing, exemptions, shared items, tip refunds, daily overtime, cash tip declarations and overtime/missed clock-out notifications.
 
+### Phase 21: Guest Profiles and Allergens
+
+Guest profiles linked to Guest Parties by hand (contact details tiered, merge and erase), visit history from snapshots, allergies on the visit or check, allergen labels worked out from recipes and modifiers with an ingredient review mark, and an allergy warning that SEND refuses until acknowledged, with the acknowledgment frozen on the item and shown on the kitchen ticket. Plan: `docs/Phase-21-Guest-Profiles-and-Allergens.md`.
+
+Approved by the owner on 2026-11-12, with decisions D1–D16 as recommended in the plan. It supersedes the Phase 6 plan's lines against customer profiles and visit history.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2184,7 +2222,7 @@ The same idempotency key sent twice for step 9 must produce only one set of oper
 
 Architect for, but do not implement unless specifically requested:
 - Multiple active restaurant locations
-- Customer CRM/loyalty
+- Customer loyalty (guest profiles were built in Phase 21)
 - Delivery integrations
 - DoorDash/Uber Eats integrations
 - External reservation integrations
@@ -2196,7 +2234,7 @@ Architect for, but do not implement unless specifically requested:
 - Demand forecasting based on historical sales/reservations
 - Ingredient lots/FIFO/expiration-by-lot
 - Vendor EDI
-- Nutritional analysis
+- Nutritional analysis (allergen labeling was built in Phase 21)
 - Separate analytics warehouse
 - AI restaurant assistant
 

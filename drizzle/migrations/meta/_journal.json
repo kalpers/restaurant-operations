@@ -337,6 +337,27 @@
       "when": 1794427570130,
       "tag": "0047_service_polish_labor_tips",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794495461003,
+      "tag": "0048_guest_allergens_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794498203375,
+      "tag": "0049_guest_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794498208766,
+      "tag": "0050_guest_profiles_guards",
+      "breakpoints": true
     }
   ]
 }

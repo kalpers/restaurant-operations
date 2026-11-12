@@ -1,4 +1,5 @@
 import { HostTabs } from "@/components/reservations/host-tabs";
+import { listAllergens } from "@/modules/recipes/queries/allergen-facts";
 import {
   WaitlistBoard,
   type WaitlistAbilities,
@@ -45,6 +46,8 @@ export default async function WaitlistPage() {
     seat: actorHolds(actor, "waitlist.seat") && actorHolds(actor, "restaurant.seat"),
     overrideHold: actorHolds(actor, "reservations.override-hold"),
     capacityOverride: actorHolds(actor, "restaurant.capacity.override"),
+    guests: { view: actorHolds(actor, "guests.view"), manage: actorHolds(actor, "guests.manage") },
+    allergens: (await listAllergens(database, actor.organizationId)).map(({ id, name, active }) => ({ id, name, active })),
   };
 
   return (
@@ -57,6 +60,7 @@ export default async function WaitlistPage() {
           floor: actorHolds(actor, "restaurant.view"),
           reservations: actorHolds(actor, "reservations.view"),
           waitlist: true,
+          guests: actorHolds(actor, "guests.view"),
         }}
       />
       <WaitlistBoard

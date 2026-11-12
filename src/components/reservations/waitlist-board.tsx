@@ -18,6 +18,8 @@ import {
   useSubmit,
   type HostTableOption,
 } from "./shared";
+import { GuestPicker, type PickedGuest } from "./guest-picker";
+import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbilities } from "./party-guest-panel";
 import { StatusBadge } from "@/components/format/status-badge";
 
 export type WaitlistAbilities = {
@@ -26,6 +28,9 @@ export type WaitlistAbilities = {
   seat: boolean;
   overrideHold: boolean;
   capacityOverride: boolean;
+  /** Phase 21: guest profiles and visit allergies at the host stand. */
+  guests: HostGuestAbilities;
+  allergens: AllergenOption[];
 };
 
 type WaitlistBoardProps = {
@@ -68,6 +73,7 @@ function AddForm({
   const [seatNow, setSeatNow] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [holdReason, setHoldReason] = useState("");
+  const [profile, setProfile] = useState<PickedGuest | null>(null);
 
   async function suggest() {
     const response = await fetch(`/api/waitlist/quote?partySize=${Number(size) || 1}`);
@@ -96,6 +102,7 @@ function AddForm({
       guestName: name,
       partySize: Number(size),
       phone: phone || null,
+      guestProfileId: profile?.id ?? null,
     };
     const saved = seatNow
       ? await submit("POST", "/api/waitlist/walk-in", {
@@ -116,6 +123,7 @@ function AddForm({
       setSuggestion(null);
       setChosen([]);
       setHoldReason("");
+      setProfile(null);
     }
   }
 
@@ -128,6 +136,27 @@ function AddForm({
       className="mb-6 grid gap-3 rounded-md border border-neutral-300 p-4"
     >
       <h2 className="font-semibold">Add walk-in</h2>
+      {abilities.guests.manage && (
+        <div className="rounded border border-neutral-200 p-3">
+          {profile ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm">
+              Guest profile: <span className="font-medium">{profile.displayName}</span>
+              <span className="text-neutral-500">#{profile.profileNumber}</span>
+              <button type="button" className={BUTTON_CLASS} onClick={() => setProfile(null)}>
+                Clear
+              </button>
+            </p>
+          ) : (
+            <GuestPicker
+              canCreate
+              onPick={(picked) => {
+                setProfile(picked);
+                setName((current) => current || picked.displayName);
+              }}
+            />
+          )}
+        </div>
+      )}
       <label className="grid gap-1 text-sm font-medium">
         Guest name
         <input
@@ -424,7 +453,7 @@ function EntryCard({
   abilities: WaitlistAbilities;
 }) {
   const { submit, pending, error } = useSubmit();
-  const [panel, setPanel] = useState<"seat" | "quote" | null>(null);
+  const [panel, setPanel] = useState<"seat" | "quote" | "guest" | null>(null);
   const close = () => setPanel(null);
   const base = `/api/waitlist/${entry.id}`;
   const version = { expectedVersion: entry.version };
@@ -440,6 +469,7 @@ function EntryCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-lg font-semibold">{entry.guestName}</h3>
+          <GuestMarks guest={entry.guest} />
           <p className="text-sm">
             Party of {entry.partySize} · added {formatTime(entry.addedAt, timeZone)} · waiting{" "}
             {waited} min
@@ -465,6 +495,11 @@ function EntryCard({
         Suggested: {best ? `${best.tableNumbers.join(" + ")} (seats ${best.capacity})` : "nothing fits right now"}
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
+        {(abilities.guests.manage || abilities.guests.view) && (
+          <button type="button" className={BUTTON_CLASS} onClick={() => setPanel(panel === "guest" ? null : "guest")}>
+            Guest &amp; allergies
+          </button>
+        )}
         {abilities.manage && (
           <button type="button" className={BUTTON_CLASS} onClick={() => setPanel("quote")}>
             Edit quote
@@ -508,6 +543,15 @@ function EntryCard({
       </div>
       <ErrorText error={error} />
       {panel === "quote" && <QuoteForm entry={entry} onDone={close} />}
+      {panel === "guest" && (
+        <PartyGuestPanel
+          partyId={entry.guestPartyId}
+          guestName={entry.guestName}
+          guest={entry.guest}
+          allergens={abilities.allergens}
+          abilities={abilities.guests}
+        />
+      )}
       {panel === "seat" && (
         <SeatPanel
           entry={entry}

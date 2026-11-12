@@ -26,6 +26,8 @@ export type QueueItem = {
   name: string;
   modifiers: ModifierSnapshot[];
   instructions: string | null;
+  /** Phase 21 (policy 14): "ALLERGY: ..." when the server acknowledged a conflict. */
+  allergyAlert: string | null;
   attemptNumber: number;
   submittedAt: string;
   startedAt: string | null;
@@ -90,6 +92,7 @@ function toQueueItem(actor: Actor, ticket: TicketRow, item: ItemRow): QueueItem 
     name: item.menuItemNameSnapshot,
     modifiers: item.modifierSnapshots as ModifierSnapshot[],
     instructions: item.kitchenInstructionsSnapshot,
+    allergyAlert: item.allergyAlertSnapshot,
     attemptNumber: item.attemptNumber,
     submittedAt: item.submittedAt.toISOString(),
     startedAt: item.startedAt?.toISOString() ?? null,

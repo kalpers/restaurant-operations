@@ -1,4 +1,5 @@
 import type { Database } from "@/db";
+import { attachProfileToParty } from "@/modules/reservations/services/guest-profile-service";
 import { guestParties } from "@/db/schema";
 import { withTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
@@ -119,6 +120,8 @@ export type SeatWalkInInput = SeatGuestOptions & {
   phone?: string | null;
   email?: string | null;
   specialRequests?: string | null;
+  /** Phase 21 (policy 2): the walk-in's guest profile, linked by hand. Needs `guests.manage`. */
+  guestProfileId?: string | null;
 };
 
 /** A walk-in seated at once: a Guest Party is created and seated, with no waitlist entry. */
@@ -148,6 +151,7 @@ export async function seatWalkIn(
         phone,
         email,
         specialRequests,
+        guestProfileId,
         ...options
       } = input;
       const [party] = await transaction
@@ -170,6 +174,10 @@ export async function seatWalkIn(
         userId: actor.userId,
         occurredAt: now,
       });
+
+      if (guestProfileId) {
+        await attachProfileToParty(transaction, actor, { guestPartyId: party!.id, guestProfileId });
+      }
 
       const seated = await seatPartyInTransaction(transaction, actor, {
         ...options,

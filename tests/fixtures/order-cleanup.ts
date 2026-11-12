@@ -15,7 +15,9 @@ import {
   kitchenTickets,
   notifications,
   outboxEvents,
+  orderAllergies,
   orderDiscounts,
+  orderItemAllergens,
   orderItemDiscounts,
   orderItemInventoryConsumption,
   orderItemModifiers,
@@ -75,6 +77,7 @@ const GUARDED: readonly [table: string, trigger: string][] = [
   ["time_entries", "time_entries_guard_trigger"],
   ["time_entry_breaks", "time_entry_breaks_guard_trigger"],
   ["tip_distributions", "tip_distributions_guard_trigger"],
+  ["order_item_allergens", "order_item_allergens_guard"],
 ];
 
 /**
@@ -135,6 +138,8 @@ export async function clearOrderData(database: Database): Promise<void> {
     await transaction.delete(orderItemStatusHistory);
     await transaction.delete(orderItemModifiers).where(inArray(orderItemModifiers.orderItemId, itemIds));
     await transaction.delete(orderItemShares);
+    await transaction.delete(orderItemAllergens);
+    await transaction.delete(orderAllergies);
     await transaction.delete(orderItems);
     await transaction.delete(orderSendBatches);
     await transaction.delete(orderStatusHistory);
