@@ -110,6 +110,7 @@ How the runs went:
 - **First full integration run:** 18 tests failed and about 30 files failed in setup or cleanup. The shared test cleanup deleted guest parties before their new allergy rows, and the seed and migration tests had hard-coded permission counts and table lists. The cleanup now clears guest data first (with the guards lifted for its own transaction), and the counts and lists were updated. A generated foreign key name of 65 characters was replaced with a short explicit one.
 - **Second run:** only `foundation-seeds.test.ts` failed, on more hard-coded counts. Those were updated, and the file passed (29 of 29) in a run of its own.
 - **First full E2E run:** 3 phone-width tests failed, because the new Guests tab made the host tab row overflow. The row now wraps.
+- **GitHub Actions after commit `476b53a`:** the validate job failed. The shared test cleanup cleared `merged_into_profile_id` on MERGED profiles, which breaks the `guest_profiles_merge_consistent` CHECK; local runs never cleaned up while merged profiles remained. Copilot fixed it in `465bc4b` (merged via PR #3): the cleanup marks MERGED profiles ERASED before unlinking them, and a new integration test runs the cleanup with a merged profile present. Test code only. GitHub Actions is green on `4664b1f`.
 - **Build warning:** `node:crypto` loaded in the Edge Runtime, traced from `instrumentation.ts` through the Phase 20 maintenance run. No Phase 21 file is involved and the build succeeds.
 
 ## Tests executed
