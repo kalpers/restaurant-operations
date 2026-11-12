@@ -183,7 +183,10 @@ export async function clearGuestProfileData(database: Database): Promise<void> {
     await transaction.delete(guestParties);
     await transaction.delete(guestProfileMerges);
     await transaction.delete(guestProfileAllergies);
-    await transaction.update(guestProfiles).set({ mergedIntoProfileId: null });
+    await transaction
+      .update(guestProfiles)
+      .set({ status: "ERASED", mergedIntoProfileId: null, erasedAt: new Date() })
+      .where(eq(guestProfiles.status, "MERGED"));
     await transaction.delete(guestProfiles);
     await transaction.delete(guestProfileNumberCounters);
     await transaction.execute(sql`ALTER TABLE guest_profile_merges ENABLE TRIGGER guest_profile_merges_guard`);
