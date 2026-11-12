@@ -40,7 +40,7 @@ test.describe("checks and close-out", () => {
 
     const add = page.getByRole("region", { name: "Add a tax category" });
 
-    await add.getByLabel("Code (capitals, digits, _)").fill(code);
+    await add.getByLabel("Code (letters, digits and _, no spaces; for example FOOD)").fill(code);
     await add.getByLabel("Name").fill(`E2E food ${code}`);
     await add.getByRole("button", { name: "Add category" }).click();
 
@@ -51,6 +51,7 @@ test.describe("checks and close-out", () => {
     await category.getByLabel("New rate (%)").fill("8.25");
     await category.getByRole("button", { name: "Set rate" }).click();
     await expect(category).toContainText("Rate here now: 8.2500%");
+    await expect(category).toContainText("8.2500%, added on top of menu prices");
   });
 
   test("a server can't reach Taxes, refunds or drawer operations, on screen or by API", async ({ page }) => {
