@@ -14,6 +14,8 @@ export const VALIDATION_MENU_STOCK_SEED_KEY = "phase19.validation-menu-stock";
 export const VALIDATION_SERVICE_POLISH_SEED_KEY = "phase20.validation-service-polish";
 /** Phase 21 (added in Phase 22): allergen tags, a declared MAY_CONTAIN and guest profiles. */
 export const VALIDATION_GUESTS_ALLERGENS_SEED_KEY = "phase21.validation-guests-allergens";
+/** Phase 23 (D17): a lot-tracked item with a dated lot at MAIN. */
+export const VALIDATION_LOTS_SEED_KEY = "phase23.validation-lots";
 
 export const VALIDATION_EMPLOYEES = [
   { employeeNumber: "P13-SERVER", firstName: "Vera", lastName: "Validation", position: "SERVER", hourlyRate: "12.00" },

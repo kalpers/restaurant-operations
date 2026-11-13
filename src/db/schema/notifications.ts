@@ -5,7 +5,7 @@ import { uuidPrimaryKey } from "../helpers/columns";
 import { createdAt, timestamptz } from "../helpers/timestamps";
 import { users } from "./auth";
 import { employeeCertifications } from "./employees";
-import { inventoryStockAlerts } from "./inventory";
+import { inventoryLots, inventoryStockAlerts } from "./inventory";
 import { kitchenTickets } from "./kitchen";
 import { orders } from "./orders";
 import { locations, organizations } from "./organization";
@@ -29,6 +29,8 @@ export const NOTIFICATION_TYPES = [
   "CERTIFICATION_EXPIRING",
   "OVERTIME_APPROACHING",
   "MISSED_CLOCK_OUT",
+  // Phase 23 (policy 22): a lot with stock left is about to expire or has expired.
+  "LOT_EXPIRING",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -59,6 +61,8 @@ export const notifications = pgTable(
     timeOffRequestId: uuid("time_off_request_id").references(() => timeOffRequests.id, { onDelete: "restrict" }),
     employeeCertificationId: uuid("employee_certification_id"),
     timeEntryId: uuid("time_entry_id").references(() => timeEntries.id, { onDelete: "restrict" }),
+    /** Phase 23: the lot a LOT_EXPIRING notice is about. */
+    inventoryLotId: uuid("inventory_lot_id").references(() => inventoryLots.id, { onDelete: "restrict" }),
     /** Phase 20: one notification per key and recipient, for the periodic checks. */
     dedupeKey: text("dedupe_key"),
     createdAt: createdAt(),
@@ -86,7 +90,7 @@ export const notifications = pgTable(
     unique("notifications_dedupe_recipient_unique").on(table.dedupeKey, table.recipientUserId),
     check(
       "notifications_type_valid",
-      sql`${table.notificationType} IN ('FOOD_READY', 'BAR_ORDER_READY', 'INVENTORY_LOW', 'SCHEDULE_PUBLISHED', 'SHIFT_CHANGED', 'TIME_OFF_APPROVED', 'TIME_OFF_DENIED', 'CERTIFICATION_EXPIRING', 'OVERTIME_APPROACHING', 'MISSED_CLOCK_OUT')`,
+      sql`${table.notificationType} IN ('FOOD_READY', 'BAR_ORDER_READY', 'INVENTORY_LOW', 'SCHEDULE_PUBLISHED', 'SHIFT_CHANGED', 'TIME_OFF_APPROVED', 'TIME_OFF_DENIED', 'CERTIFICATION_EXPIRING', 'OVERTIME_APPROACHING', 'MISSED_CLOCK_OUT', 'LOT_EXPIRING')`,
     ),
     check(
       "notifications_link_matches_type",
@@ -94,7 +98,8 @@ export const notifications = pgTable(
         AND (${table.notificationType} <> 'SHIFT_CHANGED' OR ${table.shiftSwapRequestId} IS NOT NULL)
         AND (${table.notificationType} NOT IN ('TIME_OFF_APPROVED', 'TIME_OFF_DENIED') OR ${table.timeOffRequestId} IS NOT NULL)
         AND (${table.notificationType} <> 'CERTIFICATION_EXPIRING' OR (${table.employeeCertificationId} IS NOT NULL AND ${table.dedupeKey} IS NOT NULL))
-        AND (${table.notificationType} NOT IN ('OVERTIME_APPROACHING', 'MISSED_CLOCK_OUT') OR (${table.timeEntryId} IS NOT NULL AND ${table.dedupeKey} IS NOT NULL))`,
+        AND (${table.notificationType} NOT IN ('OVERTIME_APPROACHING', 'MISSED_CLOCK_OUT') OR (${table.timeEntryId} IS NOT NULL AND ${table.dedupeKey} IS NOT NULL))
+        AND (${table.notificationType} <> 'LOT_EXPIRING' OR (${table.inventoryLotId} IS NOT NULL AND ${table.dedupeKey} IS NOT NULL))`,
     ),
     check("notifications_title_not_blank", sql`length(trim(${table.title})) > 0`),
     index("notifications_recipient_idx").on(table.recipientUserId, table.readAt, table.createdAt),

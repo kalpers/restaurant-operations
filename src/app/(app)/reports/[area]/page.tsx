@@ -7,6 +7,12 @@ import { getDatabase } from "@/db";
 import { requirePageUser, resolveCurrentLocation } from "@/modules/auth/guards";
 import { requirePermission } from "@/modules/auth/services/permission-service";
 import {
+  ALL_LOCATIONS,
+  CROSS_LOCATION_AREAS,
+  crossLocationScope,
+  runCrossLocationReport,
+} from "@/modules/reporting/services/cross-location-service";
+import {
   currentBusinessDate,
   listReportEmployees,
   permittedAreas,
@@ -26,7 +32,7 @@ import { AppError } from "@/shared/errors/app-error";
 import { INPUT_BASE } from "@/components/ui/field";
 import { Breadcrumbs } from "@/components/ui/page-header";
 import { SectionsSkeleton } from "@/components/ui/skeleton";
-import type { Actor } from "@/modules/auth/types";
+import type { Actor, AuthContext } from "@/modules/auth/types";
 
 const INPUT_CLASS = INPUT_BASE;
 
@@ -93,6 +99,11 @@ export default async function ReportPage({
     locations[0]!;
   const actor = requirePermission(auth, { permission, locationId: location.locationId });
   const database = getDatabase();
+  // Phase 23 (policy 7): "All my locations" for users who can see this area at two or more.
+  const canCompare =
+    (CROSS_LOCATION_AREAS as readonly string[]).includes(area) &&
+    (await crossLocationScope(database, auth, area)).length >= 2;
+  const showAll = canCompare && raw.locationId === ALL_LOCATIONS;
   const today = await currentBusinessDate(database, actor, location.locationId);
   const from = raw.from ?? today;
   const to = raw.to ?? from;
@@ -119,7 +130,9 @@ export default async function ReportPage({
     : { locationId: location.locationId, from: today, to: today };
   const canExport = location.permissions.includes("reports.export");
   const exportHref = canExport
-    ? (section?: string) => `/api/reports/${area}/export${toQuery({ ...filterQuery, section })}`
+    ? showAll
+      ? () => `/api/reports/${area}/export${toQuery({ locationId: ALL_LOCATIONS, from: filterQuery.from, to: filterQuery.to })}`
+      : (section?: string) => `/api/reports/${area}/export${toQuery({ ...filterQuery, section })}`
     : null;
 
   return (
@@ -127,7 +140,7 @@ export default async function ReportPage({
       <Breadcrumbs items={[{ label: "Reports", href: "/reports" }, { label: REPORT_AREA_TITLE[area] }]} />
       <h1 className="mb-1 text-2xl font-semibold">{REPORT_AREA_TITLE[area]}</h1>
       <p className="mb-4 text-neutral-600">
-        {location.locationName} · business dates {filterQuery.from} to {filterQuery.to}
+        {showAll ? "All my locations" : location.locationName} · business dates {filterQuery.from} to {filterQuery.to}
       </p>
       <ReportTabs
         areas={permittedAreas(actor)}
@@ -136,15 +149,16 @@ export default async function ReportPage({
       />
 
       <form method="get" aria-label="Report filters" className="mb-6 flex flex-wrap items-end gap-3">
-        {locations.length > 1 ? (
+        {locations.length > 1 || canCompare ? (
           <label className="grid gap-1 text-sm font-medium">
             Location
-            <select name="locationId" defaultValue={location.locationId} className={INPUT_CLASS}>
+            <select name="locationId" defaultValue={showAll ? ALL_LOCATIONS : location.locationId} className={INPUT_CLASS}>
               {locations.map((candidate) => (
                 <option key={candidate.locationId} value={candidate.locationId}>
                   {candidate.locationName}
                 </option>
               ))}
+              {canCompare && <option value={ALL_LOCATIONS}>All my locations</option>}
             </select>
           </label>
         ) : (
@@ -215,7 +229,16 @@ export default async function ReportPage({
           key={JSON.stringify(filterQuery)}
           fallback={<SectionsSkeleton label="Loading report" />}
         >
-          <ReportResults actor={actor} area={area} filters={parsed.data} exportHref={exportHref} />
+          {showAll ? (
+            <CrossLocationResults
+              auth={auth}
+              area={area}
+              filters={{ from: parsed.data.from, to: parsed.data.to }}
+              exportHref={exportHref}
+            />
+          ) : (
+            <ReportResults actor={actor} area={area} filters={parsed.data} exportHref={exportHref} />
+          )}
         </Suspense>
       ) : (
         <ReportErrorText error="Check the filters: dates must be valid." />
@@ -248,6 +271,33 @@ async function ReportResults({
 
   try {
     report = await runReport(getDatabase(), actor, area, filters);
+  } catch (caught) {
+    if (caught instanceof AppError && caught.httpStatus < 500) {
+      return <ReportErrorText error={caught.message} />;
+    }
+
+    throw caught;
+  }
+
+  return <ReportView report={report} exportHref={exportHref} />;
+}
+
+/** Phase 23 (policy 7): the area's summary figures side by side for every location. */
+async function CrossLocationResults({
+  auth,
+  area,
+  filters,
+  exportHref,
+}: {
+  auth: AuthContext;
+  area: ReportArea;
+  filters: { from: string; to: string };
+  exportHref: ((section?: string) => string) | null;
+}) {
+  let report: ReportResult;
+
+  try {
+    report = await runCrossLocationReport(getDatabase(), auth, area, filters);
   } catch (caught) {
     if (caught instanceof AppError && caught.httpStatus < 500) {
       return <ReportErrorText error={caught.message} />;

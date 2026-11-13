@@ -17,11 +17,13 @@ import { baseUnitCost, extendCost, nextAverageCost } from "../rules/costing";
 import { assertDirection, assertStockPolicy } from "../rules/stock-policy";
 import { toBaseQuantity } from "../rules/unit-resolution";
 import { TRANSACTION_DIRECTION, type InventoryTransactionType } from "../types";
+import { postLotMovements, type LotPostingInput } from "./lot-posting";
 import { applyStockAlert } from "./stock-alerts";
 
 // The one authoritative stock posting. Receiving, waste, adjustments, transfers, count
 // approval and (from Phase 9) order consumption all call this inside their own transaction.
-// Nothing else writes `inventory_transactions` or `inventory_balances`.
+// Nothing else writes `inventory_transactions` or `inventory_balances`, and (Phase 23)
+// nothing else moves stock between lots.
 
 export type PostingInput = {
   organizationId: string;
@@ -40,6 +42,8 @@ export type PostingInput = {
   reasonCode?: string | null;
   notes?: string | null;
   createdByUserId: string | null;
+  /** Phase 23: lot detail for a lot-tracked item (a named lot, or a new lot's code and expiry). */
+  lot?: LotPostingInput;
 };
 
 export type PostingResult = {
@@ -246,6 +250,24 @@ export async function postInventoryTransaction(
       updatedAt: new Date(),
     })
     .where(eq(inventoryBalances.id, balance.id));
+
+  // Phase 23 (policy 17): the lot side of the same posting, still under the balance lock.
+  if (item.lotTracked) {
+    await postLotMovements(transaction, {
+      organizationId: input.organizationId,
+      locationId: input.locationId,
+      inventoryItemId: item.id,
+      type: input.type,
+      transactionId: posted!.id,
+      baseQuantityDelta,
+      businessDate: businessDateOf(occurredAt, settings),
+      unitCost,
+      reversesTransactionId: input.reversesTransactionId ?? null,
+      lot: input.lot ?? {},
+    });
+  } else if (input.lot?.lotId) {
+    throw new BusinessRuleError("ITEM_NOT_LOT_TRACKED", "That item isn't tracked in lots.");
+  }
 
   // Phase 19: open or resolve the item's low-stock alert, still under the balance lock.
   await applyStockAlert(transaction, {

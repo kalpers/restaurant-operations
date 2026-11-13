@@ -14,6 +14,13 @@ export const reportFiltersSchema = z.object({
   tenderType: z.enum(TENDER_TYPES).optional(),
 });
 
+/** Phase 23 (policy 7): "All my locations" takes the business dates only. */
+export const crossLocationFiltersSchema = z.object({
+  locationId: z.literal("ALL"),
+  from: date,
+  to: date,
+}).transform(({ from, to }) => ({ from, to }));
+
 export const reportAreaParamsSchema = z.object({ area: z.enum(REPORT_AREAS) });
 
 export const exportQuerySchema = z.object({

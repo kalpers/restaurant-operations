@@ -3,6 +3,7 @@ import { AuthorizationError } from "@/shared/errors/app-error";
 
 import type { PermissionCode } from "../permission-catalog";
 import {
+  findClosedLocationGrantRows,
   findEffectiveGrants,
   findUserIdentity,
 } from "../repositories/auth-context-repository";
@@ -122,4 +123,40 @@ export async function userHasPermission(
   return context !== null
     ? hasPermission(context, request.permission, request.locationId)
     : false;
+}
+
+/**
+ * Phase 23 (policy 7): what the user's still-active role assignments grant at the
+ * organization's *closed* locations. Used only to keep a closed location's history in
+ * reports; these grants count nowhere else, and the reporting service also requires the same
+ * permission at an open location.
+ */
+export async function findClosedLocationReportGrants(
+  executor: DatabaseExecutor,
+  userId: string,
+  organizationId: string,
+): Promise<AuthorizedLocation[]> {
+  const rows = await findClosedLocationGrantRows(executor, userId, organizationId);
+  const byLocation = new Map<string, AuthorizedLocation>();
+
+  for (const row of rows) {
+    const entry =
+      byLocation.get(row.locationId) ??
+      ({
+        locationId: row.locationId,
+        locationCode: row.locationCode,
+        locationName: row.locationName,
+        organizationId,
+        roles: [],
+        permissions: [],
+      } satisfies AuthorizedLocation);
+
+    if (!entry.permissions.includes(row.permissionCode as PermissionCode)) {
+      entry.permissions.push(row.permissionCode as PermissionCode);
+    }
+
+    byLocation.set(row.locationId, entry);
+  }
+
+  return [...byLocation.values()];
 }

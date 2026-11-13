@@ -187,6 +187,7 @@ describe("runSeeds", () => {
       "security.guest-profiles-permissions",
       "recipes.allergen-foundation",
       "security.guest-messaging-permissions",
+      "security.locations-lots-permissions",
     ]);
   });
 });

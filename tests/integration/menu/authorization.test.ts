@@ -103,7 +103,8 @@ describe("menu module boundaries", () => {
       const checks = (text.match(/assert(Any)?Permission\(/g) ?? []).length;
 
       // Internal resolvers (price, revision, selection loading) document that callers check.
-      const internal = (text.match(/export async function (resolve\w+|loadSelectionGroups|loadUnitRules|listIngredients)/g) ?? []).length;
+      // Phase 23: the location setup copies run inside the open-location workflow, which checks.
+      const internal = (text.match(/export async function (resolve\w+|loadSelectionGroups|loadUnitRules|listIngredients|copyPrepStationsAndRouting|copyMenusOffered|copyLocationPrices|copyTaxRates)/g) ?? []).length;
 
       expect(`${file}: ${checks >= exported - internal}`).toBe(`${file}: true`);
     }

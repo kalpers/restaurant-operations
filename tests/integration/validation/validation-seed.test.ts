@@ -19,6 +19,7 @@ import { seedValidationFixture } from "../../../scripts/validation-fixture";
 import { seedValidationLaborTips } from "../../../scripts/validation-labor";
 import { seedValidationMenuStock } from "../../../scripts/validation-menu-stock";
 import { seedValidationGuestsAllergens } from "../../../scripts/validation-guests-allergens";
+import { seedValidationLots } from "../../../scripts/validation-lots";
 import { seedValidationServicePolish } from "../../../scripts/validation-service-polish";
 import { dropDatabase, recreateEmptyDatabase } from "../../helpers/prepare-test-database";
 
@@ -111,6 +112,8 @@ describe("Phase 13: opt-in validation seed", () => {
   let polishSecond: Awaited<ReturnType<typeof seedValidationServicePolish>>;
   let guestsFirst: Awaited<ReturnType<typeof seedValidationGuestsAllergens>>;
   let guestsSecond: Awaited<ReturnType<typeof seedValidationGuestsAllergens>>;
+  let lotsFirst: Awaited<ReturnType<typeof seedValidationLots>>;
+  let lotsSecond: Awaited<ReturnType<typeof seedValidationLots>>;
 
   beforeAll(async () => {
     const url = await recreateEmptyDatabase(requireTestDatabaseUrl(), VALIDATION_DATABASE);
@@ -126,12 +129,14 @@ describe("Phase 13: opt-in validation seed", () => {
     signalsFirst = await seedValidationMenuStock(database, await owner());
     polishFirst = await seedValidationServicePolish(database, await owner());
     guestsFirst = await seedValidationGuestsAllergens(database, await owner());
+    lotsFirst = await seedValidationLots(database, await owner());
     afterFirst = await counts();
     second = await seedValidationFixture(database, await owner());
     laborSecond = await seedValidationLaborTips(database, await owner());
     signalsSecond = await seedValidationMenuStock(database, await owner());
     polishSecond = await seedValidationServicePolish(database, await owner());
     guestsSecond = await seedValidationGuestsAllergens(database, await owner());
+    lotsSecond = await seedValidationLots(database, await owner());
     afterSecond = await counts();
   }, 180_000);
 
@@ -180,6 +185,17 @@ describe("Phase 13: opt-in validation seed", () => {
       "BRIOCHE_BUN:WHEAT",
       "SWISS_CHEESE:MILK",
     ]);
+  });
+
+  it("adds the Phase 23 lot-tracked bacon and its dated lot once", async () => {
+    expect(lotsFirst).toEqual({ skipped: false, tracked: true });
+    expect(lotsSecond).toEqual({ skipped: true });
+
+    const lots = await client<{ origin: string; dated: boolean }[]>`
+      SELECT l.origin, l.expires_on IS NOT NULL AS dated FROM inventory_lots l
+      JOIN inventory_items i ON i.id = l.inventory_item_id WHERE i.code = 'BACON' ORDER BY l.sequence_number`;
+
+    expect(lots.some((lot) => lot.origin === "FOUND" && lot.dated)).toBe(true);
   });
 
   it("adds the Phase 20 modifier 86 once", async () => {

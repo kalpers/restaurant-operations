@@ -121,6 +121,8 @@ export const locationSettings = pgTable(
     auto86FromStock: boolean("auto_86_from_stock").notNull().default(false),
     /** Phase 20 (policy 5): "running low" means 1 to this many portions left. */
     runningLowPortions: smallint("running_low_portions").notNull().default(5),
+    /** Phase 23 (policy 22, D13): warn this many days before a lot expires. 0 turns it off. */
+    lotExpiryWarningDays: smallint("lot_expiry_warning_days").notNull().default(2),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -137,6 +139,10 @@ export const locationSettings = pgTable(
     check(
       "location_settings_running_low_range",
       sql`${table.runningLowPortions} BETWEEN 1 AND 99`,
+    ),
+    check(
+      "location_settings_lot_expiry_warning_range",
+      sql`${table.lotExpiryWarningDays} BETWEEN 0 AND 30`,
     ),
   ],
 );

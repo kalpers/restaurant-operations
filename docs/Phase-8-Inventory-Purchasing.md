@@ -44,6 +44,10 @@ Phase 8 has no preferred Supplier policy or preferred-supplier field. Low-stock 
 
 Phase 8 must preserve the boundary between theoretical Recipe requirements and actual Inventory state. Inventory history must be ledger-based and reproducible. Purchase Orders do not increase stock until goods are actually received.
 
+### Amendment (Phase 23)
+
+Transfers became records with an in-transit state (`docs/Phase-23-Multiple-Locations-and-Ingredient-Lots.md`, D7): a transfer is sent (TRANSFER_OUT) and later received (TRANSFER_IN, then any shortfall as `TRANSFER_SHORTAGE`), each side under its own `inventory.transfer`. The one-step move described here is kept as "Send and receive now".
+
 ---
 
 ## 1. Phase 8 Objectives

@@ -1,8 +1,10 @@
 import { getDatabase } from "@/db";
-import { requireApiPermission } from "@/modules/auth/guards";
+import { requireApiPermission, requireCurrentUser } from "@/modules/auth/guards";
+import { ALL_LOCATIONS, exportCrossLocationCsv } from "@/modules/reporting/services/cross-location-service";
 import { exportReportCsv } from "@/modules/reporting/services/report-service";
 import { type ReportArea } from "@/modules/reporting/types";
 import {
+  crossLocationFiltersSchema,
   exportQuerySchema,
   reportAreaParamsSchema,
   reportFiltersSchema,
@@ -17,10 +19,22 @@ export const GET = apiRoute<{ area: string }>(
     const { area } = parseWith(reportAreaParamsSchema, params) as { area: ReportArea };
     const query = searchParamsToObject(new URL(request.url).searchParams);
     const { section, ...rest } = query;
-    const filters = parseWith(reportFiltersSchema, rest);
     const options = parseWith(exportQuerySchema, { section });
-    const actor = await requireApiPermission("reports.export", filters.locationId);
-    const { fileName, csv } = await exportReportCsv(getDatabase(), actor, area, filters, options.section);
+    // Phase 23 (policy 9): "All my locations" exports the comparison.
+    const { fileName, csv } =
+      rest.locationId === ALL_LOCATIONS
+        ? await exportCrossLocationCsv(
+            getDatabase(),
+            await requireCurrentUser(),
+            area,
+            parseWith(crossLocationFiltersSchema, rest),
+          )
+        : await (async () => {
+            const filters = parseWith(reportFiltersSchema, rest);
+            const actor = await requireApiPermission("reports.export", filters.locationId);
+
+            return exportReportCsv(getDatabase(), actor, area, filters, options.section);
+          })();
 
     return {
       response: new Response(csv, {

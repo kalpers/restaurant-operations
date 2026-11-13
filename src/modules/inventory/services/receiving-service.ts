@@ -36,6 +36,9 @@ export type ReceiptLineInput = {
   receivedQuantity: string;
   /** Actual price per purchase unit; defaults to the ordered price. */
   actualUnitCost: string | null;
+  /** Phase 23 (policy 18): for a lot-tracked item, what the supplier printed and the use-by date. */
+  supplierLotCode?: string | null;
+  expiresOn?: string | null;
 };
 
 /**
@@ -169,6 +172,7 @@ export async function receivePurchaseOrder(
         occurredAt: receivedAt,
         reference: { type: "PURCHASE_ORDER_RECEIPT", id: receipt!.id },
         createdByUserId: actor.userId,
+        lot: { supplierLotCode: entry.supplierLotCode ?? null, expiresOn: entry.expiresOn ?? null },
       });
       const [receiptLine] = await transaction
         .insert(purchaseOrderReceiptLines)

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { INPUT_STYLE } from "@/components/ui/field";
 import type { GuestProfileSummary } from "@/modules/reservations/services/guest-profile-service";
+import { apiFetch } from "@/components/forms/page-location";
 
 // Phase 21 (policy 2): find a guest profile by name (or phone or email, with the contact
 // permission), or create one. Nothing links until the host picks; matching never links itself.
@@ -38,7 +39,7 @@ export function GuestPicker({
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/guests?q=${encodeURIComponent(text)}`, { signal: controller.signal });
+        const response = await apiFetch(`/api/guests?q=${encodeURIComponent(text)}`, { signal: controller.signal });
 
         if (response.ok) {
           setResults((await response.json()) as GuestProfileSummary[]);

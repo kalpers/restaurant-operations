@@ -285,7 +285,11 @@ Initial restaurant areas:
 
 Location settings include operational settings such as timezone, business-day cutoff, reservation defaults, and enabled capabilities.
 
-The initial system has one location, but operational tables should be location-aware where appropriate.
+Operational tables are location-aware. Since Phase 23, locations are opened, closed and reopened in the app (Admin → Locations, permission `locations.lifecycle`, Owner and General Manager):
+
+- **Open.** One transaction creates the location, its settings, the three standard areas, its scheduling rules and online booking settings (off), and gives the person opening it the roles they hold where they are working. Optionally it copies setup from another location: settings, prep stations and routing, menus offered, location prices and tax rates in effect (starting now), stocked items with par levels (no stock), scheduling rules, the tip pool rule and booking hours. Tables, staff and grants, stock, schedules, reservations, orders and 86 entries are never copied. Each module writes its own rows (`src/workflows/open-location/`).
+- **Close and reopen.** A location is deactivated, never deleted. It can't be closed while it has open checks, seated parties, open settlements or drawer sessions, transfers in transit either way, or purchase orders still to be received, nor if it is the last one open. Closing turns its online booking off; its history stays in reports for people who had report access there (section 21).
+- **Working at several locations.** The current location is a cookie, checked against the user's grants on every request. Every browser request also sends the location its page shows (`x-location-id`); a mismatch (another tab switched) is refused with 409 `LOCATION_CHANGED` before anything runs. The header never grants access. Admin → Users can give a role to someone already in the organization.
 
 ## 9. Domain 02: Authentication and RBAC
 
@@ -790,7 +794,9 @@ SALE_REVERSAL
 
 `SALE_REVERSAL` (Phase 9) restores stock consumed by an Order Item that was voided as never prepared. It must name the `CONSUME` row it compensates (`reverses_transaction_id`, at most one reversal each). Further types are added deliberately in the phase that needs them.
 
-Transfers between Locations of one organization use a matching transfer-out and transfer-in with one shared reference and do not change total inventory.
+Transfers between Locations of one organization use a matching transfer-out and transfer-in with one shared reference and do not change total inventory. Since Phase 23 a transfer is a record (`inventory_transfers`, `inventory_transfer_lines`, numbered `TR-000001` per sending location): `DRAFT -> SENT -> RECEIVED`, or `CANCELLED` from a draft. Sending posts `TRANSFER_OUT` and freezes each line's average cost; the stock is then in transit; receiving at the other location posts `TRANSFER_IN` for the full sent quantity at that cost and, for a line that arrived short, `ADJUST_DECREASE` with reason `TRANSFER_SHORTAGE`. Each side needs `inventory.transfer` at its own location; send and receive take an idempotency key. "Send and receive now" (the Phase 8 one-step move) does both at once for someone with the permission at both.
+
+**Lots (Phase 23).** An item may be lot tracked (`inventory_items.lot_tracked`, under `inventory.configure`; turning it on makes an opening lot of the stock on hand, turning it off needs every lot empty). `inventory_lots` (per location, `L-000001`, supplier lot code, use-by date, origin) and append-only `inventory_lot_movements` are a sub-ledger written only by the posting service in the same transaction: a ledger row's movements sum to its quantity (checked at commit), and the lots hold the balance whenever it is zero or more. Stock leaves first to expire (dated before undated, then oldest received), at SEND too; waste, adjustments and transfers may name a lot. A CONSUME beyond the lots where negative stock is allowed leaves a shortfall the next increase settles. Receipts create lots, transfers recreate the sent lots at the receiver, a sale reversal returns stock to the lots it came from. Cost stays weighted average: a lot's cost is information only. The hourly run sends `LOT_EXPIRING` to `inventory.adjust` holders (location setting `lot_expiry_warning_days`, default 2), and Inventory → Lots wastes or corrects a lot.
 
 Creating a purchase order does not increase stock. Receiving does.
 
@@ -1129,6 +1135,8 @@ Reporting APIs must independently enforce authorization.
 
 Phase 21: the seating report counts seated parties linked to a guest profile and returning guests. Reports never show or export guest names or contact details.
 
+Phase 23: **All my locations.** For a user who holds an area's report permission at two or more locations, each area (except menu performance) can show its summary figures per location with a total, each location on its own business dates; costs and wages appear only if visible at every included location. A closed location is included while the user's assignment there is still active and the same permission is held at an open location. The Overview shows today at each location. The Inventory report has an "In transit" section, and a lot trace (`/reports/lot-trace/{lotId}`) follows a lot from its receipt through transfers to the orders that used it.
+
 ## 22. Notifications
 
 Table:
@@ -1159,6 +1167,8 @@ Phase 22 intentionally adds email and SMS **to guests**, for service messages on
 - **Message outbox.** The change a message reports writes a `guest_messages` row in its own transaction (kind, channel, recipient address, rendered subject and body, a unique dedupe key per trigger). The dispatcher (`startMessageDispatcher`, from `src/instrumentation.ts`) claims due rows with `SKIP LOCKED`, sends with no transaction open, and records `SENT`, a retry (5 s doubling to 15 min), `FAILED` after `MESSAGE_MAX_ATTEMPTS`, or `SUPPRESSED` for a provider opt-out. `outbox_events` isn't used for messages: its payloads stay free of contact data.
 - **Consent and opt-out.** Nothing is queued without the visit's consent for the channel; nothing is sent to an address on the opt-out list (an HMAC of channel and address with `MESSAGING_SUPPRESSION_KEY`, never rotated). Emails carry a one-click unsubscribe link; texts say "Reply STOP", which Twilio enforces and reports.
 - **Retention.** The hourly maintenance run queues due reminders (09:00 to 21:00 local only) and clears the address and body of finished messages older than `MESSAGE_RETENTION_DAYS` (90).
+
+Phase 23 adds `LOT_EXPIRING` (linked to its lot), from the hourly run, once as a lot starts expiring and once when it has expired.
 
 As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` (see section 33). Phase 19 adds `INVENTORY_LOW`, linked to its low-stock alert. Phase 20 adds the other example kinds and `TIME_OFF_DENIED`, `OVERTIME_APPROACHING` and `MISSED_CLOCK_OUT`: the schedule and time-off kinds are written with the change they report, and the time-based kinds by the hourly maintenance run, once per dedupe key and recipient.
 
@@ -1924,6 +1934,16 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 23 Multiple Locations and Ingredient Lots
+
+Phase 23 builds the third group of section 39, chosen by the owner on 2026-11-12 (plan approved with D1–D17 as recommended), with the Phase 22 leftovers. Plan: `docs/Phase-23-Multiple-Locations-and-Ingredient-Lots.md` (12 amendments). Report: `docs/Phase-23-Completion-Report.md`.
+
+- **Locations** (section 8): open with copy, close and reopen (`locations.lifecycle`, 149 permissions in all, seeded by `security.locations-lots-permissions`), the location header and `LOCATION_CHANGED`, the realtime stream reconnecting on a switch, "Add an existing person".
+- **Transfers and lots** (section 16): `inventory_transfers`, `inventory_transfer_lines`, `inventory_lots`, `inventory_lot_movements`, `TRANSFER_SHORTAGE`, Inventory → Transfers and Inventory → Lots, lot fields at receiving, the lot-tracking switch on the item page, `reconcileLots`.
+- **Reports** (section 21): All my locations, the Overview strip, In transit, the lot trace.
+- **Leftovers:** the reservations board refreshes on online bookings and guest cancellations; Playwright warms every route under `next dev` before the tests.
+- **Migrations:** `0056`–`0057` (transfers, guards), `0058`–`0059` (lots, the lot flag and setting, guards), `0060` (`LOT_EXPIRING`).
+
 ### Phase 22 Online Reservations and Guest Messaging
 
 Phase 22 builds the guest messaging and online booking group of section 39, with the Phase 21 leftovers, by owner decision on 2026-11-12 (plan approved with D1–D16 as recommended; nodemailer through a peer override, accepted as DEV-004). Marketing, two-way messaging, external reservation networks, deposits and staff email or SMS stay out. Plan: `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md` (16 amendments). Report: `docs/Phase-22-Completion-Report.md`. It supersedes section 22's "no SMS/email" line for guest service messages, and the Phase 6 and Phase 21 plans' bans on guest messaging; the ban on marketing stays.
@@ -2154,6 +2174,12 @@ A public online booking page per location (booking hours, pacing, a private view
 
 Approved by the owner on 2026-11-12, with decisions D1–D16 as recommended in the plan. It supersedes section 22's "no SMS/email" line for guest service messages and the Phase 6 and Phase 21 plans' bans on guest messaging.
 
+### Phase 23: Multiple Locations and Ingredient Lots
+
+Opening, closing and reopening locations with setup copied from another; a location check on every browser write; reports across locations; transfers sent and received as records with shortages in the ledger; opt-in ingredient lots with use-by dates, first to expire first out, expiry warnings and a lot trace. Plus the Phase 22 leftovers. Plan: `docs/Phase-23-Multiple-Locations-and-Ingredient-Lots.md`.
+
+Approved by the owner on 2026-11-12, with decisions D1–D17 as recommended in the plan.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2250,7 +2276,7 @@ The same idempotency key sent twice for step 9 must produce only one set of oper
 ## 39. Future Capabilities, Not POC Requirements
 
 Architect for, but do not implement unless specifically requested:
-- Multiple active restaurant locations
+- Multiple active restaurant locations (built in Phase 23: opening and closing locations, reports across them, transfers as records)
 - Customer loyalty (guest profiles were built in Phase 21)
 - Delivery integrations
 - DoorDash/Uber Eats integrations
@@ -2261,7 +2287,7 @@ Architect for, but do not implement unless specifically requested:
 - SMS/email notifications to staff (guest service messages were built in Phase 22)
 - Full offline synchronization
 - Demand forecasting based on historical sales/reservations
-- Ingredient lots/FIFO/expiration-by-lot
+- Ingredient lots/FIFO/expiration-by-lot (built in Phase 23 for quantity and expiry, first to expire first; cost stays weighted average, so FIFO costing remains future work)
 - Vendor EDI
 - Nutritional analysis (allergen labeling was built in Phase 21)
 - Separate analytics warehouse

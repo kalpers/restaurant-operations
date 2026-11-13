@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell/app-shell";
 import { LocationSwitcher } from "@/components/app-shell/location-switcher";
+import { PageLocation } from "@/components/forms/page-location";
 import { visibleNavigationGroups } from "@/components/app-shell/navigation";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { RealtimeProvider } from "@/components/realtime/realtime-provider";
@@ -18,13 +19,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <LocationTimeZoneProvider timeZone={timeZone}>
-    <RealtimeProvider>
+    <RealtimeProvider locationId={location?.locationId ?? null}>
+      <PageLocation locationId={location?.locationId ?? null} />
       <AppShell
         groups={groups}
         email={auth.email}
         headerActions={
           <>
-            {location && auth.locations.length > 1 && (
+            {location && (
               <LocationSwitcher
                 currentLocationId={location.locationId}
                 locations={auth.locations.map((candidate) => ({

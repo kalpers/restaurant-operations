@@ -70,6 +70,9 @@ export const versionSchema = z.object({ expectedVersion });
 
 const movement = {
   inventoryItemId: z.uuid(),
+  // Phase 23: lots (optional; only for lot-tracked items).
+  lotId: z.uuid().nullable().optional(),
+  expiresOn: businessDate.nullable().optional(),
   quantity: decimal,
   unitOfMeasureId: z.uuid(),
   notes: optionalText(500),
@@ -152,6 +155,8 @@ export const receiveSchema = z.object({
         purchaseOrderLineId: z.uuid(),
         receivedQuantity: decimal,
         actualUnitCost: optionalDecimal,
+        supplierLotCode: optionalText(64),
+        expiresOn: businessDate.nullable().default(null),
       }),
     )
     .min(1)
@@ -180,3 +185,51 @@ export const approveCountSchema = z.object({
 export const createSuggestedOrdersSchema = z.object({
   idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
 });
+
+/** Phase 23 (policies 10–15): transfer records. */
+const transferLine = z.object({
+  inventoryItemId: z.uuid(),
+  lotId: z.uuid().nullable().optional(),
+  quantity: decimal,
+  unitOfMeasureId: z.uuid(),
+});
+
+export const transferDraftSchema = z.object({
+  toLocationId: z.uuid(),
+  notes: optionalText(500),
+  lines: z.array(transferLine).min(1).max(50),
+});
+
+export const transferDraftUpdateSchema = transferDraftSchema.extend({ expectedVersion });
+
+export const transferSendSchema = z.object({
+  expectedVersion,
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+});
+
+export const transferReceiveSchema = transferSendSchema.extend({
+  lines: z
+    .array(z.object({ lineId: z.uuid(), quantityReceived: decimal }))
+    .max(50)
+    .nullable()
+    .default(null),
+});
+
+export const transferIdParamsSchema = z.object({ transferId: z.uuid() });
+
+/** Phase 23 (policies 20–22): lots. */
+export const lotIdParamsSchema = z.object({ lotId: z.uuid() });
+
+export const correctLotSchema = z.object({
+  supplierLotCode: optionalText(64),
+  expiresOn: businessDate.nullable(),
+  reason: requiredText(200),
+  expectedVersion,
+});
+
+export const wasteLotSchema = z.object({
+  reasonCode: z.enum(["EXPIRED", "SPOILAGE", "OTHER"]).default("EXPIRED"),
+  notes: optionalText(500),
+});
+
+export const lotTrackingSchema = z.object({ enabled: z.boolean(), expectedVersion });

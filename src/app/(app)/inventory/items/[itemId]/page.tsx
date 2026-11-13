@@ -81,6 +81,24 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
         />
       </section>
 
+      {/* Phase 23 (policy 20): lots, expiry and first-to-expire-first-out for this item. */}
+      <section aria-label="Lot tracking" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Lot tracking</h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          {item.lotTracked
+            ? "On. Each delivery is a lot with its use-by date, and stock is used first to expire, first out."
+            : "Off. Turn it on for items with use-by dates, such as dairy, meat and fish. Stock already on hand becomes an opening lot."}
+        </p>
+        <ActionButton
+          method="PUT"
+          url={`/api/inventory/items/${item.id}/lot-tracking`}
+          body={{ enabled: !item.lotTracked, expectedVersion: item.version }}
+          label={item.lotTracked ? "Turn lot tracking off" : "Turn lot tracking on"}
+          variant={item.lotTracked ? "secondary" : "primary"}
+          successMessage={item.lotTracked ? "Lot tracking is off." : "Lot tracking is on."}
+        />
+      </section>
+
       <section aria-label="Allergens" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
         <h2 className="mb-1 text-xl font-semibold">Allergens</h2>
         <p className="mb-3 text-sm text-neutral-600">

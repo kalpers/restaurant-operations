@@ -248,3 +248,48 @@ export async function listTransactions(
     averageCostAfter: showCost ? transaction.averageCostAfter : null,
   }));
 }
+
+/**
+ * Phase 23 (policy 24): lot-tracked stock whose lots disagree with the balance (the lots
+ * hold the balance whenever it is zero or more, and nothing when it is below zero), and lots
+ * whose remaining quantity disagrees with their movements. Empty means the lots are sound.
+ */
+export async function reconcileLots(executor: DatabaseExecutor, organizationId: string) {
+  const balances = await executor.execute<{ inventory_item_id: string; location_id: string; balance: string; lots: string }>(sql`
+    SELECT b.inventory_item_id, b.location_id, b.quantity_on_hand::text AS balance,
+           coalesce(l.total, 0)::text AS lots
+    FROM ${inventoryBalances} b
+    JOIN inventory_items i ON i.id = b.inventory_item_id AND i.lot_tracked
+    LEFT JOIN (
+      SELECT inventory_item_id, location_id, sum(quantity_remaining) AS total
+      FROM inventory_lots
+      WHERE organization_id = ${organizationId}
+      GROUP BY inventory_item_id, location_id
+    ) l ON l.inventory_item_id = b.inventory_item_id AND l.location_id = b.location_id
+    WHERE b.organization_id = ${organizationId}
+      AND greatest(b.quantity_on_hand, 0) <> coalesce(l.total, 0)
+  `);
+  const lots = await executor.execute<{ id: string; remaining: string; moved: string }>(sql`
+    SELECT lot.id, lot.quantity_remaining::text AS remaining,
+           (CASE WHEN lot.origin = 'OPENING' THEN lot.quantity_received ELSE 0 END
+             + coalesce(m.total, 0))::text AS moved
+    FROM inventory_lots lot
+    LEFT JOIN (
+      SELECT lot_id, sum(base_quantity_delta) AS total FROM inventory_lot_movements
+      WHERE organization_id = ${organizationId} AND lot_id IS NOT NULL GROUP BY lot_id
+    ) m ON m.lot_id = lot.id
+    WHERE lot.organization_id = ${organizationId}
+      AND lot.quantity_remaining <> (CASE WHEN lot.origin = 'OPENING' THEN lot.quantity_received ELSE 0 END + coalesce(m.total, 0))
+  `);
+
+  return [
+    ...[...balances].map((row) => ({
+      kind: "BALANCE" as const,
+      inventoryItemId: row.inventory_item_id,
+      locationId: row.location_id,
+      expected: row.balance,
+      actual: row.lots,
+    })),
+    ...[...lots].map((row) => ({ kind: "LOT" as const, lotId: row.id, expected: row.moved, actual: row.remaining })),
+  ];
+}

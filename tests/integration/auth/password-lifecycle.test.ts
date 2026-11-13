@@ -29,7 +29,10 @@ vi.mock("@/modules/auth/session", () => ({
   getSessionIdentity: async () => session.current,
   getSessionUserId: async () => session.current?.userId ?? null,
 }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => undefined }),
+  headers: async () => new Headers(),
+}));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw new Error(`REDIRECT:${url}`);

@@ -1,9 +1,10 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { getDatabase } from "@/db";
-import { AuthenticationError, AuthorizationError } from "@/shared/errors/app-error";
+import { AuthenticationError, AuthorizationError, ConflictError } from "@/shared/errors/app-error";
+import { LOCATION_CHANGED_MESSAGE, LOCATION_HEADER } from "@/shared/http/location-header";
 
 import type { PermissionCode } from "./permission-catalog";
 import {
@@ -50,17 +51,27 @@ export async function requireCurrentUserAllowingPasswordChange(): Promise<AuthCo
 /**
  * The location being worked at. The cookie is only a preference: it counts only if the
  * user is authorized there now, and otherwise the first authorized location is used.
+ *
+ * Phase 23 (policy 4): a browser request also says which location its page shows
+ * (`x-location-id`). If that isn't the location resolved here, another tab switched, and
+ * the request is refused (409 `LOCATION_CHANGED`) before anything runs. The header never
+ * chooses or grants a location; requests without it (page renders, scripts) are unchanged.
  */
 export async function resolveCurrentLocation(
   auth: AuthContext,
 ): Promise<AuthorizedLocation | null> {
   const selected = (await cookies()).get(CURRENT_LOCATION_COOKIE)?.value;
-
-  return (
-    auth.locations.find((location) => location.locationId === selected) ??
+  const location =
+    auth.locations.find((candidate) => candidate.locationId === selected) ??
     auth.locations[0] ??
-    null
-  );
+    null;
+  const pageLocationId = (await headers()).get(LOCATION_HEADER);
+
+  if (pageLocationId && pageLocationId !== location?.locationId) {
+    throw new ConflictError("LOCATION_CHANGED", LOCATION_CHANGED_MESSAGE);
+  }
+
+  return location;
 }
 
 /**

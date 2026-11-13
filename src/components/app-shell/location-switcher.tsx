@@ -29,6 +29,15 @@ export function LocationSwitcher({
     }
   }
 
+  // Phase 23: the current location is always named; the picker appears with two or more.
+  if (locations.length < 2) {
+    return (
+      <span className="flex items-center gap-2 text-sm font-medium" data-testid="current-location">
+        {locations.find((location) => location.id === currentLocationId)?.name}
+      </span>
+    );
+  }
+
   return (
     <label className="flex items-center gap-2 text-sm font-medium">
       Location

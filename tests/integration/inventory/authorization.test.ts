@@ -96,6 +96,25 @@ describe("inventory module boundaries", () => {
     }
   });
 
+  // Phase 23 (policy 17): lots move only with a posting (lot-posting.ts, called by the posting
+  // service). The lot service creates the opening lot and corrects a code or expiry, never a
+  // remaining quantity.
+  it("moves lots only through the posting service", () => {
+    for (const file of files.filter((entry) => !/(lot-posting|lot-service)\.ts$/.test(entry))) {
+      const text = readFileSync(file, "utf8");
+
+      expect(`${file}: ${/\.insert\(inventoryLots\)|\.update\(inventoryLots\)|\.insert\(inventoryLotMovements\)/.test(text)}`).toBe(
+        `${file}: false`,
+      );
+    }
+
+    const lotService = readFileSync(files.find((entry) => entry.endsWith("lot-service.ts"))!, "utf8");
+    const updates = lotService.match(/\.update\(inventoryLots\)[\s\S]*?\.where\(/g) ?? [];
+
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.some((update) => update.includes("quantityRemaining"))).toBe(false);
+  });
+
   it("checks a permission in every exported service operation", () => {
     for (const file of files.filter((entry) => entry.includes(`${path.sep}services${path.sep}`) && !entry.endsWith("access.ts"))) {
       const text = readFileSync(file, "utf8");
@@ -103,7 +122,7 @@ describe("inventory module boundaries", () => {
       const checks = (text.match(/assert(Any)?Permission\(/g) ?? []).length;
       // Called inside an authorized caller's transaction, by design.
       const internal = (
-        text.match(/export (async )?function (postInventoryTransaction|lockBalance|latestSequence|readPostingSettings|postConsumption|postOrderConsumption|postRemakeConsumption|postSaleReversal|requireSupplier|receivedByLine|lockOrder|bumpOrder|applyStockAlert)\b/g) ?? []
+        text.match(/export (async )?function (postInventoryTransaction|lockBalance|latestSequence|readPostingSettings|postConsumption|postOrderConsumption|postRemakeConsumption|postSaleReversal|requireSupplier|receivedByLine|lockOrder|bumpOrder|applyStockAlert|copyStockedItems|findOpenInventoryWork|formatTransferNumber|formatLotNumber|createLot|postLotMovements|findLotsNeedingWarning)\b/g) ?? []
       ).length;
 
       expect(`${file}: ${checks >= exported - internal}`).toBe(`${file}: true`);

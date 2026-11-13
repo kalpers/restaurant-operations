@@ -71,3 +71,34 @@ export function findEffectiveGrants(
     .where(and(eq(userRoles.userId, userId), eq(userRoles.active, true)))
     .orderBy(asc(locations.locationCode), asc(roles.code));
 }
+
+/**
+ * Phase 23 (policy 7): permissions the user's active assignments grant at the organization's
+ * closed locations. Only reporting uses it, to keep a closed location's history readable.
+ */
+export function findClosedLocationGrantRows(
+  executor: DatabaseExecutor,
+  userId: string,
+  organizationId: string,
+) {
+  return executor
+    .select({
+      locationId: locations.id,
+      locationCode: locations.locationCode,
+      locationName: locations.name,
+      permissionCode: permissions.code,
+    })
+    .from(userRoles)
+    .innerJoin(roles, and(eq(roles.id, userRoles.roleId), eq(roles.active, true)))
+    .innerJoin(
+      locations,
+      and(
+        eq(locations.id, userRoles.locationId),
+        eq(locations.organizationId, organizationId),
+        eq(locations.active, false),
+      ),
+    )
+    .innerJoin(rolePermissions, eq(rolePermissions.roleId, roles.id))
+    .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+    .where(and(eq(userRoles.userId, userId), eq(userRoles.active, true)));
+}

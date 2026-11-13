@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, type FormEvent } from "react";
+
+import { useRealtimeRefresh } from "@/components/realtime/realtime-provider";
 
 import type { ReservationView } from "@/modules/reservations/services/reservation-service";
 import type { ConflictPreview } from "@/modules/reservations/services/reservation-service";
@@ -24,6 +25,7 @@ import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbiliti
 import { GuestMessagesPanel, MessageConsentFields, type HostMessageAbilities, type MessageConsent } from "./guest-messages";
 import { StatusBadge } from "@/components/format/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { apiFetch } from "@/components/forms/page-location";
 
 export type ReservationAbilities = {
   manage: boolean;
@@ -67,15 +69,13 @@ const ACTIVE: readonly ReservationView["status"][] = [
   "CHECKED_IN",
 ];
 
-function useRefresh(): void {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = setInterval(() => router.refresh(), 30_000);
-
-    return () => clearInterval(timer);
-  }, [router]);
-}
+// Phase 23: the board refreshes when a guest books or cancels online (or a party's
+// allergies change), and on the shared 30-second fallback like the other boards.
+const BOARD_EVENTS = [
+  "reservation.online-booked",
+  "reservation.guest-cancelled",
+  "guest.allergies-changed",
+] as const;
 
 function localParts(iso: string, timeZone: string): { date: string; time: string } {
   const date = new Intl.DateTimeFormat("en-CA", {
@@ -300,7 +300,7 @@ function PlanPanel({
   async function check(ids: string[]) {
     setCheckError(null);
 
-    const response = await fetch("/api/reservations/conflicts", {
+    const response = await apiFetch("/api/reservations/conflicts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -398,7 +398,7 @@ function SeatPanel({
   );
 
   async function suggest() {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/reservations/recommendations?partySize=${reservation.partySize}&guestPartyId=${reservation.guestPartyId}`,
     );
 
@@ -812,7 +812,7 @@ export function ReservationsBoard({
   defaultDurationMinutes,
   abilities,
 }: ReservationsBoardProps) {
-  useRefresh();
+  useRealtimeRefresh(BOARD_EVENTS);
 
   const now = useMemo(() => new Date(nowIso), [nowIso]);
   const [creating, setCreating] = useState(false);

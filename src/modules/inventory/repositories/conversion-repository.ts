@@ -102,6 +102,8 @@ export type ItemFacts = {
   measurementType: string;
   baseUnitId: string;
   active: boolean;
+  /** Phase 23: stock moves through lots. */
+  lotTracked: boolean;
 };
 
 export async function findItemFacts(
@@ -118,6 +120,7 @@ export async function findItemFacts(
       measurementType: inventoryItems.measurementType,
       baseUnitId: inventoryItems.baseUnitId,
       active: inventoryItems.active,
+      lotTracked: inventoryItems.lotTracked,
     })
     .from(inventoryItems)
     .where(

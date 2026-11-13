@@ -8,11 +8,11 @@ import { actorHolds } from "@/modules/inventory/services/access";
 import { listUnitChoices } from "@/modules/inventory/services/item-service";
 
 /**
- * Waste, manual adjustments and transfers. Each posts a ledger row through the one posting
- * service; there is no field that sets a quantity directly.
+ * Waste and manual adjustments. Each posts a ledger row through the one posting service;
+ * there is no field that sets a quantity directly. Transfers have their own page (Phase 23).
  */
 export default async function MovementsPage() {
-  const { auth, location, actor } = await requirePageActor("inventory.view");
+  const { location, actor } = await requirePageActor("inventory.view");
   const database = getDatabase();
   const stocked = (await listOnHand(database, actor)).filter((row) => row.itemActive && row.stockedActive);
   const units = await listUnitChoices(database, actor);
@@ -21,9 +21,6 @@ export default async function MovementsPage() {
     label: `${row.name} (${formatQuantity(row.quantityOnHand)} ${row.baseUnitCode} on hand)`,
   }));
   const unitOptions = units.map((unit) => ({ value: unit.id, label: unit.code }));
-  const destinations = auth.locations
-    .filter((entry) => entry.locationId !== location.locationId && entry.permissions.includes("inventory.transfer"))
-    .map((entry) => ({ value: entry.locationId, label: entry.locationName }));
   const movementFields = [
     { name: "inventoryItemId", label: "Item", type: "select" as const, required: true, options: itemOptions },
     { name: "quantity", label: "Quantity", required: true },
@@ -32,7 +29,7 @@ export default async function MovementsPage() {
 
   return (
     <>
-      <h1 className="mb-1 text-2xl font-semibold">Waste, adjustments and transfers</h1>
+      <h1 className="mb-1 text-2xl font-semibold">Waste and adjustments</h1>
       <p className="mb-4 text-neutral-600">{location.locationName}</p>
       <InventoryTabs current="/inventory/movements" permissions={location.permissions} />
 
@@ -76,28 +73,14 @@ export default async function MovementsPage() {
                 ],
               },
               { name: "reasonCode", label: "Reason", type: "select", required: true, options: ADJUSTMENT_REASON_OPTIONS },
+              // Phase 23: stock found for a lot-tracked item becomes a lot with this use-by date.
+              { name: "expiresOn", label: "Use by date (lot tracking, increases only)", type: "date" },
               { name: "notes", label: "Notes" },
             ]}
           />
         </section>
       )}
 
-      {actorHolds(actor, "inventory.transfer") && itemOptions.length > 0 && destinations.length > 0 && (
-        <section aria-label="Transfer stock" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
-          <h2 className="mb-3 text-xl font-semibold">Transfer to another location</h2>
-          <EntityForm
-            method="POST"
-            url="/api/inventory/transfers"
-            submitLabel="Transfer"
-            resetOnSuccess
-            fields={[
-              ...movementFields,
-              { name: "toLocationId", label: "To", type: "select", required: true, options: destinations },
-              { name: "notes", label: "Notes" },
-            ]}
-          />
-        </section>
-      )}
     </>
   );
 }

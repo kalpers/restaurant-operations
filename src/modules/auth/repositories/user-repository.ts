@@ -328,3 +328,68 @@ export async function findUserOrganizationIds(
 
   return [...new Set([...rows, ...linked].map((row) => row.organizationId))].sort();
 }
+
+/** Phase 23: the active roles one user holds at one location (active roles only). */
+export async function findActiveRoleIdsAtLocation(
+  executor: DatabaseExecutor,
+  userId: string,
+  locationId: string,
+): Promise<string[]> {
+  const rows = await executor
+    .select({ roleId: userRoles.roleId })
+    .from(userRoles)
+    .innerJoin(roles, and(eq(roles.id, userRoles.roleId), eq(roles.active, true)))
+    .where(
+      and(
+        eq(userRoles.userId, userId),
+        eq(userRoles.locationId, locationId),
+        eq(userRoles.active, true),
+      ),
+    );
+
+  return rows.map((row) => row.roleId);
+}
+
+/**
+ * Phase 23 (policy 5): active users of the organization (a role assignment at any of its
+ * locations, current or removed) with no active assignment at `locationId`, matching the
+ * email text. Users belong to an organization only through their assignments.
+ */
+export async function findOrganizationUsersNotAt(
+  executor: DatabaseExecutor,
+  input: { organizationId: string; locationId: string; query: string; limit: number },
+) {
+  const pattern = `%${input.query.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+
+  return executor
+    .selectDistinct({ id: users.id, email: users.email })
+    .from(users)
+    .innerJoin(userRoles, eq(userRoles.userId, users.id))
+    .innerJoin(locations, eq(locations.id, userRoles.locationId))
+    .where(
+      and(
+        eq(locations.organizationId, input.organizationId),
+        eq(users.active, true),
+        sql`${users.normalizedEmail} ILIKE ${pattern}`,
+        sql`NOT EXISTS (SELECT 1 FROM ${userRoles} AS here WHERE here.user_id = ${users.id} AND here.location_id = ${input.locationId} AND here.active)`,
+      ),
+    )
+    .orderBy(asc(users.email))
+    .limit(input.limit);
+}
+
+/** True when the user has, or had, a role assignment at a location of the organization. */
+export async function belongsToOrganization(
+  executor: DatabaseExecutor,
+  userId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const rows = await executor
+    .select({ id: userRoles.id })
+    .from(userRoles)
+    .innerJoin(locations, eq(locations.id, userRoles.locationId))
+    .where(and(eq(userRoles.userId, userId), eq(locations.organizationId, organizationId)))
+    .limit(1);
+
+  return rows.length > 0;
+}

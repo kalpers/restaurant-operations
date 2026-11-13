@@ -17,6 +17,7 @@ export type NotificationLinks = {
   timeOffRequestId?: string;
   employeeCertificationId?: string;
   timeEntryId?: string;
+  inventoryLotId?: string;
 };
 
 export type NewNotification = {

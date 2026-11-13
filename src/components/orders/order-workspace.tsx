@@ -22,6 +22,7 @@ import { sumDecimals } from "@/shared/decimal/decimal";
 import { AllergyPanel, ItemAllergenNote, type AllergenChoice } from "./allergy-panel";
 import { callOrderApi, formatMoney, newIdempotencyKey, ORDER_TYPE_LABELS } from "./order-api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { apiFetch } from "@/components/forms/page-location";
 
 // The order screen. It shows what the server returns and sends what staff choose; every
 // rule (sellability, modifier limits, prices, stock, permissions) is decided on the server.
@@ -309,7 +310,7 @@ function useStockHints(orderVersion: number): StockHints | undefined {
     let cancelled = false;
     const load = async () => {
       try {
-        const response = await fetch("/api/menu/stock-signals");
+        const response = await apiFetch("/api/menu/stock-signals");
 
         if (!response.ok || cancelled) {
           return;

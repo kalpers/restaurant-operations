@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   date,
   foreignKey,
@@ -12,6 +13,7 @@ import {
   unique,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 import { activeColumn, uuidPrimaryKey } from "../helpers/columns";
@@ -47,6 +49,11 @@ export const inventoryItems = pgTable(
     description: text("description"),
     measurementType: text("measurement_type").notNull(),
     baseUnitId: uuid("base_unit_id").notNull(),
+    /**
+     * Phase 23 (policy 16, D8): stock is kept in lots (receipt, expiry, supplier lot code)
+     * and taken first to expire, first out. Organization-wide.
+     */
+    lotTracked: boolean("lot_tracked").notNull().default(false),
     active: activeColumn(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -747,5 +754,234 @@ export const inventoryStockAlerts = pgTable(
       sql`(${table.status} = 'OPEN' AND ${table.resolvedAt} IS NULL AND ${table.quantityWhenResolved} IS NULL AND ${table.resolvedByTransactionId} IS NULL) OR (${table.status} = 'RESOLVED' AND ${table.resolvedAt} IS NOT NULL AND ${table.quantityWhenResolved} IS NOT NULL AND ${table.resolvedByTransactionId} IS NOT NULL)`,
     ),
     index("inventory_stock_alerts_location_opened_idx").on(table.locationId, table.openedAt),
+  ],
+);
+
+/**
+ * Phase 23 (policy 10, D7): a transfer between two locations of one organization, numbered
+ * per sending location (`TR-000001`). Sending posts TRANSFER_OUT at the sender; receiving
+ * posts TRANSFER_IN at the receiver for the full sent quantity, then any shortfall as an
+ * ADJUST_DECREASE (`TRANSFER_SHORTAGE`). Between the two the stock is in transit.
+ */
+export const inventoryTransfers = pgTable(
+  "inventory_transfers",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    fromLocationId: uuid("from_location_id").notNull(),
+    toLocationId: uuid("to_location_id").notNull(),
+    sequenceNumber: integer("sequence_number").notNull(),
+    transferNumber: text("transfer_number").notNull(),
+    status: text("status").notNull().default("DRAFT"),
+    notes: text("notes"),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    sentAt: timestamptz("sent_at"),
+    sentByUserId: uuid("sent_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    receivedAt: timestamptz("received_at"),
+    receivedByUserId: uuid("received_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    cancelledAt: timestamptz("cancelled_at"),
+    cancelledByUserId: uuid("cancelled_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    version: versionColumn(),
+  },
+  (table) => [
+    unique("inventory_transfers_from_number_unique").on(table.fromLocationId, table.transferNumber),
+    unique("inventory_transfers_from_sequence_unique").on(table.fromLocationId, table.sequenceNumber),
+    foreignKey({
+      name: "inventory_transfers_from_org_fk",
+      columns: [table.fromLocationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_transfers_to_org_fk",
+      columns: [table.toLocationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    check("inventory_transfers_locations_differ", sql`${table.fromLocationId} <> ${table.toLocationId}`),
+    check(
+      "inventory_transfers_status_valid",
+      sql`${table.status} IN ('DRAFT', 'SENT', 'RECEIVED', 'CANCELLED')`,
+    ),
+    check(
+      "inventory_transfers_sent_recorded",
+      sql`(${table.status} IN ('SENT', 'RECEIVED')) = (${table.sentAt} IS NOT NULL AND ${table.sentByUserId} IS NOT NULL)`,
+    ),
+    check(
+      "inventory_transfers_received_recorded",
+      sql`(${table.status} = 'RECEIVED') = (${table.receivedAt} IS NOT NULL AND ${table.receivedByUserId} IS NOT NULL)`,
+    ),
+    check(
+      "inventory_transfers_cancelled_recorded",
+      sql`(${table.status} = 'CANCELLED') = (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL)`,
+    ),
+    check(
+      "inventory_transfers_notes_length",
+      sql`${table.notes} IS NULL OR length(${table.notes}) <= 500`,
+    ),
+    index("inventory_transfers_from_status_idx").on(table.fromLocationId, table.status),
+    index("inventory_transfers_to_status_idx").on(table.toLocationId, table.status),
+  ],
+);
+
+/**
+ * One item on a transfer. Quantities change only while the transfer is a DRAFT (a trigger
+ * enforces it). `unit_cost_sent` is the sender's average cost frozen at send, which the
+ * receiver's TRANSFER_IN carries.
+ */
+export const inventoryTransferLines = pgTable(
+  "inventory_transfer_lines",
+  {
+    id: uuidPrimaryKey(),
+    transferId: uuid("transfer_id").notNull(),
+    inventoryItemId: uuid("inventory_item_id").notNull(),
+    quantity: quantity("quantity").notNull(),
+    unitOfMeasureId: uuid("unit_of_measure_id").notNull(),
+    baseQuantity: quantity("base_quantity").notNull(),
+    unitCostSent: cost("unit_cost_sent"),
+    baseQuantityReceived: quantity("base_quantity_received"),
+    /** Phase 23 (D9): send from this lot instead of first to expire. */
+    lotId: uuid("lot_id").references((): AnyPgColumn => inventoryLots.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "inventory_transfer_lines_transfer_fk",
+      columns: [table.transferId],
+      foreignColumns: [inventoryTransfers.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_transfer_lines_item_fk",
+      columns: [table.inventoryItemId],
+      foreignColumns: [inventoryItems.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_transfer_lines_unit_fk",
+      columns: [table.unitOfMeasureId],
+      foreignColumns: [unitsOfMeasure.id],
+    }).onDelete("restrict"),
+    unique("inventory_transfer_lines_transfer_item_unique").on(table.transferId, table.inventoryItemId),
+    check("inventory_transfer_lines_quantity_positive", sql`${table.quantity} > 0 AND ${table.baseQuantity} > 0`),
+    check(
+      "inventory_transfer_lines_received_range",
+      sql`${table.baseQuantityReceived} IS NULL OR (${table.baseQuantityReceived} >= 0 AND ${table.baseQuantityReceived} <= ${table.baseQuantity})`,
+    ),
+    check(
+      "inventory_transfer_lines_cost_non_negative",
+      sql`${table.unitCostSent} IS NULL OR ${table.unitCostSent} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * Phase 23 (policy 16, D11): a lot of a lot-tracked item at a location. A sub-ledger of the
+ * ledger: `quantity_remaining` changes only through the posting service (and the opening lot
+ * when tracking is turned on), in the same transaction as the ledger row. Numbered per
+ * location (`L-000001`). Its cost is information only; valuation stays weighted average.
+ */
+export const inventoryLots = pgTable(
+  "inventory_lots",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    locationId: uuid("location_id").notNull(),
+    inventoryItemId: uuid("inventory_item_id").notNull(),
+    sequenceNumber: integer("sequence_number").notNull(),
+    lotNumber: text("lot_number").notNull(),
+    supplierLotCode: text("supplier_lot_code"),
+    expiresOn: date("expires_on", { mode: "string" }),
+    receivedOn: date("received_on", { mode: "string" }).notNull(),
+    origin: text("origin").notNull(),
+    sourceLotId: uuid("source_lot_id"),
+    unitCost: cost("unit_cost"),
+    quantityReceived: quantity("quantity_received").notNull(),
+    quantityRemaining: quantity("quantity_remaining").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    version: versionColumn(),
+  },
+  (table) => [
+    unique("inventory_lots_location_number_unique").on(table.locationId, table.lotNumber),
+    unique("inventory_lots_location_sequence_unique").on(table.locationId, table.sequenceNumber),
+    foreignKey({
+      name: "inventory_lots_item_org_fk",
+      columns: [table.inventoryItemId, table.organizationId],
+      foreignColumns: [inventoryItems.id, inventoryItems.organizationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_lots_location_org_fk",
+      columns: [table.locationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_lots_source_fk",
+      columns: [table.sourceLotId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+    check("inventory_lots_origin_valid", sql`${table.origin} IN ('RECEIPT', 'TRANSFER', 'OPENING', 'FOUND')`),
+    check("inventory_lots_transfer_source", sql`(${table.origin} = 'TRANSFER') = (${table.sourceLotId} IS NOT NULL)`),
+    check(
+      "inventory_lots_quantities_valid",
+      sql`${table.quantityReceived} > 0 AND ${table.quantityRemaining} >= 0`,
+    ),
+    check(
+      "inventory_lots_supplier_code_length",
+      sql`${table.supplierLotCode} IS NULL OR (length(trim(${table.supplierLotCode})) BETWEEN 1 AND 64)`,
+    ),
+    check("inventory_lots_cost_non_negative", sql`${table.unitCost} IS NULL OR ${table.unitCost} >= 0`),
+    index("inventory_lots_item_location_fefo_idx")
+      .on(table.inventoryItemId, table.locationId, table.expiresOn, table.receivedOn, table.sequenceNumber)
+      .where(sql`${table.quantityRemaining} > 0`),
+    index("inventory_lots_location_expires_idx")
+      .on(table.locationId, table.expiresOn)
+      .where(sql`${table.quantityRemaining} > 0`),
+  ],
+);
+
+/**
+ * Phase 23 (policy 16, D11, D12): how a ledger row moved lots. Append-only. For a lot-tracked
+ * item the movements of a ledger row sum to its `base_quantity_delta` (a deferred trigger
+ * checks it at commit). A null lot is a shortfall where negative stock is allowed; a later
+ * increase settles it with a pair under the same ledger row: +x on the shortfall (pointing at
+ * it) and -x on the new lot.
+ */
+export const inventoryLotMovements = pgTable(
+  "inventory_lot_movements",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    inventoryTransactionId: uuid("inventory_transaction_id").notNull(),
+    lotId: uuid("lot_id"),
+    baseQuantityDelta: quantity("base_quantity_delta").notNull(),
+    settlesMovementId: uuid("settles_movement_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "inventory_lot_movements_transaction_fk",
+      columns: [table.inventoryTransactionId],
+      foreignColumns: [inventoryTransactions.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_lot_movements_lot_fk",
+      columns: [table.lotId],
+      foreignColumns: [inventoryLots.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_lot_movements_settles_fk",
+      columns: [table.settlesMovementId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+    check("inventory_lot_movements_delta_non_zero", sql`${table.baseQuantityDelta} <> 0`),
+    check(
+      "inventory_lot_movements_settlement_shape",
+      sql`${table.settlesMovementId} IS NULL OR (${table.lotId} IS NULL AND ${table.baseQuantityDelta} > 0)`,
+    ),
+    index("inventory_lot_movements_transaction_idx").on(table.inventoryTransactionId),
+    index("inventory_lot_movements_lot_idx").on(table.lotId),
+    index("inventory_lot_movements_settles_idx").on(table.settlesMovementId),
   ],
 );

@@ -60,7 +60,17 @@ const EVENT_TYPES = [
   "reservation.guest-cancelled",
 ];
 
-export function RealtimeProvider({ children }: { children: ReactNode }) {
+/**
+ * `locationId` is the location the page shows. When it changes (the user switched), the
+ * stream is closed and reopened, so it carries the new location's events at once.
+ */
+export function RealtimeProvider({
+  children,
+  locationId = null,
+}: {
+  children: ReactNode;
+  locationId?: string | null;
+}) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const listeners = useRef(new Set<Listener>());
 
@@ -95,7 +105,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     source.onerror = () => setStatus("reconnecting");
 
     return () => source.close();
-  }, []);
+  }, [locationId]);
 
   const subscribe = useCallback((listener: Listener) => {
     listeners.current.add(listener);

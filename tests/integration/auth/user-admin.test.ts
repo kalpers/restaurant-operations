@@ -333,7 +333,10 @@ describe("user administration", () => {
 
     it("allows a role within what you hold", async () => {
       const { actor } = await createLimitedAdmin();
-      const user = await createUserFixture(getDatabase());
+      // Phase 23: someone already in the organization (here, working at the other location).
+      const user = await createUserFixture(getDatabase(), {
+        assignments: [{ roleId: fixture.serverRole, locationId: fixture.locationB }],
+      });
 
       await assignRole(getDatabase(), actor, {
         userId: user.id,

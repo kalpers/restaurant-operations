@@ -1,3 +1,5 @@
+import { apiFetch } from "./page-location";
+
 export type ApiFailure = {
   ok: false;
   status: number;
@@ -51,7 +53,7 @@ export async function readFailure(response: Response): Promise<ApiFailure> {
 
 async function send(url: string, init: RequestInit): Promise<ApiRequestResult> {
   try {
-    const response = await fetch(url, init);
+    const response = await apiFetch(url, init);
 
     return response.ok ? { ok: true } : await readFailure(response);
   } catch {
@@ -61,5 +63,5 @@ async function send(url: string, init: RequestInit): Promise<ApiRequestResult> {
 
 /** True when the record changed under the user and a reload shows the latest. */
 export function isStaleConflict(failure: Pick<ApiFailure, "code">): boolean {
-  return failure.code === "CONCURRENCY_CONFLICT";
+  return failure.code === "CONCURRENCY_CONFLICT" || failure.code === "LOCATION_CHANGED";
 }

@@ -18,6 +18,7 @@ import { addRecurringAvailability } from "../src/modules/scheduling/services/ava
 
 import { seedDeclaredAllergens, seedGuestProfiles, seedIngredientAllergens, type DemoProfile } from "./demo-guests-allergens";
 import { seedDemoKitchen } from "./demo-kitchen";
+import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
 async function versionOf(employeeId: string): Promise<number> {
@@ -221,6 +222,13 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo guests and allergens: ${tagged} ingredients tagged, ${declared} declared allergen(s), ${profiles} guest profiles added; existing ones were left alone.`,
+    );
+
+    // Phase 23 (D17): a second location, lot-tracked cheese and a received transfer.
+    const places = await seedDemoLocationsAndLots(database, await mainOwnerActor("locations.lifecycle"));
+
+    console.log(
+      `Demo locations and lots: Uptown ${places.locationOpened ? "opened from MAIN" : "already open"}, ${places.staffAdded} employees added there, ${places.lotItems} items lot tracked, ${places.lots} dated lots, ${places.transfers} transfer(s) received.`,
     );
   } finally {
     await closeDatabase();

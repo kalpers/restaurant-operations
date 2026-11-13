@@ -1,3 +1,5 @@
+import { apiFetch } from "@/components/forms/page-location";
+
 export type OrderApiResult<Data> =
   | { ok: true; data: Data }
   | { ok: false; status: number; code: string; message: string; details?: unknown; requestId?: string };
@@ -12,7 +14,7 @@ export async function callOrderApi<Data = unknown>(
   headers: Record<string, string> = {},
 ): Promise<OrderApiResult<Data>> {
   try {
-    const response = await fetch(url, {
+    const response = await apiFetch(url, {
       method,
       headers: body === undefined ? headers : { "Content-Type": "application/json", ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),

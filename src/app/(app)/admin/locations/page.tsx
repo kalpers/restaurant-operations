@@ -1,21 +1,76 @@
+import { NewLocationForm } from "@/components/admin/new-location-form";
+import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
+import { Badge } from "@/components/ui/badge";
 import { getDatabase } from "@/db";
 import { requirePagePermission } from "@/modules/auth/guards";
 import { hasPermission } from "@/modules/auth/services/permission-service";
+import { listOrganizationLocations } from "@/modules/organization/services/location-lifecycle-service";
 import { listLocationsWithSettings } from "@/modules/organization/services/organization-service";
 
 export default async function LocationsPage() {
-  const { auth } = await requirePagePermission("locations.view");
+  const { auth, location: current } = await requirePagePermission("locations.view");
   const viewableIds = auth.locations
     .filter((location) =>
       hasPermission(auth, "locations.view", location.locationId),
     )
     .map((location) => location.locationId);
   const rows = await listLocationsWithSettings(getDatabase(), viewableIds);
+  // Phase 23 (policies 1 and 3): opening, closing and reopening locations.
+  const canChangeLifecycle = hasPermission(auth, "locations.lifecycle", current.locationId);
+  const everyLocation = canChangeLifecycle
+    ? await listOrganizationLocations(getDatabase(), current.organizationId)
+    : [];
+  const sources = rows.map(({ location }) => ({ id: location.id, name: location.name }));
 
   return (
     <>
       <h1 className="mb-4 text-2xl font-semibold">Locations</h1>
+      {canChangeLifecycle && (
+        <div className="mb-8 grid gap-6">
+          <section className="rounded-lg border border-neutral-200 bg-surface p-4 shadow-sm">
+            <h2 className="mb-3 font-semibold">Open a new location</h2>
+            <NewLocationForm sources={sources} defaultTimeZone={rows[0]?.location.timezone ?? "America/New_York"} />
+          </section>
+          <section className="rounded-lg border border-neutral-200 bg-surface p-4 shadow-sm">
+            <h2 className="mb-3 font-semibold">Open and closed locations</h2>
+            <ul className="grid gap-3">
+              {everyLocation.map((location) => (
+                <li key={location.id} className="flex flex-wrap items-center gap-3" data-testid="location-lifecycle-row">
+                  <span className="font-medium">
+                    {location.name} ({location.locationCode})
+                  </span>
+                  <Badge tone={location.active ? "success" : "neutral"}>{location.active ? "Open" : "Closed"}</Badge>
+                  {location.active ? (
+                    <ActionButton
+                      method="POST"
+                      url={`/api/admin/locations/${location.id}/deactivate`}
+                      body={{ expectedVersion: location.version }}
+                      label="Close location"
+                      variant="danger"
+                      successMessage="Location closed."
+                      confirm={{
+                        title: `Close ${location.name}?`,
+                        body:
+                          "Nobody can work there until it is reopened. Its history stays in reports. Checks, seated parties, settlements, drawers and deliveries must be finished first.",
+                        confirmLabel: "Close location",
+                      }}
+                    />
+                  ) : (
+                    <ActionButton
+                      method="POST"
+                      url={`/api/admin/locations/${location.id}/reactivate`}
+                      body={{ expectedVersion: location.version }}
+                      label="Reopen location"
+                      successMessage="Location reopened."
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
       <div className="grid gap-8">
         {rows.map(({ location, settings }) =>
           hasPermission(auth, "locations.manage", location.id) ? (
@@ -60,6 +115,7 @@ export default async function LocationsPage() {
                   { name: "inventoryEnabled", label: "Inventory enabled", type: "checkbox", defaultValue: settings.inventoryEnabled },
                   { name: "schedulingEnabled", label: "Scheduling enabled", type: "checkbox", defaultValue: settings.schedulingEnabled },
                   { name: "kitchenDisplayEnabled", label: "Kitchen display enabled", type: "checkbox", defaultValue: settings.kitchenDisplayEnabled },
+                  { name: "lotExpiryWarningDays", label: "Warn before a lot expires (days, 0 for never)", type: "number", required: true, defaultValue: settings.lotExpiryWarningDays },
                 ]}
               />
             </section>

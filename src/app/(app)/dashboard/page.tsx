@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { DashboardOverview } from "@/components/reports/dashboard-overview";
+import { LocationsToday } from "@/components/reports/locations-today";
 import { requirePageUser, resolveCurrentLocation } from "@/modules/auth/guards";
 import { requirePermission } from "@/modules/auth/services/permission-service";
 import { dashboardQuerySchema } from "@/modules/reporting/validators/report-filters";
@@ -45,6 +46,12 @@ export default async function DashboardPage({
         <p className="text-neutral-700">
           Your account has no role at any location yet. Ask an administrator to assign one.
         </p>
+      )}
+
+      {location && canReport && (
+        <Suspense fallback={null}>
+          <LocationsToday auth={auth} />
+        </Suspense>
       )}
 
       {location && canReport && (

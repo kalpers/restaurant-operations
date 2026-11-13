@@ -44,7 +44,7 @@ test.describe("login", () => {
 
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(page.getByText(owner.email)).toBeVisible();
-    await expect(page.getByText("Main Restaurant")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Main Restaurant")).toBeVisible();
   });
 
   test("a wrong password and an unknown email get the same generic error", async ({
@@ -346,7 +346,7 @@ test.describe("location-aware authorization", () => {
 
     expect((await page.request.get("/api/admin/users")).status()).toBe(403);
     await page.goto("/dashboard");
-    await expect(page.getByText("Main Restaurant")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Main Restaurant")).toBeVisible();
   });
 
   test("permissions and navigation follow the selected location", async ({

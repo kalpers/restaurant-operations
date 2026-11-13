@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import type { GuestMessageView as ServerMessageView } from "@/modules/reservations/services/guest-message-service";
 
 import { BUTTON_CLASS, ErrorText, formatDay, formatTime, useSubmit } from "./shared";
+import { apiFetch } from "@/components/forms/page-location";
 
 // Phase 22 (policies 6 and 16): consent at the host stand, and a visit's message history.
 
@@ -122,7 +123,7 @@ export function GuestMessagesPanel({
     let cancelled = false;
     const load = async () => {
       try {
-        const response = await fetch(url);
+        const response = await apiFetch(url);
 
         if (cancelled) {
           return;

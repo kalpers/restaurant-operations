@@ -54,9 +54,9 @@ describe("password hashing", () => {
 });
 
 describe("permission catalog", () => {
-  it("has 148 unique codes", () => {
-    expect(ALL_PERMISSION_CODES).toHaveLength(148);
-    expect(new Set(ALL_PERMISSION_CODES).size).toBe(148);
+  it("has 149 unique codes", () => {
+    expect(ALL_PERMISSION_CODES).toHaveLength(149);
+    expect(new Set(ALL_PERMISSION_CODES).size).toBe(149);
   });
 
   it("uses the domain.action format", () => {

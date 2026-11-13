@@ -15,6 +15,8 @@ export const PERMISSION_CATALOG = [
   { code: "organization.manage", name: "Manage organization", category: "Organization" },
   { code: "locations.view", name: "View locations and areas", category: "Organization" },
   { code: "locations.manage", name: "Manage locations and areas", category: "Organization" },
+  // Phase 23 (policy 6): opening, closing and reopening locations.
+  { code: "locations.lifecycle", name: "Create, deactivate and reactivate locations", category: "Organization" },
 
   { code: "employees.view", name: "View employees", category: "Employees / HR" },
   { code: "employees.create", name: "Create employees", category: "Employees / HR" },

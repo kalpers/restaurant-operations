@@ -1,20 +1,22 @@
-import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 
 import type { Database } from "@/db";
+import { inventoryTransactions } from "@/db/schema";
 import { withTransaction, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import { recordAudit } from "@/modules/auditing";
-import { userHasPermission } from "@/modules/auth/services/permission-service";
 import type { Actor } from "@/modules/auth/types";
-import { negateDecimal } from "@/shared/decimal/decimal";
-import { AuthorizationError, BusinessRuleError } from "@/shared/errors/app-error";
 
-import { extendCost } from "../rules/costing";
 import type { AdjustmentReason, WasteReason } from "../types";
 import { assertPermission } from "./access";
-import { lockBalance, postInventoryTransaction, type PostingResult } from "./posting-service";
+import { postInventoryTransaction, type PostingResult } from "./posting-service";
+import { TRANSFER_REFERENCE, transferNow } from "./transfer-service";
 
 type MovementInput = {
   inventoryItemId: string;
+  /** Phase 23 (D9): a decrease from this lot instead of first to expire. */
+  lotId?: string | null;
+  /** Phase 23: the use-by date of stock found by an increase. */
+  expiresOn?: string | null;
   quantity: string;
   unitOfMeasureId: string;
   notes: string | null;
@@ -41,6 +43,7 @@ export async function recordWaste(
       notes: input.notes,
       occurredAt: input.occurredAt,
       createdByUserId: actor.userId,
+      lot: { lotId: input.lotId ?? null },
     });
 
     await auditMovement(transaction, actor, "inventory.waste-recorded", input, posted);
@@ -69,6 +72,10 @@ export async function recordAdjustment(
       notes: input.notes,
       occurredAt: input.occurredAt,
       createdByUserId: actor.userId,
+      lot:
+        input.direction === "INCREASE"
+          ? { expiresOn: input.expiresOn ?? null }
+          : { lotId: input.lotId ?? null },
     });
 
     await auditMovement(transaction, actor, "inventory.adjusted", input, posted);
@@ -82,6 +89,9 @@ export async function recordAdjustment(
  * and a TRANSFER_IN with one shared reference, in one transaction. The actor needs
  * `inventory.transfer` at both locations (checked against the database for the destination).
  * The source's average cost travels with the stock. Total quantity is unchanged.
+ *
+ * Phase 23 (policy 13): this is "Send and receive now". It creates a one-line transfer
+ * record, sends and receives it in full, and the reference is the transfer's ID.
  */
 export async function transferStock(
   database: Database,
@@ -90,65 +100,40 @@ export async function transferStock(
 ): Promise<{ transferId: string; out: PostingResult; in: PostingResult }> {
   assertPermission(actor, "inventory.transfer");
 
-  if (input.toLocationId === actor.locationId) {
-    throw new BusinessRuleError("SAME_LOCATION", "Choose a different location to transfer to.");
-  }
-
-  const allowedThere = await userHasPermission(database, {
-    userId: actor.userId,
-    permission: "inventory.transfer",
-    locationId: input.toLocationId,
-  });
-
-  if (!allowedThere) {
-    throw new AuthorizationError();
-  }
-
-  const transferId = randomUUID();
-
-  return withTransaction(database, async (transaction) => {
-    // Lock both balances in a stable order so opposite transfers can't deadlock.
-    for (const locationId of [actor.locationId, input.toLocationId].sort()) {
-      await lockBalance(transaction, actor.organizationId, input.inventoryItemId, locationId);
-    }
-
-    const reference = { type: "TRANSFER", id: transferId };
-    const out = await postInventoryTransaction(transaction, {
-      organizationId: actor.organizationId,
-      locationId: actor.locationId,
-      inventoryItemId: input.inventoryItemId,
-      type: "TRANSFER_OUT",
-      quantity: input.quantity,
-      unitOfMeasureId: input.unitOfMeasureId,
-      reference,
+  const created = await transferNow(
+    database,
+    actor,
+    {
+      toLocationId: input.toLocationId,
       notes: input.notes,
-      occurredAt: input.occurredAt,
-      createdByUserId: actor.userId,
-    });
-    const movedCost =
-      out.unitCost === null ? undefined : extendCost(negateDecimal(out.baseQuantityDelta), out.unitCost);
-    const arrived = await postInventoryTransaction(transaction, {
-      organizationId: actor.organizationId,
-      locationId: input.toLocationId,
-      inventoryItemId: input.inventoryItemId,
-      type: "TRANSFER_IN",
-      quantity: input.quantity,
-      unitOfMeasureId: input.unitOfMeasureId,
-      incomingTotalCost: movedCost,
-      reference,
-      notes: input.notes,
-      occurredAt: input.occurredAt,
-      createdByUserId: actor.userId,
-    });
+      lines: [{ inventoryItemId: input.inventoryItemId, quantity: input.quantity, unitOfMeasureId: input.unitOfMeasureId }],
+    },
+    input.occurredAt,
+  );
+  const rows = await database
+    .select()
+    .from(inventoryTransactions)
+    .where(
+      and(
+        eq(inventoryTransactions.referenceType, TRANSFER_REFERENCE),
+        eq(inventoryTransactions.referenceId, created.id),
+      ),
+    );
+  const result = (type: string): PostingResult => {
+    const row = rows.find((candidate) => candidate.transactionType === type)!;
 
-    await recordAudit(transaction, actor, {
-      action: "inventory.transferred",
-      entityId: input.inventoryItemId,
-      after: { transferId, quantity: out.baseQuantityDelta, destinationLocationId: input.toLocationId },
-    });
+    return {
+      transactionId: row.id,
+      sequence: row.sequence,
+      baseQuantityDelta: row.baseQuantityDelta,
+      quantityAfter: row.quantityAfter,
+      averageCostAfter: row.averageCostAfter,
+      unitCost: row.unitCost,
+      totalCost: row.totalCost,
+    };
+  };
 
-    return { transferId, out, in: arrived };
-  });
+  return { transferId: created.id, out: result("TRANSFER_OUT"), in: result("TRANSFER_IN") };
 }
 
 /** The free-text notes are not recorded; the ledger row keeps them. */

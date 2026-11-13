@@ -97,6 +97,7 @@ const AUDITED_SETTINGS = [
   "inventoryEnabled",
   "schedulingEnabled",
   "kitchenDisplayEnabled",
+  "lotExpiryWarningDays",
 ] as const;
 
 /** Phase 20 (policy 6): the change and its audit row commit together. */

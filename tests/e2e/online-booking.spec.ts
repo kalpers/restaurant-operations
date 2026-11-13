@@ -79,8 +79,16 @@ test("a signed-out guest books a table with a peanut allergy and text consent, a
   test.setTimeout(90_000);
 
   await page.goto(`/book/${setup.code}`);
-  // The first visit compiles the page and the availability API under `next dev`.
-  await expect(page.getByRole("button", { name: "19:00" })).toBeVisible({ timeout: 20_000 });
+
+  const form = page.getByRole("form", { name: "Book a table" });
+
+  // Tomorrow, so the evening is bookable whatever the time of day the suite runs (Phase 23
+  // fix: today's 19:00 is inside the two-hour lead time once it is past 17:00 here).
+  // Under `next dev` a fill before hydration is reset to today, so fill until it holds.
+  await expect(async () => {
+    await form.getByLabel("Date").fill(tomorrow());
+    await expect(page.getByRole("button", { name: "19:00" })).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 
   // Phase 15 standard: no serious or critical WCAG 2.1 A/AA violations on the guest page.
   const axe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
@@ -89,9 +97,6 @@ test("a signed-out guest books a table with a peanut allergy and text consent, a
     axe.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical").map((violation) => violation.id),
   ).toEqual([]);
 
-  const form = page.getByRole("form", { name: "Book a table" });
-
-  await form.getByLabel("Date").fill(tomorrow());
   await form.getByLabel("Guests").selectOption("4");
   await form.getByRole("button", { name: "19:00" }).click();
   await form.getByLabel("Name").fill(guest.name);

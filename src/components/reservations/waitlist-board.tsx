@@ -22,6 +22,7 @@ import { GuestPicker, type PickedGuest } from "./guest-picker";
 import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbilities } from "./party-guest-panel";
 import { GuestMessagesPanel, MessageConsentFields, type HostMessageAbilities, type MessageConsent } from "./guest-messages";
 import { StatusBadge } from "@/components/format/status-badge";
+import { apiFetch } from "@/components/forms/page-location";
 
 export type WaitlistAbilities = {
   manage: boolean;
@@ -81,7 +82,7 @@ function AddForm({
   const [profile, setProfile] = useState<PickedGuest | null>(null);
 
   async function suggest() {
-    const response = await fetch(`/api/waitlist/quote?partySize=${Number(size) || 1}`);
+    const response = await apiFetch(`/api/waitlist/quote?partySize=${Number(size) || 1}`);
 
     if (!response.ok) {
       return;

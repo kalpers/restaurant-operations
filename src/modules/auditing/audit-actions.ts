@@ -318,6 +318,25 @@ export const AUDIT_ACTIONS = {
   },
   // Phase 20 (policy 6): general location settings. Settings with their own action
   // (tax, cash drawers, auto-86) keep it.
+  // Phase 23 (policy 27): opening, closing and reopening a location. Codes and counts only.
+  "locations.created": {
+    category: "ORGANIZATION",
+    entityType: "location",
+    scope: "ORGANIZATION",
+    fields: ["locationCode", "copiedFromLocationId", "copiedGroups", "rolesCopied"],
+  },
+  "locations.deactivated": {
+    category: "ORGANIZATION",
+    entityType: "location",
+    scope: "ORGANIZATION",
+    fields: ["locationCode", "active"],
+  },
+  "locations.reactivated": {
+    category: "ORGANIZATION",
+    entityType: "location",
+    scope: "ORGANIZATION",
+    fields: ["locationCode", "active"],
+  },
   "organization.location-settings-changed": {
     category: "ORGANIZATION",
     entityType: "location",
@@ -333,6 +352,7 @@ export const AUDIT_ACTIONS = {
       "inventoryEnabled",
       "schedulingEnabled",
       "kitchenDisplayEnabled",
+      "lotExpiryWarningDays",
     ],
   },
   // Phase 17 tax configuration. The rate percentage is configuration, not pay.
@@ -423,6 +443,44 @@ export const AUDIT_ACTIONS = {
     entityType: "inventory_item",
     scope: "LOCATION",
     fields: ["transferId", "quantity", "destinationLocationId"],
+  },
+  // Phase 23 (policy 27): transfer records. Numbers, locations and counts only.
+  "inventory.transfer-sent": {
+    category: "INVENTORY",
+    entityType: "inventory_transfer",
+    scope: "LOCATION",
+    fields: ["transferNumber", "toLocationId", "lineCount"],
+  },
+  "inventory.transfer-received": {
+    category: "INVENTORY",
+    entityType: "inventory_transfer",
+    scope: "LOCATION",
+    fields: ["transferNumber", "fromLocationId", "lineCount", "shortLines"],
+  },
+  "inventory.transfer-cancelled": {
+    category: "INVENTORY",
+    entityType: "inventory_transfer",
+    scope: "LOCATION",
+    fields: ["transferNumber", "status"],
+  },
+  // Phase 23 (policies 20–21): lot tracking and lot corrections. Codes and dates only.
+  "inventory.lot-tracking-enabled": {
+    category: "INVENTORY",
+    entityType: "inventory_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "openingLots"],
+  },
+  "inventory.lot-tracking-disabled": {
+    category: "INVENTORY",
+    entityType: "inventory_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode"],
+  },
+  "inventory.lot-corrected": {
+    category: "INVENTORY",
+    entityType: "inventory_lot",
+    scope: "LOCATION",
+    fields: ["lotNumber", "supplierLotCode", "expiresOn", "reason"],
   },
   "inventory.count-approved": {
     category: "INVENTORY",

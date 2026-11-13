@@ -1,3 +1,4 @@
+import { AddExistingPerson } from "@/components/admin/add-existing-person";
 import { ResetPasswordButton } from "@/components/admin/reset-password-button";
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
@@ -59,6 +60,16 @@ export default async function UsersPage() {
               { name: "roleId", label: "Role at this location", type: "select", required: true, options: roleOptions },
             ]}
           />
+        </section>
+      )}
+
+      {canManage && roleOptions.length > 0 && (
+        <section className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+          <h2 className="mb-1 font-semibold">Add an existing person</h2>
+          <p className="mb-3 text-sm text-neutral-600">
+            Someone who already works at another location of this organization.
+          </p>
+          <AddExistingPerson roles={roleOptions} />
         </section>
       )}
 

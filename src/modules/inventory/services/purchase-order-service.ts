@@ -172,6 +172,7 @@ export async function getPurchaseOrder(
     .select({
       line: purchaseOrderLines,
       itemName: inventoryItems.name,
+      lotTracked: inventoryItems.lotTracked,
       unitCode: unitsOfMeasure.code,
       supplierSku: supplierItems.supplierSku,
     })
@@ -197,12 +198,13 @@ export async function getPurchaseOrder(
   return {
     order: { ...order.order, supplierName: order.supplierName, supplierActive: order.supplierActive },
     total: orderTotal(lines.map(({ line }) => line.lineTotal)),
-    lines: lines.map(({ line, itemName, unitCode, supplierSku }) => {
+    lines: lines.map(({ line, itemName, lotTracked, unitCode, supplierSku }) => {
       const receivedQuantity = received.get(line.id) ?? "0";
 
       return {
         ...line,
         itemName,
+        lotTracked,
         unitCode,
         supplierSku,
         receivedQuantity: toScale(receivedQuantity, 4),

@@ -6,7 +6,10 @@ const TABS: readonly { href: string; label: string; permission: PermissionCode }
   { href: "/inventory", label: "On hand", permission: "inventory.view" },
   { href: "/inventory/low-stock", label: "Low stock", permission: "inventory.view" },
   { href: "/inventory/transactions", label: "Transactions", permission: "inventory.view" },
-  { href: "/inventory/movements", label: "Waste, adjustments and transfers", permission: "inventory.view" },
+  { href: "/inventory/movements", label: "Waste and adjustments", permission: "inventory.view" },
+  // Phase 23: transfers between locations have their own page.
+  { href: "/inventory/transfers", label: "Transfers", permission: "inventory.view" },
+  { href: "/inventory/lots", label: "Lots", permission: "inventory.view" },
   { href: "/inventory/counts", label: "Counts", permission: "inventory.count" },
   { href: "/inventory/items", label: "Items", permission: "inventory.configure" },
 ];

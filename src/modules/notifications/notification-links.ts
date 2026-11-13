@@ -15,6 +15,8 @@ export function notificationLink(
       return row.orderId ? { href: `/orders/${row.orderId}`, label: "Open order" } : null;
     case "INVENTORY_LOW":
       return { href: "/inventory/low-stock", label: "See low stock" };
+    case "LOT_EXPIRING":
+      return { href: "/inventory/lots", label: "See lots" };
     case "SCHEDULE_PUBLISHED":
     case "SHIFT_CHANGED":
     case "TIME_OFF_APPROVED":

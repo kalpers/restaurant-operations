@@ -22,6 +22,8 @@ export default defineConfig({
   // compiles take longer than the 5-second assertion wait, and unrelated tests fail.
   workers: 2,
   reporter: "list",
+  // Phase 23: under `next dev`, requests every route once so it compiles before the tests.
+  globalSetup: "./tests/helpers/e2e-warm-up.ts",
   use: {
     baseURL,
     trace: "on-first-retry",

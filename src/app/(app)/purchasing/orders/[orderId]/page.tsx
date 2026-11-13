@@ -128,6 +128,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
               .map((line) => ({
                 id: line.id,
                 itemName: line.itemName,
+                lotTracked: line.lotTracked,
                 unitCode: line.unitCode,
                 remainingQuantity: formatQuantity(line.remainingQuantity),
                 unitPrice: formatCost(line.unitPrice),

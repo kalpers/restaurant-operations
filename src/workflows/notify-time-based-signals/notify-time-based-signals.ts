@@ -2,6 +2,7 @@ import type { Database } from "@/db";
 import { withTransaction } from "@/db/transactions/transaction-context";
 import { findUserIdsHolding } from "@/modules/auth/services/permission-holders";
 import { findCertificationsInWarningWindow } from "@/modules/employees/queries/certification-warnings";
+import { findLotsNeedingWarning } from "@/modules/inventory/services/lot-service";
 import { findEmployeeDisplayNames, findLinkedUserIds } from "@/modules/employees/queries/employee-display-names";
 import { createNotifications, type NewNotification } from "@/modules/notifications/notification-writer";
 import { listActiveLocations } from "@/modules/organization/services/organization-service";
@@ -15,7 +16,9 @@ import { localDateOf } from "@/shared/time/zoned-time";
 //   `hr.certifications.manage` holders at the location;
 // - OVERTIME_APPROACHING once per employee and work week, to the employee and to
 //   `timeclock.manage` holders;
-// - MISSED_CLOCK_OUT once per entry, to `timeclock.manage` holders.
+// - MISSED_CLOCK_OUT once per entry, to `timeclock.manage` holders;
+// - (Phase 23, policy 22) LOT_EXPIRING once per lot as it starts expiring and once when it
+//   has expired, to `inventory.adjust` holders.
 // Each location runs in its own transaction. Warnings never block a punch (Phase 18).
 
 export type TimeBasedSignalsResult = { locations: number; notificationsCreated: number };
@@ -33,7 +36,7 @@ export async function notifyTimeBasedSignals(
   for (const location of locations) {
     notificationsCreated += await withTransaction(database, async (transaction) => {
       const scope = { organizationId: location.organizationId, locationId: location.id };
-      const holders = (permission: "hr.certifications.manage" | "timeclock.manage") =>
+      const holders = (permission: "hr.certifications.manage" | "timeclock.manage" | "inventory.adjust") =>
         findUserIdsHolding(transaction, { ...scope, permission });
       const today = localDateOf(now, location.timeZone);
       const certifications = await findCertificationsInWarningWindow(transaction, { ...scope, today });
@@ -117,6 +120,25 @@ export async function notifyTimeBasedSignals(
             body: `${name(row.employeeId)} is still clocked in from ${row.businessDate}. Close the entry with an adjustment on the time clock.`,
             links: { timeEntryId: row.entryId },
             dedupeKey: `missed:${row.entryId}`,
+          });
+        }
+      }
+
+      const lots = await findLotsNeedingWarning(transaction, { locationId: location.id, now });
+      const stockManagers = lots.length > 0 ? await holders("inventory.adjust") : [];
+
+      for (const lot of lots) {
+        for (const recipientUserId of stockManagers) {
+          pending.push({
+            type: "LOT_EXPIRING",
+            recipientUserId,
+            title: lot.status === "EXPIRED" ? `Expired: ${lot.itemName}` : `Expiring soon: ${lot.itemName}`,
+            body:
+              lot.status === "EXPIRED"
+                ? `Lot ${lot.lotNumber} expired on ${lot.expiresOn}. Waste what is left from the lots page.`
+                : `Lot ${lot.lotNumber} expires on ${lot.expiresOn}. Use it first.`,
+            links: { inventoryLotId: lot.id },
+            dedupeKey: `lot:${lot.id}:${lot.status === "EXPIRED" ? "expired" : "expiring"}`,
           });
         }
       }

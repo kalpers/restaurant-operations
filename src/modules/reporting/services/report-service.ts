@@ -26,6 +26,7 @@ import {
   serverPerformanceSection,
 } from "../queries/signals-report";
 import { tipsSections } from "../queries/tips-report";
+import { inTransitSection } from "../queries/transfer-report";
 import { csvFileName, reportToCsv } from "../rules/csv";
 import { assertValidRange } from "../rules/period";
 import {
@@ -39,7 +40,7 @@ import {
 } from "../types";
 
 // Phase 19 sections follow each area's existing ones, which stay exactly as they were.
-const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<ReportSection[]>> = {
+export const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<ReportSection[]>> = {
   sales: async (context) => [...(await salesSections(context)), await salesByHourSection(context)],
   menu: async (context) => [...(await menuSections(context)), ...(await itemMixSections(context))],
   settlements: settlementSections,
@@ -48,7 +49,12 @@ const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<ReportSec
     await serverPerformanceSection(context),
     await adjustmentsByEmployeeSection(context),
   ],
-  inventory: async (context) => [...(await inventorySections(context)), await eightySixHistorySection(context)],
+  inventory: async (context) => [
+    ...(await inventorySections(context)),
+    await eightySixHistorySection(context),
+    // Phase 23 (policy 14): transfers sent and not yet received.
+    await inTransitSection(context),
+  ],
   fulfillment: fulfillmentSections,
   labor: laborSections,
   seating: seatingSections,

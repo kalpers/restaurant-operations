@@ -30,8 +30,11 @@ import {
 import {
   activateAssignment,
   deactivateAssignment,
+  belongsToOrganization,
   disableUserRow,
+  findActiveRoleIdsAtLocation,
   findLinkedEmployeeStatus,
+  findOrganizationUsersNotAt,
   findUserAccountById,
   findUserAssignmentRowsAtLocation,
   findUserInOrganization,
@@ -285,7 +288,11 @@ export async function assignRole(
   await withTransaction(database, async (transaction) => {
     await assertRoleAssignable(transaction, actor, input.roleId);
 
-    if (!(await findUserStatusById(transaction, input.userId))) {
+    // Phase 23: only someone already in this organization can be given a role here.
+    if (
+      !(await findUserStatusById(transaction, input.userId)) ||
+      !(await belongsToOrganization(transaction, input.userId, actor.organizationId))
+    ) {
       throw new NotFoundError("user");
     }
 
@@ -374,4 +381,54 @@ export function assertCanManageUsers(actor: Actor): void {
   if (!actor.permissions.has("admin.users.manage")) {
     throw new AuthorizationError();
   }
+}
+
+/**
+ * Phase 23 (policy 1, D1): gives the person opening a location the same roles they hold at
+ * the location they're working at, at the new one, so nobody gets more than they already
+ * have. Runs inside the open-location transaction. Returns the role IDs copied.
+ */
+export async function copyOwnRolesToLocation(
+  transaction: DatabaseTransaction,
+  input: { userId: string; fromLocationId: string; toLocationId: string },
+): Promise<string[]> {
+  const roleIds = await findActiveRoleIdsAtLocation(transaction, input.userId, input.fromLocationId);
+
+  for (const roleId of roleIds) {
+    await insertAssignment(transaction, {
+      userId: input.userId,
+      roleId,
+      locationId: input.toLocationId,
+      assignedByUserId: input.userId,
+    });
+  }
+
+  return roleIds;
+}
+
+/**
+ * Phase 23 (policy 5, D5): people already in the organization who could be given a role at
+ * the actor's location ("Add an existing person"). Needs `admin.users.manage`.
+ */
+export async function searchPeopleToAdd(
+  database: Database,
+  actor: Actor,
+  query: string,
+): Promise<{ id: string; email: string }[]> {
+  if (!actor.permissions.has("admin.users.manage")) {
+    throw new AuthorizationError();
+  }
+
+  const text = normalizeEmail(query);
+
+  if (text.length < 2) {
+    return [];
+  }
+
+  return findOrganizationUsersNotAt(database, {
+    organizationId: actor.organizationId,
+    locationId: actor.locationId,
+    query: text,
+    limit: 20,
+  });
 }

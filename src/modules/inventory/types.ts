@@ -36,7 +36,18 @@ export const ADJUSTMENT_REASONS = [
   "DATA_CORRECTION",
   "OTHER",
 ] as const;
-export type AdjustmentReason = (typeof ADJUSTMENT_REASONS)[number];
+/**
+ * Phase 23 (policy 12): written only by the system when a transfer arrives short, never
+ * chosen in the adjustment form.
+ */
+export const SYSTEM_ADJUSTMENT_REASONS = ["TRANSFER_SHORTAGE"] as const;
+export type AdjustmentReason =
+  | (typeof ADJUSTMENT_REASONS)[number]
+  | (typeof SYSTEM_ADJUSTMENT_REASONS)[number];
+
+/** Phase 23 (policy 10): a transfer between two locations of one organization. */
+export const TRANSFER_STATUSES = ["DRAFT", "SENT", "RECEIVED", "CANCELLED"] as const;
+export type TransferStatus = (typeof TRANSFER_STATUSES)[number];
 
 export const PURCHASE_ORDER_STATUSES = [
   "DRAFT",

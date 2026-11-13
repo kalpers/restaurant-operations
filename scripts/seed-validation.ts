@@ -4,6 +4,7 @@ import {
   VALIDATION_LABOR_SEED_KEY,
   VALIDATION_MENU_STOCK_SEED_KEY,
   VALIDATION_GUESTS_ALLERGENS_SEED_KEY,
+  VALIDATION_LOTS_SEED_KEY,
   VALIDATION_SEED_KEY,
   VALIDATION_SERVICE_POLISH_SEED_KEY,
 } from "../src/db/demo/validation-fixture";
@@ -12,6 +13,7 @@ import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 import { seedValidationFixture } from "./validation-fixture";
 import { seedValidationGuestsAllergens } from "./validation-guests-allergens";
 import { seedValidationLaborTips } from "./validation-labor";
+import { seedValidationLots } from "./validation-lots";
 import { seedValidationMenuStock } from "./validation-menu-stock";
 import { seedValidationServicePolish } from "./validation-service-polish";
 
@@ -78,6 +80,15 @@ async function main(): Promise<void> {
       guests.skipped
         ? `Guests and allergens: ${VALIDATION_GUESTS_ALLERGENS_SEED_KEY} already applied; nothing to do.`
         : `Guests and allergens: ${guests.ingredientsTagged} ingredients tagged, ${guests.declared} declared allergen(s), ${guests.profiles} guest profiles. Recorded as ${VALIDATION_GUESTS_ALLERGENS_SEED_KEY}.`,
+    );
+
+    // Phase 23, under its own key, so an earlier database gets it too.
+    const lots = await seedValidationLots(getDatabase(), await mainOwnerActor("inventory.configure"));
+
+    console.log(
+      lots.skipped
+        ? `Lots: ${VALIDATION_LOTS_SEED_KEY} already applied; nothing to do.`
+        : `Lots: bacon ${lots.tracked ? "now" : "already"} tracked in lots, with a dated lot at MAIN. Recorded as ${VALIDATION_LOTS_SEED_KEY}.`,
     );
   } finally {
     await closeDatabase();

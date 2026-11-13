@@ -177,11 +177,15 @@ Open **Inventory & Purchasing** to review stock, low-stock items, and inventory 
 
 **Suggested orders.** On an item's stock settings, choose a **Preferred supplier**. Then **Suggested orders** lists, per supplier, what to order: enough to reach the reorder target, less what is already on order, in whole cases. **Create draft orders** makes one draft purchase order per supplier. Review, change and submit them as usual; nothing is sent to a supplier by itself. Items with no preferred supplier are listed so you can choose one.
 
+**Transfers between locations.** Open **Inventory → Transfers**. Under **New transfer**, choose the location, add items and quantities, and **Save draft**. When the stock leaves, choose **Send**: it leaves your stock and is *in transit* until the other location receives it. There, **Arriving here** lists it: enter what actually arrived for each item and choose **Receive**. Anything missing is recorded as a transfer shortage at the receiving location. A draft can be cancelled; a sent transfer can't, so send the stock back instead. If you work at both locations, **Send and receive now** does it in one step.
+
+**Lots and use-by dates.** For items with a use-by date (dairy, meat, fish), open the item and choose **Turn lot tracking on**; stock already on hand becomes an opening lot. Each delivery then asks for the supplier's lot code and use-by date, and stock is used first to expire, first out, including when orders are sent to the kitchen. **Inventory → Lots** lists every lot with stock, marked *Expiring soon* or *Expired*. **Waste lot** throws out what is left of one lot; **Correct code or date** fixes a typing mistake (with a reason). Managers get a notice in the bell when a lot is about to expire and again when it has; the number of days' warning is a location setting. **Trace** shows where a lot came from, where it was sent, and which orders used it.
+
 Receiving goods changes on-hand inventory; creating a purchase order by itself does not. Inventory changes are recorded as transactions. Use the inventory workflows rather than attempting to correct stock outside the app, so the stock balance and movement history stay aligned.
 
 ### Reporting
 
-Open **Reporting**, choose an available report, and set the date range. Which reports and export actions appear depends on your permissions. Reports use the selected location and operational business dates; an early-morning clock time may belong to the previous restaurant business date.
+Open **Reporting**, choose an available report, and set the date range. If you can see a report at two or more locations, the **Location** list also offers **All my locations**: one row per location and a total, each location on its own business dates. The Dashboard then shows **Today at all my locations**. Inventory reports include **In transit** (sent and not yet received). Which reports and export actions appear depends on your permissions. Reports use the selected location and operational business dates; an early-morning clock time may belong to the previous restaurant business date.
 
 The **Labor** report shows scheduled labor first, then actual labor from the time clock: worked hours, regular and overtime hours, scheduled vs. actual by day (late, early out, unscheduled, no-show), overtime by work week, and time clock exceptions (missed clock-outs, corrections, voids). Labor cost appears only for people allowed to see compensation. The **Tips** report shows tips by date and tender, direct tips by server, and finalized tip shares.
 
@@ -207,9 +211,12 @@ Managers open **Online booking** (the tab at the host stand) to let guests book 
 
 ### Notifications
 
-The bell shows in-app notices for you: food and drinks ready, low stock, a published schedule with your shifts, an approved shift swap, a decision on your time off, a certification about to expire, being close to overtime this week, and (for managers) a missed clock-out. Each notice appears once. Times everywhere in the app are shown in the restaurant's time zone, whatever your device is set to.
+The bell shows in-app notices for you: food and drinks ready, low stock, a published schedule with your shifts, an approved shift swap, a decision on your time off, a certification about to expire, being close to overtime this week, (for managers) a missed clock-out, and (for inventory managers) a lot about to expire or expired. Each notice appears once. Times everywhere in the app are shown in the restaurant's time zone, whatever your device is set to.
 
 ### Administration: users and System health
+
+- **Locations.** Owners and General Managers open **Admin → Locations** to **Open a new location**: name, code and time zone, and optionally **Copy setup from** another location (settings, stations and kitchen routing, menus, prices, taxes, stocked items, scheduling and tip rules, booking hours). Staff, tables and stock are never copied; you get your own roles there. **Close location** is refused while anything is still open there (checks, seated parties, settlements, drawers, deliveries or transfers); **Reopen location** brings it back. The header always shows where you are working; with several locations it is a list. If you switch in one tab, a save in another tab still showing the old location is refused with a **Reload** button.
+- **Someone from another location.** In **Admin → Users**, **Add an existing person** finds people already in the organization by email and gives them a role here.
 
 - **Unlock an account.** In **Admin → Users**, a locked account shows **Locked until …**. Choose **Unlock** to end the lockout now; the password doesn't change.
 - **Reset a password.** Choose **Reset password** on the user's card and confirm.

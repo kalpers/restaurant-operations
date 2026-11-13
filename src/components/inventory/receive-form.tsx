@@ -9,6 +9,8 @@ import { INPUT_STYLE } from "@/components/ui/field";
 type ReceivableLine = {
   id: string;
   itemName: string;
+  /** Phase 23: lot-tracked items take a supplier lot code and a use-by date. */
+  lotTracked?: boolean;
   unitCode: string;
   remainingQuantity: string;
   unitPrice: string;
@@ -32,10 +34,21 @@ export function ReceiveForm({ orderId, lines }: { orderId: string; lines: Receiv
     const received = lines.flatMap((line) => {
       const quantity = String(data.get(`quantity-${line.id}`) ?? "").trim();
       const cost = String(data.get(`cost-${line.id}`) ?? "").trim();
+      const lotCode = String(data.get(`lot-${line.id}`) ?? "").trim();
+      const expiresOn = String(data.get(`expires-${line.id}`) ?? "").trim();
 
       return quantity === ""
         ? []
-        : [{ purchaseOrderLineId: line.id, receivedQuantity: quantity, actualUnitCost: cost === "" ? null : cost }];
+        : [
+            {
+              purchaseOrderLineId: line.id,
+              receivedQuantity: quantity,
+              actualUnitCost: cost === "" ? null : cost,
+              ...(line.lotTracked
+                ? { supplierLotCode: lotCode === "" ? null : lotCode, expiresOn: expiresOn === "" ? null : expiresOn }
+                : {}),
+            },
+          ];
     });
 
     if (received.length === 0) {
@@ -78,6 +91,18 @@ export function ReceiveForm({ orderId, lines }: { orderId: string; lines: Receiv
             Actual cost per {line.unitCode} for {line.itemName} (ordered at {line.unitPrice})
             <input name={`cost-${line.id}`} inputMode="decimal" className={INPUT_CLASS} />
           </label>
+          {line.lotTracked && (
+            <>
+              <label className="grid gap-1 text-sm font-medium">
+                Supplier lot code for {line.itemName}
+                <input name={`lot-${line.id}`} maxLength={64} className={INPUT_CLASS} />
+              </label>
+              <label className="grid gap-1 text-sm font-medium">
+                Use by for {line.itemName}
+                <input name={`expires-${line.id}`} type="date" className={INPUT_CLASS} />
+              </label>
+            </>
+          )}
         </fieldset>
       ))}
       <label className="grid gap-1 text-sm font-medium">

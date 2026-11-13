@@ -8,6 +8,7 @@ import { NETWORK_FAILURE_MESSAGE, readFailure, type ApiFailure } from "@/compone
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
+import { apiFetch } from "@/components/forms/page-location";
 
 /**
  * An administrator's password reset. The temporary password exists only in this component's
@@ -26,7 +27,7 @@ export function ResetPasswordButton({ userId, email, version }: { userId: string
     setError(null);
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}/password-reset`, {
+      const response = await apiFetch(`/api/admin/users/${userId}/password-reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expectedVersion: version }),

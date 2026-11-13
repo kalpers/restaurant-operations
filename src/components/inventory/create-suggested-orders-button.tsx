@@ -7,6 +7,7 @@ import { ApiErrorMessage } from "@/components/forms/api-error-message";
 import { readFailure, type ApiFailure } from "@/components/forms/api-request";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { apiFetch } from "@/components/forms/page-location";
 
 type Created = { purchaseOrders: { id: string; poNumber: string }[] };
 
@@ -31,7 +32,7 @@ export function CreateSuggestedOrdersButton({ supplierCount }: { supplierCount: 
     setError(null);
 
     try {
-      const response = await fetch("/api/purchasing/suggested-orders", {
+      const response = await apiFetch("/api/purchasing/suggested-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idempotencyKey: key }),
