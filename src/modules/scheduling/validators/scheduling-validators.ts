@@ -111,7 +111,42 @@ export const generateSchema = z.object({
 export const applyTemplateSchema = z.object({
   templateId: z.uuid(),
   expectedPeriodVersion: expectedVersion,
+  /** Phase 24 (policy 12): size new shifts from the demand forecast. Off by default. */
+  useForecast: z.boolean().default(false),
 });
+
+/** Phase 24 (policy 13): listed shifts, or every template shift when omitted. */
+export const applyForecastSchema = z.object({
+  expectedPeriodVersion: expectedVersion,
+  shiftIds: z.array(z.uuid()).min(1).max(1000).nullable().default(null),
+});
+
+const demandMeasure = z.enum(["DINING_COVERS", "BAR_CHECKS", "TAKEOUT_CHECKS", "ALL_CHECKS"]);
+const ratioFields = {
+  measure: demandMeasure,
+  unitsPerEmployeeHour: z.string().trim().min(1).max(12),
+  minimumEmployees: z.coerce.number().int().min(0).max(99),
+  maximumEmployees: z.coerce.number().int().min(1).max(99),
+};
+
+/** Phase 24 (policy 7). */
+export const createRatioSchema = z.object({ positionId: z.uuid(), ...ratioFields });
+
+export const updateRatioSchema = z.object({
+  ...ratioFields,
+  active: z.boolean(),
+  expectedVersion,
+});
+
+export const ratioIdParamsSchema = z.object({ ratioId: z.uuid() });
+
+/** Phase 24 (policy 6). */
+export const excludedDateSchema = z.object({
+  excludedDate: date,
+  reason: z.string().trim().min(1).max(200),
+});
+
+export const excludedDateIdParamsSchema = z.object({ excludedDateId: z.uuid() });
 
 export const recurringAvailabilitySchema = z.object({
   dayOfWeek: z.coerce.number().pipe(day),
@@ -221,6 +256,9 @@ export const rulesSchema = z.object({
   lateClockInGraceMinutes: z.coerce.number().int().min(0).max(120).default(5),
   /** Phase 20 (policy 19): blank is off. */
   dailyOvertimeThreshold: optionalHours,
+  /** Phase 24 (policy 5): optional, so existing callers keep working. */
+  forecastLookbackWeeks: z.coerce.number().int().min(1).max(12).default(6),
+  forecastMinimumSamples: z.coerce.number().int().min(1).max(12).default(3),
   expectedVersion: expectedVersion.nullable(),
 });
 

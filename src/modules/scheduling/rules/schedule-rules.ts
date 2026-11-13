@@ -43,6 +43,9 @@ export type SchedulingRuleRow = {
   lateClockInGraceMinutes: number;
   /** Phase 20 (policy 19): daily overtime threshold in hours, or null when off. */
   dailyOvertimeThreshold: string | null;
+  /** Phase 24 (policy 5): demand forecast look-back weeks and minimum history dates. */
+  forecastLookbackWeeks: number;
+  forecastMinimumSamples: number;
 };
 
 /** Used for a location that has no rules row yet. Matches the seeded defaults. */
@@ -63,6 +66,8 @@ export const DEFAULT_RULE_ROW: SchedulingRuleRow = {
   overtimeMultiplier: "1.50",
   lateClockInGraceMinutes: 5,
   dailyOvertimeThreshold: null,
+  forecastLookbackWeeks: 6,
+  forecastMinimumSamples: 3,
 };
 
 export function toRuleSet(row: SchedulingRuleRow): SchedulingRuleSet {

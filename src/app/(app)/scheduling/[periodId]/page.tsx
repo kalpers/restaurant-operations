@@ -27,6 +27,8 @@ import { HARD_CONSTRAINT_MESSAGES } from "@/modules/scheduling/rules/eligibility
 import { NotFoundError } from "@/shared/errors/app-error";
 
 import { CoverageSection, type CoverageData } from "./coverage-section";
+import { ForecastSection, type ForecastData } from "./forecast-section";
+import { getPeriodForecast } from "@/modules/scheduling/services/forecast-service";
 import { Breadcrumbs } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/format/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -130,6 +132,10 @@ export default async function PeriodPage({
   const coverage: CoverageData | null = canReview
     ? await getPeriodCoverage(database, actor, periodId)
     : null;
+  // Phase 24 (policy 10): schedule editors see the forecast; only a draft can use it.
+  const forecast: ForecastData | null = actorHolds(actor, "schedule.edit")
+    ? await getPeriodForecast(database, actor, periodId)
+    : null;
   const runs = canReview
     ? await listGenerationRuns(database, actor, periodId)
     : [];
@@ -201,6 +207,8 @@ export default async function PeriodPage({
 
       {coverage && <CoverageSection coverage={coverage} />}
 
+      {forecast && <ForecastSection forecast={forecast} canApply={canEdit} />}
+
       {canEdit && options && (
         <section className="mb-8 grid gap-6 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
           <div>
@@ -243,6 +251,12 @@ export default async function PeriodPage({
                       value: row.id,
                       label: row.name,
                     })),
+                  },
+                  {
+                    name: "useForecast",
+                    label: "Size new shifts from the demand forecast",
+                    type: "checkbox",
+                    defaultValue: false,
                   },
                 ]}
               />

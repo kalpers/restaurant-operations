@@ -204,6 +204,8 @@ describe("actual labor reporting", () => {
       "scheduledVsActual",
       "overtime",
       "exceptions",
+      // Phase 24 (policy 16).
+      "forecastAccuracy",
     ]);
   });
 

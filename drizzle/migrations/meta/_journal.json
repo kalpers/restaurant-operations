@@ -428,6 +428,20 @@
       "when": 1794521235883,
       "tag": "0060_lot_expiring_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794540116435,
+      "tag": "0061_demand_forecasting",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794540119977,
+      "tag": "0062_demand_forecasting_guards",
+      "breakpoints": true
     }
   ]
 }

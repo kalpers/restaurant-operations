@@ -447,6 +447,11 @@ staffing_templates
 staffing_template_requirements
 scheduling_rules
 schedule_generation_runs
+staffing_ratios
+demand_excluded_dates
+demand_forecasts
+demand_forecast_dates
+demand_forecast_hours
 ```
 
 Schedule lifecycle:
@@ -479,6 +484,7 @@ Inputs:
 - Scheduling preferences
 - Rules
 - Existing assignments
+- Demand forecast (Phase 24, optional): sizes the shifts a template creates, when the manager asks
 
 Hard constraints include:
 - Active employee
@@ -508,6 +514,14 @@ Outputs:
 Manager may override generated assignments and use a fill-open-shifts mode.
 
 A read-only day timeline (Gantt) shows the schedule by employee or by position; see "Phase 14 Schedule Timeline" in section 33.
+
+### Demand forecast (Phase 24)
+
+For each date of a schedule period (from today's business date on), the expected demand per local hour: dining covers (seated parties, counted once per table session), bar checks, takeout checks and all checks, from CLOSED checks only and by the hour each check was opened (the sales-by-hour rule). Counts only, never money. The method is a weighted average of the same weekday over the last `forecast_lookback_weeks` weeks (default 6, newest weighted highest), skipping dates with no closed checks and dates on the location's excluded list (`demand_excluded_dates`), looking back at most 12 weeks; fewer than `forecast_minimum_samples` (default 3) usable dates means no forecast for that date. Dining covers are raised to at least the covers already booked (PENDING and CONFIRMED reservations in that hour).
+
+A staffing ratio (`staffing_ratios`, one active per location and position, `schedule.rules.manage`) says which demand drives the position and how much one employee handles in an hour, with a minimum and maximum. A shift's suggested count is its busiest hour's forecast divided by the ratio, rounded up, held between the minimum and maximum, and at least 1. A position with no ratio, or a date with no forecast, keeps the template's count.
+
+The forecast changes a schedule only on request, on a DRAFT period, under `schedule.edit`: **Apply template** with "Size new shifts from the demand forecast", or **Use suggestion** / **Use all suggestions** on shifts that came from a template (never below the people already assigned; hand-added shifts are never changed). Each use stores the forecast as it was (`demand_forecasts`, `demand_forecast_dates`, `demand_forecast_hours`, append-only), and sized shifts record the forecast, the suggestion and the template's count. The generator is unchanged; a run records which stored forecasts sized its shifts. The Labor report compares the forecast used with what happened ("Forecast vs actual"). See "Phase 24 Demand Forecasting" in section 33.
 
 ### Time clock (Phase 18)
 
@@ -1136,6 +1150,8 @@ Reporting APIs must independently enforce authorization.
 Phase 21: the seating report counts seated parties linked to a guest profile and returning guests. Reports never show or export guest names or contact details.
 
 Phase 23: **All my locations.** For a user who holds an area's report permission at two or more locations, each area (except menu performance) can show its summary figures per location with a total, each location on its own business dates; costs and wages appear only if visible at every included location. A closed location is included while the user's assignment there is still active and the same permission is held at an open location. The Overview shows today at each location. The Inventory report has an "In transit" section, and a lot trace (`/reports/lot-trace/{lotId}`) follows a lot from its receipt through transfers to the orders that used it.
+
+Phase 24: the Labor area ends with **Forecast vs actual**: for each past business date in the range that has a stored demand forecast (the latest one a manager used), the forecast and actual daily totals per demand measure, the difference and its percentage, and each side's busiest hour. It reads the stored forecast and closed checks only. "All my locations" adds forecast and actual dining covers.
 
 ## 22. Notifications
 
@@ -1934,6 +1950,18 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 24 Demand Forecasting
+
+Phase 24 builds the fourth group of section 39 (demand forecasting from historical sales and reservations, for staffing), with the Phase 23 leftovers, by owner decision on 2026-11-12 (plan approved with D1–D12 as recommended). It supersedes the Phase 4 plan's "Do not implement demand forecasting from sales or reservations yet". Plan: `docs/Phase-24-Demand-Forecasting.md` (amendments listed there). Report: `docs/Phase-24-Completion-Report.md`.
+
+- **History** comes from read-only queries owned by their modules (`orders/queries/demand-history.ts`, `reservations/queries/booked-demand.ts`), because Reporting already depends on Scheduling. A date's history equals its sales-by-hour report.
+- **Rules** are pure (`scheduling/rules/demand-forecast.ts`): sample dates, weighted average in integer arithmetic to two places, booked floor, hours a shift touches across midnight, the cutoff and daylight-saving changes, and the suggestion with its explanation.
+- **Storage:** `staffing_ratios`, `demand_excluded_dates` (deactivated, never deleted), and the append-only snapshot tables; shifts gain `demand_forecast_id`, `forecast_suggested_count`, `template_employee_count`; `scheduling_rules` gains `forecast_lookback_weeks` and `forecast_minimum_samples`.
+- **Permissions:** none new (149). Preview and use under `schedule.edit`; ratios, excluded dates and settings under `schedule.rules.manage`; the report under `reports.labor`. Audit actions `scheduling.forecast-applied`, `scheduling.staffing-ratio-saved`, `scheduling.forecast-date-excluded`, `scheduling.forecast-date-restored`.
+- **Leftovers:** staff reservation changes emit `reservation.created`, `.updated`, `.cancelled`, `.checked-in`, `.no-show` and `.seated` (IDs only, after commit) and the reservations board refreshes on them; Playwright waits 15 seconds per assertion under `next dev` (5 in CI mode); E2E for the lot-expiry bell, "Add an existing person" and the live board.
+- **Demo data:** `db:seed:demo` adds six weeks of fake closed checks at MAIN (a "Demo history plate" with no recipe or kitchen route, paid by external card), made through the real services with the script's clock moved back, plus staffing ratios for Server, Bartender, Host and Cook.
+- **Migrations:** `0061` (tables and columns) and `0062` (custom: snapshot tables append-only).
+
 ### Phase 23 Multiple Locations and Ingredient Lots
 
 Phase 23 builds the third group of section 39, chosen by the owner on 2026-11-12 (plan approved with D1–D17 as recommended), with the Phase 22 leftovers. Plan: `docs/Phase-23-Multiple-Locations-and-Ingredient-Lots.md` (12 amendments). Report: `docs/Phase-23-Completion-Report.md`.
@@ -2180,6 +2208,12 @@ Opening, closing and reopening locations with setup copied from another; a locat
 
 Approved by the owner on 2026-11-12, with decisions D1–D17 as recommended in the plan.
 
+### Phase 24: Demand Forecasting
+
+A demand forecast per hour for each schedule date, from the same weekday's closed checks over recent weeks and the covers already booked; staffing ratios per position that turn it into a suggested headcount; shifts sized from it only when a manager asks, with each forecast used stored as it was; and a forecast-vs-actual report. Plus the Phase 23 leftovers. Plan: `docs/Phase-24-Demand-Forecasting.md`.
+
+Approved by the owner on 2026-11-12, with decisions D1–D12 as recommended in the plan.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2286,7 +2320,7 @@ Architect for, but do not implement unless specifically requested:
 - Accounting integrations
 - SMS/email notifications to staff (guest service messages were built in Phase 22)
 - Full offline synchronization
-- Demand forecasting based on historical sales/reservations
+- Demand forecasting based on historical sales/reservations (built in Phase 24 for staffing: a same-weekday average with a booked-covers floor, sizing shifts on request; forecasting sales, prep or purchasing remains future work)
 - Ingredient lots/FIFO/expiration-by-lot (built in Phase 23 for quantity and expiry, first to expire first; cost stays weighted average, so FIFO costing remains future work)
 - Vendor EDI
 - Nutritional analysis (allergen labeling was built in Phase 21)

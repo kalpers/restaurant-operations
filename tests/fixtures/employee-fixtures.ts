@@ -68,6 +68,7 @@ import { clearOrderData } from "./order-cleanup";
 import { clearGuestMessagingData } from "./messaging-cleanup";
 import { clearAuditEvents } from "./audit-cleanup";
 import { clearPhase20Notifications } from "./notification-cleanup";
+import { clearDemandForecasts } from "./forecast-fixtures";
 
 export const HIRE_DATE = "2024-01-15";
 export const ABSENT_ID = "00000000-0000-4000-8000-000000000000";
@@ -250,6 +251,8 @@ export async function clearEmployeeData(database: Database): Promise<void> {
   await database.delete(shiftSwapRequests);
   await database.delete(shiftAssignments);
   await database.delete(scheduleGenerationRuns);
+  // Phase 24: forecasts, ratios and excluded dates reference periods, shifts and positions.
+  await clearDemandForecasts(database);
   await database.delete(shifts);
   await database.delete(schedulePeriods);
   await database.delete(staffingTemplateRequirements);

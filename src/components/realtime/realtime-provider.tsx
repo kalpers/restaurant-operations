@@ -58,6 +58,13 @@ const EVENT_TYPES = [
   // Phase 22: a guest booked or cancelled on the public page.
   "reservation.online-booked",
   "reservation.guest-cancelled",
+  // Phase 24: staff reservation changes.
+  "reservation.created",
+  "reservation.updated",
+  "reservation.cancelled",
+  "reservation.checked-in",
+  "reservation.no-show",
+  "reservation.seated",
 ];
 
 /**

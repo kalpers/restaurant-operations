@@ -137,6 +137,46 @@ test("the host sees the online booking, its allergy and its sent confirmation", 
   await expect(panel.getByRole("list", { name: "Message history" })).toContainText("Sent");
 });
 
+// Phase 24 (Phase 23 gap and policy 18): an open board picks up an online booking and a
+// staff booking made elsewhere without a reload.
+test("an open reservations board shows new online and staff bookings without a reload", async ({ page, browser }) => {
+  test.setTimeout(90_000);
+
+  const host = await signedIn(browser, setup.host);
+  const online = `Ben Online ${setup.suffix}`;
+  const phoned = `Cara Phoned ${setup.suffix}`;
+
+  await host.goto("/host/reservations");
+  await expect(host.getByRole("listitem", { name: `Reservation for ${guest.name}` })).toBeVisible();
+
+  await page.goto(`/book/${setup.code}`);
+
+  const form = page.getByRole("form", { name: "Book a table" });
+
+  await expect(async () => {
+    await form.getByLabel("Date").fill(tomorrow());
+    await expect(page.getByRole("button", { name: "19:30" })).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+  await form.getByLabel("Guests").selectOption("2");
+  await form.getByRole("button", { name: "19:30" }).click();
+  await form.getByLabel("Name").fill(online);
+  await form.getByLabel("Mobile phone").fill(uniquePhone().typed);
+  await form.getByRole("button", { name: "Book table" }).click();
+  await expect(page.getByRole("region", { name: "Booking made" })).toContainText("Your table is booked.");
+
+  // Well inside the 30-second fallback refresh, so this is the realtime event.
+  await expect(host.getByRole("listitem", { name: `Reservation for ${online}` })).toBeVisible({ timeout: 15_000 });
+
+  // Another device of the staff books by phone.
+  const other = await signedIn(browser, setup.host);
+  const created = await other.request.post("/api/reservations", {
+    data: { guestName: phoned, partySize: 3, localDate: tomorrow(), localTime: "18:00", source: "PHONE" },
+  });
+
+  expect(created.status()).toBe(201);
+  await expect(host.getByRole("listitem", { name: `Reservation for ${phoned}` })).toBeVisible({ timeout: 15_000 });
+});
+
 test("the guest cancels through the private link, and the host sees it cancelled", async ({ page, browser }) => {
   test.setTimeout(90_000);
 

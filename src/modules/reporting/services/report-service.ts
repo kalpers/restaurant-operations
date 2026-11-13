@@ -9,6 +9,7 @@ import { AuthorizationError, NotFoundError } from "@/shared/errors/app-error";
 import { addDecimals } from "@/shared/decimal/decimal";
 import { businessDateOf } from "@/shared/time/business-date-service";
 
+import { forecastAccuracySection } from "../queries/forecast-report";
 import { fulfillmentSections } from "../queries/fulfillment-report";
 import { inventorySections } from "../queries/inventory-report";
 import { laborSections } from "../queries/labor-report";
@@ -56,7 +57,8 @@ export const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<Re
     await inTransitSection(context),
   ],
   fulfillment: fulfillmentSections,
-  labor: laborSections,
+  // Phase 24 (policy 16): forecast vs actual, after the existing labor sections.
+  labor: async (context) => [...(await laborSections(context)), await forecastAccuracySection(context)],
   seating: seatingSections,
   tips: tipsSections,
 };

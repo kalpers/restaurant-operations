@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import { expect, type Browser, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { getDatabase } from "../../src/db";
-import { locations, unitsOfMeasure } from "../../src/db/schema";
+import { inventoryLots, locations, unitsOfMeasure } from "../../src/db/schema";
 import { getUserAuthContext, requirePermission } from "../../src/modules/auth/services/permission-service";
 import { createItem, setItemLocation } from "../../src/modules/inventory/services/item-service";
+import { correctLot } from "../../src/modules/inventory/services/lot-service";
+import { notifyTimeBasedSignals } from "../../src/workflows/notify-time-based-signals/notify-time-based-signals";
 import { openLocation } from "../../src/workflows/open-location/open-location";
 import { assignAt } from "./e2e-accounts";
 import { createRoleAccount, type E2eScope, type OrdersAccount } from "./e2e-orders";
@@ -105,3 +107,35 @@ export async function signedIn(browser: Browser, account: OrdersAccount, locatio
 }
 
 export { assignAt };
+
+/**
+ * Phase 24 (Phase 23 gap): moves the item's lot at a location to expire tomorrow, through the
+ * correction service, then runs the hourly time-based signals for that location only, so
+ * other specs' accounts at MAIN get nothing. Returns the notices written.
+ */
+export async function expireLotTomorrow(owner: OrdersAccount, locationId: string, inventoryItemId: string): Promise<number> {
+  const database = getDatabase();
+  const context = await getUserAuthContext(database, owner.id);
+  const actor = requirePermission(context!, { permission: "inventory.adjust", locationId });
+  const [lot] = await database
+    .select({ id: inventoryLots.id, version: inventoryLots.version, supplierLotCode: inventoryLots.supplierLotCode })
+    .from(inventoryLots)
+    .where(and(eq(inventoryLots.locationId, locationId), eq(inventoryLots.inventoryItemId, inventoryItemId)));
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+
+  await correctLot(database, actor, lot!.id, {
+    supplierLotCode: lot!.supplierLotCode,
+    expiresOn: tomorrow,
+    reason: "E2E: expiring soon",
+    expectedVersion: lot!.version,
+  });
+
+  const result = await notifyTimeBasedSignals(database, new Date(), { locationIds: [locationId] });
+
+  return result.notificationsCreated;
+}
+
+/** Phase 24 (Phase 23 gap): someone with a Manager role at MAIN only. */
+export function createMainManager(): Promise<OrdersAccount> {
+  return createRoleAccount("MANAGER", LOCATIONS_SCOPE);
+}

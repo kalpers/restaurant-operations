@@ -14,9 +14,11 @@ import { changeCompensation } from "../src/modules/employees/services/compensati
 import { createEmployee } from "../src/modules/employees/services/employee-service";
 import { updatePersonalContact } from "../src/modules/employees/services/personal-service";
 import { createPosition } from "../src/modules/employees/services/reference-service";
+import { findLocationClockSettings } from "../src/modules/scheduling/repositories/forecast-repository";
 import { addRecurringAvailability } from "../src/modules/scheduling/services/availability-service";
 
 import { seedDeclaredAllergens, seedGuestProfiles, seedIngredientAllergens, type DemoProfile } from "./demo-guests-allergens";
+import { seedDemoForecastHistory } from "./demo-forecast-history";
 import { seedDemoKitchen } from "./demo-kitchen";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
@@ -229,6 +231,18 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo locations and lots: Uptown ${places.locationOpened ? "opened from MAIN" : "already open"}, ${places.staffAdded} employees added there, ${places.lotItems} items lot tracked, ${places.lots} dated lots, ${places.transfers} transfer(s) received.`,
+    );
+
+    // Phase 24 (D11): six weeks of fake closed checks at MAIN and staffing ratios.
+    const forecastOwner = await mainOwnerActor("schedule.rules.manage");
+    const clock = await findLocationClockSettings(database, forecastOwner.locationId);
+    const history = await seedDemoForecastHistory(database, forecastOwner, {
+      timeZone: clock?.timeZone ?? null,
+      businessDayCutoff: clock?.businessDayCutoff ?? "04:00",
+    });
+
+    console.log(
+      `Demo forecast history: ${history.checks} closed checks added over the last six weeks (${history.datesAlreadyPresent} dates already had them, ${history.skipped} skipped for want of a free table), ${history.ratios} staffing ratios added.`,
     );
   } finally {
     await closeDatabase();

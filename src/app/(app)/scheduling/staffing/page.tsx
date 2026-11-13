@@ -1,5 +1,6 @@
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
+import { ForecastSettingsSection } from "@/components/scheduling/forecast-settings";
 import { DAY_OPTIONS, shortTime } from "@/components/scheduling/format";
 import { getDatabase } from "@/db";
 import { requirePageActorWithAny } from "@/modules/auth/guards";
@@ -9,6 +10,7 @@ import {
   getShiftFormOptions,
   listTemplates,
 } from "@/modules/scheduling/services/config-service";
+import { getForecastSettings } from "@/modules/scheduling/services/forecast-service";
 import { DAYS_OF_WEEK } from "@/modules/scheduling/types";
 
 export default async function StaffingAndRulesPage() {
@@ -24,6 +26,7 @@ export default async function StaffingAndRulesPage() {
     ? await getShiftFormOptions(database, actor)
     : { positions: [], areas: [] };
   const rules = canManageRules ? await getRules(database, actor) : null;
+  const forecastSettings = canManageRules ? await getForecastSettings(database, actor) : null;
 
   return (
     <>
@@ -160,6 +163,8 @@ export default async function StaffingAndRulesPage() {
         </section>
       )}
 
+      {forecastSettings && <ForecastSettingsSection settings={forecastSettings} />}
+
       {rules && (
         <section>
           <h2 className="mb-1 text-lg font-semibold">Scheduling rules</h2>
@@ -191,6 +196,8 @@ export default async function StaffingAndRulesPage() {
               { name: "balanceWeekendShifts", label: "Preference: balance weekend shifts", type: "checkbox", defaultValue: rules.balanceWeekendShifts },
               { name: "balanceClosingShifts", label: "Preference: balance closing shifts", type: "checkbox", defaultValue: rules.balanceClosingShifts },
               { name: "preferTargetHours", label: "Preference: move toward target hours", type: "checkbox", defaultValue: rules.preferTargetHours },
+              { name: "forecastLookbackWeeks", label: "Forecast: weeks of history to average (1–12)", type: "number", required: true, defaultValue: rules.forecastLookbackWeeks },
+              { name: "forecastMinimumSamples", label: "Forecast: fewest past weeks needed", type: "number", required: true, defaultValue: rules.forecastMinimumSamples },
             ]}
           />
         </section>

@@ -71,10 +71,18 @@ const ACTIVE: readonly ReservationView["status"][] = [
 
 // Phase 23: the board refreshes when a guest books or cancels online (or a party's
 // allergies change), and on the shared 30-second fallback like the other boards.
+// Phase 24 (policy 18): and when staff create, change, check in, cancel, mark a no-show
+// or seat a reservation, from any device.
 const BOARD_EVENTS = [
   "reservation.online-booked",
   "reservation.guest-cancelled",
   "guest.allergies-changed",
+  "reservation.created",
+  "reservation.updated",
+  "reservation.cancelled",
+  "reservation.checked-in",
+  "reservation.no-show",
+  "reservation.seated",
 ] as const;
 
 function localParts(iso: string, timeZone: string): { date: string; time: string } {

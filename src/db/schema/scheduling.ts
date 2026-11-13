@@ -157,6 +157,112 @@ export const staffingTemplateRequirements = pgTable(
   ],
 );
 
+/** Phase 24 demand measures (policy 1). Constrained strings, not a native enum. */
+const DEMAND_MEASURE_SQL = sql.raw(
+  "('DINING_COVERS', 'BAR_CHECKS', 'TAKEOUT_CHECKS', 'ALL_CHECKS')",
+);
+
+/** Forecast values: two decimal places of guests or checks per hour. */
+function demandValue(name: string) {
+  return numeric(name, { precision: 10, scale: 2, mode: "string" });
+}
+
+/**
+ * Phase 24 (policy 11, D6): a forecast as it was when a manager used it. Append-only
+ * (migration guard); later forecasts are new rows. Counts only, never money.
+ */
+export const demandForecasts = pgTable(
+  "demand_forecasts",
+  {
+    id: uuidPrimaryKey(),
+    locationId: uuid("location_id").notNull(),
+    schedulePeriodId: uuid("schedule_period_id").notNull(),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    lookbackWeeks: integer("lookback_weeks").notNull(),
+    minimumSamples: integer("minimum_samples").notNull(),
+    /** Ratios used (with versions) and excluded dates applied, for the explanation. */
+    method: jsonb("method").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "demand_forecasts_period_location_fk",
+      columns: [table.schedulePeriodId, table.locationId],
+      foreignColumns: [schedulePeriods.id, schedulePeriods.locationId],
+    }).onDelete("restrict"),
+    index("demand_forecasts_location_id_created_at_idx").on(table.locationId, table.createdAt),
+    index("demand_forecasts_schedule_period_id_idx").on(table.schedulePeriodId),
+  ],
+);
+
+/** Phase 24: each forecast date's status and the history dates it used. Append-only. */
+export const demandForecastDates = pgTable(
+  "demand_forecast_dates",
+  {
+    id: uuidPrimaryKey(),
+    demandForecastId: uuid("demand_forecast_id").notNull(),
+    businessDate: calendarDate("business_date").notNull(),
+    status: text("status").notNull(),
+    sampleDates: calendarDate("sample_dates").array().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: "demand_forecast_dates_forecast_fk",
+      columns: [table.demandForecastId],
+      foreignColumns: [demandForecasts.id],
+    }).onDelete("restrict"),
+    unique("demand_forecast_dates_forecast_date_unique").on(
+      table.demandForecastId,
+      table.businessDate,
+    ),
+    check(
+      "demand_forecast_dates_status_valid",
+      sql`${table.status} IN ('OK', 'NOT_ENOUGH_HISTORY', 'BOOKINGS_ONLY')`,
+    ),
+    index("demand_forecast_dates_business_date_idx").on(table.businessDate),
+  ],
+);
+
+/**
+ * Phase 24: a forecast's hourly figures. Hours whose forecast is zero with nothing booked
+ * are not stored (they read as zero). Append-only.
+ */
+export const demandForecastHours = pgTable(
+  "demand_forecast_hours",
+  {
+    id: uuidPrimaryKey(),
+    demandForecastId: uuid("demand_forecast_id").notNull(),
+    businessDate: calendarDate("business_date").notNull(),
+    hour: integer("hour").notNull(),
+    measure: text("measure").notNull(),
+    historyValue: demandValue("history_value"),
+    bookedValue: integer("booked_value").notNull().default(0),
+    forecastValue: demandValue("forecast_value"),
+    sampleCount: integer("sample_count").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: "demand_forecast_hours_forecast_fk",
+      columns: [table.demandForecastId],
+      foreignColumns: [demandForecasts.id],
+    }).onDelete("restrict"),
+    unique("demand_forecast_hours_forecast_slot_unique").on(
+      table.demandForecastId,
+      table.businessDate,
+      table.hour,
+      table.measure,
+    ),
+    check("demand_forecast_hours_hour_valid", sql`${table.hour} BETWEEN 0 AND 23`),
+    check("demand_forecast_hours_measure_valid", sql`${table.measure} IN ${DEMAND_MEASURE_SQL}`),
+    check(
+      "demand_forecast_hours_values_valid",
+      sql`${table.bookedValue} >= 0 AND ${table.sampleCount} >= 0 AND (${table.historyValue} IS NULL OR ${table.historyValue} >= 0) AND (${table.forecastValue} IS NULL OR ${table.forecastValue} >= 0)`,
+    ),
+  ],
+);
+
 /** A staffing requirement, not an assignment. `shift_date` is the local start date. */
 export const shifts = pgTable(
   "shifts",
@@ -181,6 +287,11 @@ export const shifts = pgTable(
     notes: text("notes"),
     priority: integer("priority").notNull().default(0),
     sourceRequirementId: uuid("source_requirement_id"),
+    /** Phase 24 (policy 12, D6): the forecast that last sized this shift, if any. */
+    demandForecastId: uuid("demand_forecast_id"),
+    forecastSuggestedCount: integer("forecast_suggested_count"),
+    /** The template's count when the forecast sized the shift. */
+    templateEmployeeCount: integer("template_employee_count"),
     cancelledAt: timestamptz("cancelled_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -197,6 +308,15 @@ export const shifts = pgTable(
       columns: [table.sourceRequirementId],
       foreignColumns: [staffingTemplateRequirements.id],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "shifts_demand_forecast_fk",
+      columns: [table.demandForecastId],
+      foreignColumns: [demandForecasts.id],
+    }).onDelete("restrict"),
+    check(
+      "shifts_forecast_columns_valid",
+      sql`(${table.demandForecastId} IS NULL) = (${table.forecastSuggestedCount} IS NULL) AND (${table.forecastSuggestedCount} IS NULL OR ${table.forecastSuggestedCount} > 0) AND (${table.templateEmployeeCount} IS NULL OR ${table.templateEmployeeCount} > 0)`,
+    ),
     unique("shifts_period_requirement_date_unique").on(
       table.schedulePeriodId,
       table.sourceRequirementId,
@@ -603,6 +723,10 @@ export const schedulingRules = pgTable(
      * off. Weekly overtime then counts only the hours that weren't daily overtime.
      */
     dailyOvertimeThreshold: hours("daily_overtime_threshold"),
+    /** Phase 24 (policy 5): weeks of the same weekday the demand forecast averages. */
+    forecastLookbackWeeks: integer("forecast_lookback_weeks").notNull().default(6),
+    /** Phase 24 (policy 5): fewer usable history dates than this means no forecast. */
+    forecastMinimumSamples: integer("forecast_minimum_samples").notNull().default(3),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -621,6 +745,10 @@ export const schedulingRules = pgTable(
       sql`${table.dailyOvertimeThreshold} IS NULL OR (${table.dailyOvertimeThreshold} > 0 AND ${table.dailyOvertimeThreshold} <= 24)`,
     ),
     check(
+      "scheduling_rules_forecast_settings_valid",
+      sql`${table.forecastLookbackWeeks} BETWEEN 1 AND 12 AND ${table.forecastMinimumSamples} BETWEEN 1 AND ${table.forecastLookbackWeeks}`,
+    ),
+    check(
       "scheduling_rules_late_grace_valid",
       sql`${table.lateClockInGraceMinutes} BETWEEN 0 AND 120`,
     ),
@@ -631,6 +759,82 @@ export const schedulingRules = pgTable(
     check(
       "scheduling_rules_hard_limits_have_values",
       sql`(NOT ${table.minimumRestHard} OR ${table.minimumRestHours} IS NOT NULL) AND (NOT ${table.maximumDaysHard} OR ${table.maximumDaysPerWeek} IS NOT NULL) AND (NOT ${table.maximumConsecutiveHard} OR ${table.maximumConsecutiveDays} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * Phase 24 (policy 7, D4): how much demand one employee of a position handles in an hour
+ * at a location, with a minimum and maximum headcount. One active ratio per position.
+ */
+export const staffingRatios = pgTable(
+  "staffing_ratios",
+  {
+    id: uuidPrimaryKey(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "restrict" }),
+    positionId: uuid("position_id")
+      .notNull()
+      .references(() => positions.id, { onDelete: "restrict" }),
+    measure: text("measure").notNull(),
+    unitsPerEmployeeHour: numeric("units_per_employee_hour", {
+      precision: 8,
+      scale: 2,
+      mode: "string",
+    }).notNull(),
+    minimumEmployees: integer("minimum_employees").notNull().default(1),
+    maximumEmployees: integer("maximum_employees").notNull(),
+    active: activeColumn(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    version: versionColumn(),
+  },
+  (table) => [
+    uniqueIndex("staffing_ratios_location_position_active_unique")
+      .on(table.locationId, table.positionId)
+      .where(sql`${table.active}`),
+    check("staffing_ratios_measure_valid", sql`${table.measure} IN ${DEMAND_MEASURE_SQL}`),
+    check("staffing_ratios_units_positive", sql`${table.unitsPerEmployeeHour} > 0`),
+    check(
+      "staffing_ratios_headcount_valid",
+      sql`${table.minimumEmployees} >= 0 AND ${table.maximumEmployees} >= 1 AND ${table.maximumEmployees} >= ${table.minimumEmployees}`,
+    ),
+  ],
+);
+
+/**
+ * Phase 24 (policy 6, D7): business dates a location keeps out of forecast history (a
+ * storm, a buy-out). Deactivated, never deleted.
+ */
+export const demandExcludedDates = pgTable(
+  "demand_excluded_dates",
+  {
+    id: uuidPrimaryKey(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "restrict" }),
+    excludedDate: calendarDate("excluded_date").notNull(),
+    reason: text("reason").notNull(),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    active: activeColumn(),
+    deactivatedAt: timestamptz("deactivated_at"),
+    deactivatedByUserId: uuid("deactivated_by_user_id").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("demand_excluded_dates_location_date_active_unique")
+      .on(table.locationId, table.excludedDate)
+      .where(sql`${table.active}`),
+    check("demand_excluded_dates_reason_present", sql`length(btrim(${table.reason})) > 0`),
+    check(
+      "demand_excluded_dates_deactivation_consistent",
+      sql`${table.active} = (${table.deactivatedAt} IS NULL) AND (${table.deactivatedAt} IS NULL) = (${table.deactivatedByUserId} IS NULL)`,
     ),
   ],
 );

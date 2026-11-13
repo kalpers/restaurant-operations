@@ -162,6 +162,32 @@ export const AUDIT_ACTIONS = {
     fields: ["status", "shiftId", "reason"],
   },
 
+  // Demand forecast (Phase 24). Counts and settings only, never money or employee data.
+  "scheduling.forecast-applied": {
+    category: "SCHEDULING",
+    entityType: "demand_forecast",
+    scope: "LOCATION",
+    fields: ["schedulePeriodId", "mode", "sizedShiftCount", "dateCount"],
+  },
+  "scheduling.staffing-ratio-saved": {
+    category: "SCHEDULING",
+    entityType: "staffing_ratio",
+    scope: "LOCATION",
+    fields: ["positionId", "measure", "unitsPerEmployeeHour", "minimumEmployees", "maximumEmployees", "active"],
+  },
+  "scheduling.forecast-date-excluded": {
+    category: "SCHEDULING",
+    entityType: "demand_excluded_date",
+    scope: "LOCATION",
+    fields: ["excludedDate", "reason", "active"],
+  },
+  "scheduling.forecast-date-restored": {
+    category: "SCHEDULING",
+    entityType: "demand_excluded_date",
+    scope: "LOCATION",
+    fields: ["excludedDate", "reason", "active"],
+  },
+
   // Time clock (Phase 18, category SCHEDULING by amendment 3). Self punches are not audited:
   // the entry is the record.
   "timeclock.manager-clock-in": {

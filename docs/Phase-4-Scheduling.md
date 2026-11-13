@@ -104,6 +104,8 @@ Do not implement payroll or wage payment.
 
 Do not implement demand forecasting from sales or reservations yet.
 
+> Amendment (Phase 24, owner decision 2026-11-12): demand forecasting for staffing was added in Phase 24. It sizes template shifts on request and leaves the generator unchanged. See `docs/Phase-24-Demand-Forecasting.md`.
+
 Do not use an LLM to generate schedules.
 
 Do not automatically publish a generated schedule.

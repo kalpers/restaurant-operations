@@ -46,6 +46,7 @@ import {
   withoutShift,
   type LocationContext,
 } from "./scheduling-input";
+import { findPeriodForecastIds } from "./forecast-service";
 
 /** Everything the pure generator needs, assembled in one place before it runs. */
 async function assembleInput(
@@ -226,7 +227,11 @@ export async function runGeneration(
     schedulePeriodId: periodId,
     startedByUserId: actor.userId,
     generationMode: input.mode,
-    rulesSnapshot: buildSnapshot(location),
+    // Phase 24 (policy 14): which stored forecasts sized the shifts this run fills.
+    rulesSnapshot: {
+      ...buildSnapshot(location),
+      demandForecastIds: await findPeriodForecastIds(database, periodId),
+    },
   });
 
   try {

@@ -119,6 +119,18 @@ Everyone with access to schedules sees published schedules here. Managers who ed
 
 **My schedule** is the employee self-service area for availability and scheduling requests. **Scheduling requests** is for authorized reviewers to process requests. **Staffing & rules** is for users who manage staffing templates and scheduling rules, including the weekly overtime threshold, the overtime cost multiplier and the late clock-in grace.
 
+#### Sizing shifts from the demand forecast
+
+The forecast estimates how busy each hour of a schedule's dates will be: dining covers, bar checks, takeout checks and all checks. It uses the same weekday over the last few weeks of closed checks (the newest weeks count most) and never goes below the covers already booked for that hour. It needs at least three past weeks of that weekday, so a new location keeps its template counts at first.
+
+1. On **Staffing & rules**, under **Demand forecast**, add a **staffing ratio** for each position you want sized: which demand drives it, how much one person handles in an hour (for example 16 covers per server), and the fewest and most people. Positions without a ratio keep the template's count.
+2. If a past day wasn't typical (a storm, a private event), add it under **Dates left out of the history** with a reason. **Put back** includes it again.
+3. In the scheduling rules you can change how many weeks are averaged and how many are needed.
+4. On a draft schedule, choose a template under **Apply a staffing template** and tick **Size new shifts from the demand forecast**. Each new shift gets the suggested count.
+5. The **Demand forecast** panel on the schedule shows each date's busy hours and, for every shift from a template, the template's count, the current count, the suggestion and why ("Busiest hour 19:00–19:59: 48 covers ÷ 16 per server = 3"). **Use suggestion** changes one shift, **Use all suggestions** changes them all; a shift never drops below the people already assigned, and shifts you added by hand are never changed.
+
+Nothing changes until you apply a template with the box ticked or use a suggestion. Generation then fills the shifts as usual, and you still publish yourself.
+
 ### Clocking in and out
 
 Open **My time** and choose **Clock in** at the start of your shift. If you hold more than one position here, choose the one you're working. **Start unpaid break** and **End break** record a break; unpaid break time isn't counted as worked. Choose **Clock out** when you leave; an open break ends at the same moment. The page shows this week's entries, your hours so far against the overtime threshold (**On track**, **Near overtime** or **In overtime**), and your finalized tip shares for the last 30 days. Your login must be linked to your employee record; if it isn't, a manager can clock you in instead. Under **Cash tips I kept**, declare cash tips you kept on a day you worked; it's a record only and isn't part of the tip pool.
@@ -187,7 +199,7 @@ Receiving goods changes on-hand inventory; creating a purchase order by itself d
 
 Open **Reporting**, choose an available report, and set the date range. If you can see a report at two or more locations, the **Location** list also offers **All my locations**: one row per location and a total, each location on its own business dates. The Dashboard then shows **Today at all my locations**. Inventory reports include **In transit** (sent and not yet received). Which reports and export actions appear depends on your permissions. Reports use the selected location and operational business dates; an early-morning clock time may belong to the previous restaurant business date.
 
-The **Labor** report shows scheduled labor first, then actual labor from the time clock: worked hours, regular and overtime hours, scheduled vs. actual by day (late, early out, unscheduled, no-show), overtime by work week, and time clock exceptions (missed clock-outs, corrections, voids). Labor cost appears only for people allowed to see compensation. The **Tips** report shows tips by date and tender, direct tips by server, and finalized tip shares.
+The **Labor** report shows scheduled labor first, then actual labor from the time clock: worked hours, regular and overtime hours, scheduled vs. actual by day (late, early out, unscheduled, no-show), overtime by work week, and time clock exceptions (missed clock-outs, corrections, voids). Labor cost appears only for people allowed to see compensation. The **Tips** report shows tips by date and tender, direct tips by server, and finalized tip shares. The Labor report ends with **Forecast vs actual**: for past dates that had a demand forecast, what was forecast and what happened, per day.
 
 Also in the reports: **Sales by hour** (by the hour each check was opened, from the start of the business day, with a bar chart above the table), **Item mix** and **Menu engineering** (Star, Plowhorse, Puzzle, Dog, shown to people who can see cost), **Server performance** (tips appear only for people who can see tips), **Voids, comps and discounts by employee** (facts only, no thresholds), and **86 history** in Inventory. **Item mix by category** and **Menu engineering by category** compare items only within the category they were sold under; items sold before categories were recorded show as Uncategorized. Sales also lists **Tax-exempt checks**, and Tips shows refunded tips and declared cash tips.
 

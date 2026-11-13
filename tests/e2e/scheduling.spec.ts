@@ -3,6 +3,12 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
 import { confirmDialog } from "../helpers/e2e-ui";
+import {
+  createForecastHistory,
+  createMondayServerTemplate,
+  forecastDates,
+  removeForecastE2eData,
+} from "../helpers/e2e-forecast";
 
 import {
   addShift,
@@ -12,6 +18,7 @@ import {
   createPermissionAccount,
   createRoleAccount,
   createStaff,
+  findPositionId,
   linkEmployee,
   nextWeek,
   publish,
@@ -661,5 +668,95 @@ test.describe("schedule timeline", () => {
 
     expect(ok.status()).toBe(200);
     expect(ok.headers()["cache-control"]).toContain("no-store");
+  });
+});
+
+// Phase 24: the demand forecast. In this file (not its own) so it shares the scheduling
+// cleanup, which removes every staffing template; tests in one file run in order.
+test.describe("demand forecast", () => {
+  test.afterAll(async () => {
+    await removeForecastE2eData();
+  });
+
+  test("a manager sets ratios, sizes shifts from the forecast and uses a suggestion", async ({ page }) => {
+    // Many saves in one test; under `next dev` each first save compiles its route.
+    test.setTimeout(150_000);
+
+    const summary = page.getByTestId("coverage-summary");
+    // Under `next dev` a click before hydration can be lost. Applying a template again adds
+    // only what's missing, so retrying until the result shows is safe.
+    const untilShown = async (action: () => Promise<void>, text: string) => {
+      await expect(async () => {
+        if ((await summary.textContent()) !== text) {
+          await action();
+        }
+
+        await expect(summary).toHaveText(text, { timeout: 5_000 });
+      }).toPass({ timeout: 60_000 });
+    };
+    const owner = await createRoleAccount("OWNER");
+    const dates = forecastDates();
+
+    // Two tables (4 and 6) at 19:xx on each of four past Mondays: 10 covers an hour.
+    expect(await createForecastHistory(dates.history)).toBe(8);
+
+    const templateId = await createMondayServerTemplate(owner, await findPositionId("SERVER"));
+
+    await signIn(page, owner);
+    await page.goto("/scheduling/staffing");
+
+    const settings = page.locator("section", { has: page.getByRole("heading", { name: "Demand forecast" }) });
+    const addRatio = settings.locator("form").filter({ has: page.getByRole("button", { name: "Add ratio" }) });
+
+    await addRatio.getByRole("combobox", { name: /^Position/ }).selectOption({ label: "Server" });
+    await addRatio.getByRole("combobox", { name: /^Demand/ }).selectOption({ label: "Dining covers" });
+    await addRatio.getByLabel("One person handles per hour").fill("4");
+    await addRatio.getByRole("button", { name: "Add ratio" }).click();
+    await expect(settings.getByTestId("staffing-ratio")).toContainText("Server");
+
+    // A date left out and put back.
+    const leaveOut = settings.locator("form").filter({ has: page.getByRole("button", { name: "Leave date out" }) });
+
+    await leaveOut.getByLabel("Date").fill(dates.history[3]!);
+    await leaveOut.getByLabel("Reason").fill("Snowstorm");
+    await leaveOut.getByRole("button", { name: "Leave date out" }).click();
+    await expect(settings.getByTestId("excluded-date")).toContainText("Snowstorm");
+    await settings.getByTestId("excluded-date").getByRole("button", { name: "Put back" }).click();
+    await expect(settings.getByTestId("excluded-date")).toHaveCount(0);
+
+    // Sized from the forecast: ceil(10 / 4) = 3 servers.
+    const sized = await createDraft(owner, dates);
+
+    await page.goto(`/scheduling/${sized.id}`);
+
+    const apply = page.locator("form").filter({ has: page.getByRole("button", { name: "Apply template" }) });
+
+    await untilShown(async () => {
+      await apply.getByRole("combobox", { name: /^Template/ }).selectOption(templateId);
+      await apply.getByLabel("Size new shifts from the demand forecast").check();
+      await apply.getByRole("button", { name: "Apply template" }).click();
+    }, "0 of 3 slots filled, 3 open");
+
+    const forecast = page.getByTestId("forecast-section");
+    const row = forecast.getByTestId("forecast-shift");
+
+    await expect(row).toContainText("Busiest hour 19:00–19:59: 10 covers (history 10) ÷ 4 per server = 3.");
+    await expect(row.getByTestId("forecast-suggested")).toHaveText("3");
+    await expect(forecast.getByRole("button", { name: "Use suggestion" })).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText(/wage|salary/i);
+
+    // Applied without the forecast, then the manager uses the suggestion.
+    const plain = await createDraft(owner, dates);
+
+    await page.goto(`/scheduling/${plain.id}`);
+    await untilShown(async () => {
+      await apply.getByRole("combobox", { name: /^Template/ }).selectOption(templateId);
+      await apply.getByRole("button", { name: "Apply template" }).click();
+    }, "0 of 1 slots filled, 1 open");
+    await untilShown(() => forecast.getByRole("button", { name: "Use suggestion" }).click({ timeout: 5_000 }), "0 of 3 slots filled, 3 open");
+
+    // The Labor report has the comparison section.
+    await page.goto("/reports/labor");
+    await expect(page.getByRole("heading", { name: "Forecast vs actual" })).toBeVisible();
   });
 });

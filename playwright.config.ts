@@ -24,6 +24,9 @@ export default defineConfig({
   reporter: "list",
   // Phase 23: under `next dev`, requests every route once so it compiles before the tests.
   globalSetup: "./tests/helpers/e2e-warm-up.ts",
+  // Phase 24 policy 17: under `next dev`, saves that recompile a route still sometimes run
+  // past 5 seconds after the warm-up. CI mode (production build) keeps the 5-second wait.
+  expect: { timeout: isCi() ? 5_000 : 15_000 },
   use: {
     baseURL,
     trace: "on-first-retry",

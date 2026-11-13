@@ -85,6 +85,9 @@ const FIGURES: Record<CrossLocationArea, Figure[]> = {
     { key: "hours", label: "Scheduled hours", kind: "hours", total: "sum" },
     { key: "workedHours", label: "Worked hours", kind: "hours", total: "sum" },
     { key: "cost", label: "Scheduled labor cost", kind: "money", total: "sum", needs: "compensation" },
+    // Phase 24 (policy 16): dining covers on past dates with a stored forecast.
+    { key: "forecastCovers", label: "Forecast covers", kind: "quantity", total: "sum" },
+    { key: "actualCovers", label: "Actual covers (forecast dates)", kind: "quantity", total: "sum" },
   ],
   seating: [
     { key: "sessions", label: "Parties seated", kind: "count", total: "sum" },
@@ -148,7 +151,15 @@ function figuresOf(area: CrossLocationArea, sections: ReportSection[]): ReportRo
       const summary = section(sections, "summary")?.rows[0];
       const actual = section(sections, "actual")?.rows[0];
 
-      return { hours: summary?.hours ?? "0.0000", workedHours: actual?.workedHours ?? "0.0000", cost: summary?.cost ?? null };
+      const covers = section(sections, "forecastAccuracy")?.rows.filter((row) => row.measure === "Dining covers");
+
+      return {
+        hours: summary?.hours ?? "0.0000",
+        workedHours: actual?.workedHours ?? "0.0000",
+        cost: summary?.cost ?? null,
+        forecastCovers: sumOf(covers, "forecast", 2),
+        actualCovers: sumOf(covers, "actual", 2),
+      };
     }
     case "seating": {
       const all = rowWhere(section(sections, "sessions"), "area", "All areas");

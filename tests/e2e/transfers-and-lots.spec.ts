@@ -2,6 +2,7 @@ import { expect, test, type Locator } from "@playwright/test";
 
 import {
   createOwner,
+  expireLotTomorrow,
   mainLocationId,
   openSecondLocation,
   shortCode,
@@ -96,3 +97,17 @@ async function optionIndex(select: Locator, text: string): Promise<number> {
 
   return index;
 }
+
+// Phase 24 (Phase 23 gap): the expiry warning reaches the bell.
+test("a lot about to expire raises a bell notice that links to the lots page", async ({ browser }) => {
+  expect(await expireLotTomorrow(owner, other, cheese.id)).toBeGreaterThan(0);
+
+  const page = await signedIn(browser, owner, other);
+
+  await page.goto("/inventory/lots");
+  await expect(page.getByTestId("notification-count")).toBeVisible();
+  await page.getByTestId("notification-bell").click();
+  await expect(page.getByText(`Expiring soon: ${cheese.name}`)).toBeVisible();
+  await page.getByRole("link", { name: "See lots" }).first().click();
+  await expect(page).toHaveURL(/\/inventory\/lots$/);
+});

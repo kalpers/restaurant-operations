@@ -11,7 +11,7 @@ import {
   assertPartySeatable,
   markPartySeated,
 } from "@/modules/reservations/services/party-state";
-import { lockReservation } from "@/modules/reservations/services/reservation-service";
+import { lockReservation, writeReservationEvent } from "@/modules/reservations/services/reservation-service";
 import { lockWaitlistEntry } from "@/modules/reservations/services/waitlist-service";
 import { assertPermission } from "@/modules/restaurant/services/access";
 import { BusinessRuleError } from "@/shared/errors/app-error";
@@ -66,6 +66,7 @@ export async function seatReservationParty(
       });
 
       await markPartySeated(transaction, actor, graph, now);
+      await writeReservationEvent(transaction, actor, reservationId, "reservation.seated");
 
       return { ...seated, guestPartyId: graph.party.id };
     });

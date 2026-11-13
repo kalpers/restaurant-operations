@@ -154,6 +154,21 @@ export async function insertTemplateShift(
   return rows.length > 0;
 }
 
+/** Phase 24: the period's existing template shift keys (`requirement|date`), cancelled or not. */
+export async function findExistingTemplateShiftKeys(
+  executor: DatabaseExecutor,
+  periodId: string,
+): Promise<Set<string>> {
+  const rows = await executor
+    .select({ requirementId: shifts.sourceRequirementId, shiftDate: shifts.shiftDate })
+    .from(shifts)
+    .where(eq(shifts.schedulePeriodId, periodId));
+
+  return new Set(
+    rows.flatMap((row) => (row.requirementId ? [`${row.requirementId}|${row.shiftDate}`] : [])),
+  );
+}
+
 export async function findShiftAtLocation(
   executor: DatabaseExecutor,
   shiftId: string,
@@ -199,6 +214,10 @@ export function findPeriodShifts(executor: DatabaseExecutor, periodId: string) {
       courseOrStationNote: shifts.courseOrStationNote,
       notes: shifts.notes,
       priority: shifts.priority,
+      sourceRequirementId: shifts.sourceRequirementId,
+      demandForecastId: shifts.demandForecastId,
+      forecastSuggestedCount: shifts.forecastSuggestedCount,
+      templateEmployeeCount: shifts.templateEmployeeCount,
       version: shifts.version,
     })
     .from(shifts)

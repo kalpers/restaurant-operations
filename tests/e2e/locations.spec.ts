@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createOwner, locationIdByName, mainLocationId, shortCode, signedIn } from "../helpers/e2e-locations";
+import { createMainManager, createOwner, locationIdByName, mainLocationId, shortCode, signedIn } from "../helpers/e2e-locations";
 import type { OrdersAccount } from "../helpers/e2e-orders";
 
 // Phase 23: an Owner opens a location copied from MAIN, switches to it, is stopped when a tab
@@ -63,6 +63,27 @@ test("sales can be compared across both locations", async ({ browser }) => {
   await expect(table.getByText("Main Restaurant")).toBeVisible();
   await expect(table.getByText(name)).toBeVisible();
   await expect(table.getByText("All locations")).toBeVisible();
+});
+
+// Phase 24 (Phase 23 gap): access to a second location for someone who already works here.
+test("the Owner adds an existing MAIN manager to the new location", async ({ browser }) => {
+  const manager = await createMainManager();
+  const page = await signedIn(browser, owner, await locationIdByName(name));
+
+  await page.goto("/admin/users");
+  const section = page.locator("section", { has: page.getByRole("heading", { name: "Add an existing person" }) });
+
+  await section.getByLabel("Find by email").fill(manager.email.slice(0, 18));
+  await section.getByRole("combobox", { name: /^Person/ }).selectOption({ label: manager.email });
+  await section.getByRole("combobox", { name: /^Role at this location/ }).selectOption({ label: "Manager" });
+  await section.getByRole("button", { name: "Add to this location" }).click();
+  await expect(page.getByText("Added to this location.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("li").filter({ hasText: manager.email }).first()).toContainText("Manager");
+
+  // The manager can now switch to it.
+  const managerPage = await signedIn(browser, manager);
+
+  await expect(managerPage.getByRole("combobox", { name: /^Location/ }).locator("option", { hasText: name })).toHaveCount(1);
 });
 
 test("the Owner closes the new location and it leaves the switcher", async ({ browser }) => {

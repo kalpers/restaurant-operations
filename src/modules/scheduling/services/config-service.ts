@@ -5,6 +5,7 @@ import {
   withTransaction,
   type DatabaseExecutor,
 } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { findPositionInOrganization } from "@/modules/employees/repositories/reference-repository";
 import {
@@ -33,6 +34,7 @@ import {
   updateTemplateRow,
 } from "../repositories/config-repository";
 import {
+  findExistingTemplateShiftKeys,
   insertTemplateShift,
   updatePeriodRow,
 } from "../repositories/schedule-repository";
@@ -42,6 +44,12 @@ import {
 } from "../rules/schedule-rules";
 import { isValidHours } from "../types";
 import { assertPermission, lockEditableDraft } from "./access";
+import {
+  buildForecastContext,
+  storeForecast,
+  suggestForWindow,
+  type ForecastContext,
+} from "./forecast-service";
 import { buildShiftTimes } from "./schedule-service";
 import { loadLocationContext } from "./scheduling-input";
 
@@ -96,6 +104,19 @@ function assertRules(input: SchedulingRuleRow): void {
       compareDecimals(input.dailyOvertimeThreshold, "24") > 0)
   ) {
     throw new ValidationError("Enter a daily overtime threshold above 0 and up to 24 hours, or leave it blank.");
+  }
+
+  if (
+    !Number.isInteger(input.forecastLookbackWeeks) ||
+    input.forecastLookbackWeeks < 1 ||
+    input.forecastLookbackWeeks > 12 ||
+    !Number.isInteger(input.forecastMinimumSamples) ||
+    input.forecastMinimumSamples < 1 ||
+    input.forecastMinimumSamples > input.forecastLookbackWeeks
+  ) {
+    throw new ValidationError(
+      "Enter forecast look-back weeks from 1 to 12, and a minimum history from 1 up to the look-back.",
+    );
   }
 }
 
@@ -313,12 +334,16 @@ export async function removeRequirement(
  * Creates each requirement and date's shift at most once. Existing shifts stay as they
  * are, edited or cancelled, so applying again adds only what's missing and never touches
  * a manager's work. This creates demand, never assignments.
+ *
+ * Phase 24 (policy 12): with `useForecast`, each new shift takes the forecast's suggested
+ * count where there is one (the template count otherwise), and the forecast used is stored
+ * in the same transaction.
  */
 export async function applyTemplate(
   database: Database,
   actor: Actor,
   periodId: string,
-  input: { templateId: string; expectedPeriodVersion: number },
+  input: { templateId: string; expectedPeriodVersion: number; useForecast?: boolean },
 ) {
   assertPermission(actor, "schedule.edit");
 
@@ -344,6 +369,12 @@ export async function applyTemplate(
     const { timeZone } = await loadLocationContext(transaction, actor);
     const skipped: { date: string; positionName: string }[] = [];
     let created = 0;
+    let sized = 0;
+    const forecast: ForecastContext | null = input.useForecast
+      ? await buildForecastContext(transaction, actor, period)
+      : null;
+    const existing = forecast ? await findExistingTemplateShiftKeys(transaction, periodId) : new Set<string>();
+    const pending: (Parameters<typeof insertTemplateShift>[1] & { suggested: number | null })[] = [];
 
     for (
       let date = period.startDate;
@@ -378,7 +409,16 @@ export async function applyTemplate(
           throw error;
         }
 
-        const inserted = await insertTemplateShift(transaction, {
+        const suggested =
+          forecast && !existing.has(`${requirement.id}|${date}`)
+            ? suggestForWindow(forecast, {
+                positionId: requirement.positionId,
+                positionName: requirement.positionName,
+                ...times,
+              }).suggestedCount
+            : null;
+
+        pending.push({
           schedulePeriodId: periodId,
           locationId: actor.locationId,
           positionId: requirement.positionId,
@@ -388,17 +428,65 @@ export async function applyTemplate(
           requiredEmployeeCount: requirement.requiredEmployeeCount,
           priority: requirement.priority,
           sourceRequirementId: requirement.id,
+          suggested,
         });
+      }
+    }
 
-        if (inserted) {
-          created += 1;
+    const forecastId =
+      forecast && pending.some((row) => row.suggested !== null)
+        ? await storeForecast(transaction, actor, periodId, forecast)
+        : null;
+
+    for (const { suggested, ...values } of pending) {
+      const inserted = await insertTemplateShift(
+        transaction,
+        forecastId && suggested !== null
+          ? {
+              ...values,
+              requiredEmployeeCount: suggested,
+              demandForecastId: forecastId,
+              forecastSuggestedCount: suggested,
+              templateEmployeeCount: values.requiredEmployeeCount,
+            }
+          : values,
+      );
+
+      if (inserted) {
+        created += 1;
+
+        if (forecastId && suggested !== null) {
+          sized += 1;
         }
       }
+    }
+
+    if (forecastId) {
+      await recordAudit(transaction, actor, {
+        action: "scheduling.forecast-applied",
+        entityId: forecastId,
+        after: {
+          schedulePeriodId: periodId,
+          mode: "APPLY_TEMPLATE",
+          sizedShiftCount: sized,
+          dateCount: forecast!.forecasts.size,
+        },
+      });
     }
 
     const updatedPeriod =
       created > 0 ? await updatePeriodRow(transaction, periodId) : period;
 
-    return { created, skipped, periodVersion: updatedPeriod.version };
+    return {
+      created,
+      skipped,
+      periodVersion: updatedPeriod.version,
+      // Phase 24: how many new shifts the forecast sized, and the stored forecast.
+      sized,
+      forecastId,
+      forecastDates: forecast
+        ? [...forecast.forecasts.values()].map((row) => ({ businessDate: row.businessDate, status: row.status }))
+        : [],
+    };
   });
 }

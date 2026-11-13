@@ -49,6 +49,7 @@ import {
 } from "../../src/modules/scheduling/services/time-off-service";
 import { clearAuditEvents } from "../fixtures/audit-cleanup";
 import { clearNotificationsFor } from "../fixtures/notification-cleanup";
+import { clearDemandForecasts } from "../fixtures/forecast-fixtures";
 
 loadLocalEnv();
 pointAtTestDatabase();
@@ -362,6 +363,8 @@ export async function removeSchedulingE2eData(): Promise<void> {
 
   if (periodIds.length) {
     await database.delete(scheduleGenerationRuns).where(inArray(scheduleGenerationRuns.schedulePeriodId, periodIds));
+    // Phase 24: stored forecasts reference the periods and their shifts.
+    await clearDemandForecasts(database, periodIds);
     await database.delete(shifts).where(inArray(shifts.schedulePeriodId, periodIds));
     await database.delete(schedulePeriods).where(inArray(schedulePeriods.id, periodIds));
   }

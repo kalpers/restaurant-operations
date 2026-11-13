@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import type { Database } from "@/db";
+import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import { nextVersion } from "@/db/helpers/versioning";
 import { guestParties, reservations } from "@/db/schema";
 import {
@@ -212,6 +213,38 @@ async function planTables(
   });
 }
 
+/** Staff reservation changes the reservations board refreshes on (Phase 24 policy 18). */
+export type ReservationEventType =
+  | "reservation.created"
+  | "reservation.updated"
+  | "reservation.cancelled"
+  | "reservation.checked-in"
+  | "reservation.no-show"
+  | "reservation.seated";
+
+/**
+ * Phase 24 policy 18: tells open reservations boards a staff change happened. Written in
+ * the change's transaction, so it is published only after commit. IDs only.
+ */
+export async function writeReservationEvent(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  reservationId: string,
+  eventType: ReservationEventType,
+) {
+  await writeOutboxEvents(transaction, [
+    {
+      organizationId: actor.organizationId,
+      locationId: actor.locationId,
+      eventType,
+      aggregateType: "reservation",
+      aggregateId: reservationId,
+      payload: { reservationId },
+      occurredAt: new Date(),
+    },
+  ]);
+}
+
 export async function createReservation(
   database: Database,
   actor: Actor,
@@ -304,6 +337,8 @@ export async function createReservation(
         now,
       });
     }
+
+    await writeReservationEvent(transaction, actor, reservation!.id, "reservation.created");
 
     return { id: reservation!.id, version: reservation!.version };
   });
@@ -440,6 +475,8 @@ export async function updateReservation(
       });
     }
 
+    await writeReservationEvent(transaction, actor, reservationId, "reservation.updated");
+
     return updated;
   });
 }
@@ -471,6 +508,8 @@ export async function confirmReservation(
       now: new Date(),
     });
 
+    await writeReservationEvent(transaction, actor, reservationId, "reservation.updated");
+
     return confirmed;
   });
 }
@@ -501,6 +540,8 @@ export async function checkInReservation(
       userId: actor.userId,
       occurredAt: now,
     });
+
+    await writeReservationEvent(transaction, actor, reservationId, "reservation.checked-in");
 
     return bumpReservation(transaction, reservationId, {
       status: "CHECKED_IN",
@@ -562,6 +603,8 @@ export async function cancelReservation(
       now,
     });
 
+    await writeReservationEvent(transaction, actor, reservationId, "reservation.cancelled");
+
     return cancelled;
   });
 }
@@ -611,6 +654,7 @@ export async function markReservationNoShow(
     });
 
     await cancelQueuedMessages(transaction, { reservationId, now });
+    await writeReservationEvent(transaction, actor, reservationId, "reservation.no-show");
 
     return bumpReservation(transaction, reservationId, {
       status: "NO_SHOW",
@@ -654,6 +698,8 @@ export async function setPlannedTables(
       context,
       now,
     });
+
+    await writeReservationEvent(transaction, actor, reservationId, "reservation.updated");
 
     return bumpReservation(transaction, reservationId, {});
   });
