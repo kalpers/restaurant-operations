@@ -38,7 +38,7 @@ describe("visibleNavigation", () => {
     const hrefs = visibleNavigation(ALL_PERMISSION_CODES).map((item) => item.href);
 
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(48);
+    expect(hrefs).toHaveLength(49);
   });
 });
 
@@ -47,14 +47,14 @@ describe("visibleNavigationGroups", () => {
     expect(groups([])).toEqual([["Insights", ["Dashboard"]]]);
     expect(groups(["orders.view", "kitchen.view"])).toEqual([
       ["Insights", ["Dashboard"]],
-      ["Service", ["Orders", "Kitchen", "Expo"]],
+      ["Service", ["Orders", "Kitchen", "Expo", "Prep list"]],
     ]);
   });
 
   it("groups everything with every permission", () => {
     expect(groups(ALL_PERMISSION_CODES)).toEqual([
       ["Insights", ["Dashboard", "Reports", "Audit"]],
-      ["Service", ["Floor", "Reservations", "Waitlist", "Guests", "Orders", "Kitchen", "Bar", "Expo", "Discounts", "Cash drawers", "86 board"]],
+      ["Service", ["Floor", "Reservations", "Waitlist", "Guests", "Orders", "Kitchen", "Bar", "Expo", "Prep list", "Discounts", "Cash drawers", "86 board"]],
       [
         "Back of house",
         [

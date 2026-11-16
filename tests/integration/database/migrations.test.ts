@@ -138,6 +138,9 @@ const EXPECTED_TABLES = [
   "public.purchase_order_receipt_lines",
   "public.purchase_order_receipts",
   "public.purchase_orders",
+  "public.purchasing_forecast_items",
+  "public.purchasing_forecast_lines",
+  "public.purchasing_forecasts",
   "public.recipe_version_ingredients",
   "public.recipe_versions",
   "public.recipes",
@@ -581,6 +584,30 @@ describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () =>
       { tgname: "modifier_outages_guard" },
       { tgname: "order_item_shares_guard_trigger" },
       { tgname: "order_item_shares_order_open_trigger" },
+    ]);
+  });
+
+  it("upgrades a Phase 24 database in place: purchasing forecasts start empty, drafts have none", async () => {
+    // 0000-0062 are Phase 24 and earlier; 0063-0064 are Phase 25.
+    await upgradeFromMigrationIndex(62);
+
+    for (const table of ["purchasing_forecasts", "purchasing_forecast_items", "purchasing_forecast_lines"]) {
+      expect(await query(`SELECT * FROM ${table}`)).toEqual([]);
+    }
+
+    expect(
+      await query(
+        "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'purchase_orders' AND column_name = 'purchasing_forecast_id'",
+      ),
+    ).toEqual([{ is_nullable: "YES" }]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname LIKE 'purchasing_forecast%append_only_trigger' ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "purchasing_forecast_items_append_only_trigger" },
+      { tgname: "purchasing_forecast_lines_append_only_trigger" },
+      { tgname: "purchasing_forecasts_append_only_trigger" },
     ]);
   });
 

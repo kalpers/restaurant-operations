@@ -129,6 +129,10 @@ Decided on 2026-11-11, during implementation (owner decision):
 
 7. **Item mix and menu engineering across the whole menu.** Order items carry no category snapshot, so grouping past sales by category would read today's menu placements (rule 4). Policies 20 and 21 compare items across all items sold instead. Grouping by category stays remaining work.
 
+Added on 2026-11-16 by Phase 25 (owner approved D1–D12 of `docs/Phase-25-Prep-and-Purchasing-Forecast.md`):
+
+8. **Forecast basis for suggested orders.** Policies 16–17 stay as they are and remain the default ("par levels"). Phase 25 adds a second basis, "from the forecast through" a chosen date: need = forecast usage + reorder level − on hand − on order, with par for items the forecast doesn't cover, and the forecast stored when drafts are made from it.
+
 ## 1. Objectives
 
 Deliver:

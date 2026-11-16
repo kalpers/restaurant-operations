@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  jsonb,
   date,
   foreignKey,
   index,
@@ -18,7 +19,7 @@ import {
 
 import { activeColumn, uuidPrimaryKey } from "../helpers/columns";
 import { cost, quantity } from "../helpers/numeric";
-import { createdAt, timestamptz, updatedAt } from "../helpers/timestamps";
+import { calendarDate, createdAt, timestamptz, updatedAt } from "../helpers/timestamps";
 import { versionColumn } from "../helpers/versioning";
 import { users } from "./auth";
 import { locations, organizations } from "./organization";
@@ -414,6 +415,37 @@ export const supplierItemCostHistory = pgTable(
   ],
 );
 
+/**
+ * Phase 25 (D7, policy 14): a purchasing forecast as it was when drafts were created from it.
+ * `method` holds the settings, sample dates per date, excluded dates applied, the recipe
+ * revision per item and the modifier shares. Append-only (trigger in the custom migration).
+ */
+export const purchasingForecasts = pgTable(
+  "purchasing_forecasts",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    locationId: uuid("location_id").notNull(),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** The first business date forecast (today's, when created). */
+    fromDate: calendarDate("from_date").notNull(),
+    throughDate: calendarDate("through_date").notNull(),
+    method: jsonb("method").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "purchasing_forecasts_location_org_fk",
+      columns: [table.locationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    check("purchasing_forecasts_dates_valid", sql`${table.throughDate} >= ${table.fromDate}`),
+    index("purchasing_forecasts_location_created_idx").on(table.locationId, table.createdAt),
+  ],
+);
+
 export const purchaseOrders = pgTable(
   "purchase_orders",
   {
@@ -438,6 +470,8 @@ export const purchaseOrders = pgTable(
       onDelete: "restrict",
     }),
     cancelReason: text("cancel_reason"),
+    /** Phase 25 (D7): the stored forecast a suggested draft was made from, if any. */
+    purchasingForecastId: uuid("purchasing_forecast_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -468,6 +502,11 @@ export const purchaseOrders = pgTable(
       sql`${table.status} <> 'CANCELLED' OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL)`,
     ),
     index("purchase_orders_location_status_idx").on(table.locationId, table.status),
+    foreignKey({
+      name: "purchase_orders_purchasing_forecast_fk",
+      columns: [table.purchasingForecastId],
+      foreignColumns: [purchasingForecasts.id],
+    }).onDelete("restrict"),
   ],
 );
 
@@ -520,6 +559,53 @@ export const purchaseOrderLines = pgTable(
     check("purchase_order_lines_quantity_positive", sql`${table.orderedQuantity} > 0`),
     check("purchase_order_lines_price_non_negative", sql`${table.unitPrice} >= 0`),
     check("purchase_order_lines_base_units_positive", sql`${table.baseUnitsPerPurchase} > 0`),
+  ],
+);
+
+/**
+ * Phase 25 (D7, policy 14): one inventory item's suggested need in a stored purchasing
+ * forecast, on the basis it used. Append-only.
+ */
+export const purchasingForecastLines = pgTable(
+  "purchasing_forecast_lines",
+  {
+    id: uuidPrimaryKey(),
+    purchasingForecastId: uuid("purchasing_forecast_id").notNull(),
+    inventoryItemId: uuid("inventory_item_id").notNull(),
+    basis: text("basis").notNull(),
+    /** Null on the PAR basis. */
+    forecastUsage: quantity("forecast_usage"),
+    reorderFloor: quantity("reorder_floor"),
+    quantityOnHand: quantity("quantity_on_hand").notNull(),
+    onOrder: quantity("on_order").notNull(),
+    need: quantity("need").notNull(),
+    /** Null when the item has no preferred supplier item (listed, not ordered). */
+    supplierItemId: uuid("supplier_item_id"),
+    orderedQuantity: quantity("ordered_quantity"),
+  },
+  (table) => [
+    foreignKey({
+      name: "purchasing_forecast_lines_forecast_fk",
+      columns: [table.purchasingForecastId],
+      foreignColumns: [purchasingForecasts.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "purchasing_forecast_lines_item_fk",
+      columns: [table.inventoryItemId],
+      foreignColumns: [inventoryItems.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "purchasing_forecast_lines_supplier_item_fk",
+      columns: [table.supplierItemId],
+      foreignColumns: [supplierItems.id],
+    }).onDelete("restrict"),
+    unique("purchasing_forecast_lines_forecast_item_unique").on(table.purchasingForecastId, table.inventoryItemId),
+    check("purchasing_forecast_lines_basis_valid", sql`${table.basis} IN ('FORECAST', 'PAR')`),
+    check(
+      "purchasing_forecast_lines_usage_matches_basis",
+      sql`(${table.basis} = 'FORECAST') = (${table.forecastUsage} IS NOT NULL)`,
+    ),
+    check("purchasing_forecast_lines_need_positive", sql`${table.need} > 0`),
   ],
 );
 

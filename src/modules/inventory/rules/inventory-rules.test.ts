@@ -12,7 +12,13 @@ import {
   remainingQuantity,
   statusAfterReceipt,
 } from "./purchasing";
-import { assertThresholds, evaluateStock, suggestPurchaseLines } from "./replenishment";
+import {
+  assertThresholds,
+  evaluateStock,
+  forecastNeed,
+  suggestForecastPurchaseLines,
+  suggestPurchaseLines,
+} from "./replenishment";
 import { alertCrossing } from "./stock-alerts";
 import { assertDirection, assertStockPolicy } from "./stock-policy";
 import {
@@ -354,5 +360,56 @@ describe("suggested purchase lines (Phase 19 policy 16)", () => {
     expect([...result.bySupplier.keys()]).toEqual(["sup-1", "sup-2"]);
     expect(result.bySupplier.get("sup-1")!.map((line) => line.orderedQuantity)).toEqual(["8", "8"]);
     expect(result.bySupplier.get("sup-2")![0]!.orderedQuantity).toBe("90");
+  });
+});
+
+describe("forecast-based purchase lines (Phase 25 policy 12)", () => {
+  const thresholds = { parLevel: "100.0000", reorderLevel: "20.0000", reorderTarget: "90.0000" };
+  const preferred = { supplierItemId: "si-1", supplierId: "sup-1", baseUnitsPerPurchase: "12.0000" };
+
+  it("needs usage + reorder floor - on hand - on order, using negative on hand as it is", () => {
+    // 50 + 20 - 10 - 12 = 48
+    expect(forecastNeed({ forecastUsage: "50.0000", reorderLevel: "20.0000", quantityOnHand: "10.0000", outstandingBaseQuantity: "12.0000" })).toBe("48.0000");
+    // 5 + 0 - (-3) - 0 = 8
+    expect(forecastNeed({ forecastUsage: "5", reorderLevel: null, quantityOnHand: "-3", outstandingBaseQuantity: "0" })).toBe("8.0000");
+    expect(forecastNeed({ forecastUsage: "5", reorderLevel: "1", quantityOnHand: "6", outstandingBaseQuantity: "0" })).toBeNull();
+  });
+
+  it("orders whole purchase units on the forecast and falls back to par per item", () => {
+    const result = suggestForecastPurchaseLines([
+      // Not low by par (30 > 20), but the forecast uses 50: 50 + 20 - 30 = 40 -> 4 cases.
+      { inventoryItemId: "beef", quantityOnHand: "30", thresholds, outstandingBaseQuantity: "0", preferred, forecastUsage: "50.0000" },
+      // No forecast usage: par rule, 90 - 10 = 80 -> 7 cases.
+      { inventoryItemId: "napkins", quantityOnHand: "10", thresholds, outstandingBaseQuantity: "0", preferred, forecastUsage: null },
+      // Forecast usage covered by stock: nothing, even though par would say nothing either.
+      { inventoryItemId: "salt", quantityOnHand: "100", thresholds, outstandingBaseQuantity: "0", preferred, forecastUsage: "1.0000" },
+      { inventoryItemId: "orphan", quantityOnHand: "0", thresholds, outstandingBaseQuantity: "0", preferred: null, forecastUsage: "2.5000" },
+    ]);
+
+    expect(result.bySupplier.get("sup-1")).toEqual([
+      { inventoryItemId: "beef", supplierItemId: "si-1", supplierId: "sup-1", needBaseQuantity: "40.0000", orderedQuantity: "4", basis: "FORECAST" },
+      { inventoryItemId: "napkins", supplierItemId: "si-1", supplierId: "sup-1", needBaseQuantity: "80.0000", orderedQuantity: "7", basis: "PAR" },
+    ]);
+    expect(result.withoutSupplier).toEqual([{ inventoryItemId: "orphan", needBaseQuantity: "22.5000", basis: "FORECAST" }]);
+  });
+
+  it("gives the Phase 19 answer when no item has forecast usage", () => {
+    const candidates = [
+      { inventoryItemId: "a", quantityOnHand: "10.0000", thresholds, outstandingBaseQuantity: "24.0000", preferred },
+      { inventoryItemId: "orphan", quantityOnHand: "5", thresholds, outstandingBaseQuantity: "0", preferred: null },
+    ];
+    const par = suggestPurchaseLines(candidates);
+    const forecast = suggestForecastPurchaseLines(candidates.map((candidate) => ({ ...candidate, forecastUsage: null })));
+
+    const withoutBasis = <T extends { basis: string }>(line: T) => {
+      const copy: Partial<T> = { ...line };
+
+      delete copy.basis;
+
+      return copy;
+    };
+
+    expect([...forecast.bySupplier.values()].flat().map(withoutBasis)).toEqual([...par.bySupplier.values()].flat());
+    expect(forecast.withoutSupplier.map(withoutBasis)).toEqual(par.withoutSupplier);
   });
 });

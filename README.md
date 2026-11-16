@@ -523,6 +523,8 @@ A staffing ratio (`staffing_ratios`, one active per location and position, `sche
 
 The forecast changes a schedule only on request, on a DRAFT period, under `schedule.edit`: **Apply template** with "Size new shifts from the demand forecast", or **Use suggestion** / **Use all suggestions** on shifts that came from a template (never below the people already assigned; hand-added shifts are never changed). Each use stores the forecast as it was (`demand_forecasts`, `demand_forecast_dates`, `demand_forecast_hours`, append-only), and sized shifts record the forecast, the suggestion and the template's count. The generator is unchanged; a run records which stored forecasts sized its shifts. The Labor report compares the forecast used with what happened ("Forecast vs actual"). See "Phase 24 Demand Forecasting" in section 33.
 
+Phase 25: the same look-back weeks, minimum samples and excluded dates also drive the item forecast behind prep lists and forecast-based suggested orders (section 16).
+
 ### Time clock (Phase 18)
 
 Tables:
@@ -822,6 +824,8 @@ Physical counts snapshot the system quantity, record counted quantity, and creat
 
 Phase 19 adds `inventory_stock_alerts`: the posting service opens one when a posting takes stock from above the reorder level to at or below it, and resolves it when stock rises above again, in the same transaction, with in-app `INVENTORY_LOW` notifications to `purchasing.manage` holders at the location. A stocked item may name a preferred supplier item (`inventory_item_locations.preferred_supplier_item_id`), from which suggested purchase orders are built as DRAFTs, never submitted.
 
+**Forecast basis (Phase 25).** Suggested orders can also be built "from the forecast through" a business date the manager picks (tomorrow to 14 days ahead). The item forecast is portions per menu item and business date from CLOSED checks (items SUBMITTED or SPLIT, the item-mix rule) by the Phase 24 same-weekday method and settings; what one portion takes is the recipe revision in effect on that date plus, per modifier, its share of past portions × its current effect (one modifier at a time, the SEND rule). Need = forecast usage from today (today's remainder) through the date + the reorder level − on hand − on order, in whole purchase units of the preferred supplier item; an item no forecast covers keeps the par rule. Preview stores nothing; creating drafts stores the forecast as it was (`purchasing_forecasts`, `purchasing_forecast_items`, `purchasing_forecast_lines`, append-only) in the drafts' transaction, and each draft records `purchase_orders.purchasing_forecast_id`. The par basis is unchanged and stays the default. The cross-domain reading lives in the `forecast-items` workflow; Inventory receives the usage and never reads orders, recipes, menus or schedules. See "Phase 25 Prep and Purchasing Forecast" in section 33.
+
 Theoretical versus actual inventory and cost variance are critical reporting capabilities.
 
 ## 17. Domain 10: Orders
@@ -950,6 +954,8 @@ As built in Phase 10, the approved Phase 10 policies replace recall with an expl
 Overall order state and kitchen fulfillment state remain separate.
 
 Phase 21: a ticket item sent after an allergy acknowledgment carries `allergy_alert_snapshot` ("ALLERGY: Peanuts (severe)"), shown at the top of the item; a remake keeps it.
+
+Phase 25: a read-only **prep list** per station (Kitchen → Prep list) shows, for today and the next six days, the portions the item forecast expects (rounded up; today less what has been sent), the modifiers guests usually choose and the ingredients those portions take. Station access follows the queues (`kitchen.view` for KITCHEN, `bar.view` for BAR). It is worked out when opened and stored nowhere; prep itself is not tracked. See section 16 and "Phase 25 Prep and Purchasing Forecast" in section 33.
 
 ## 19. Domain 12: Order Settlement
 
@@ -1152,6 +1158,8 @@ Phase 21: the seating report counts seated parties linked to a guest profile and
 Phase 23: **All my locations.** For a user who holds an area's report permission at two or more locations, each area (except menu performance) can show its summary figures per location with a total, each location on its own business dates; costs and wages appear only if visible at every included location. A closed location is included while the user's assignment there is still active and the same permission is held at an open location. The Overview shows today at each location. The Inventory report has an "In transit" section, and a lot trace (`/reports/lot-trace/{lotId}`) follows a lot from its receipt through transfers to the orders that used it.
 
 Phase 24: the Labor area ends with **Forecast vs actual**: for each past business date in the range that has a stored demand forecast (the latest one a manager used), the forecast and actual daily totals per demand measure, the difference and its percentage, and each side's busiest hour. It reads the stored forecast and closed checks only. "All my locations" adds forecast and actual dining covers.
+
+Phase 25: the Inventory area ends with **Item forecast vs actual**: for each past business date covered by a stored purchasing forecast (the latest one that covered it), forecast and sold portions per menu item on closed checks, the difference and its percentage. Counts only. "All my locations" adds forecast and sold portions.
 
 ## 22. Notifications
 
@@ -1950,6 +1958,20 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 25 Prep and Purchasing Forecast
+
+Phase 25 carries the Phase 24 forecast into the kitchen and purchasing, by owner decision on 2026-11-16 (plan approved with D1–D12 as recommended), with the Phase 24 leftovers. It supersedes the Phase 24 plan's "Phase 19 suggestions stay par-based": the par basis is unchanged and stays the default. Plan: `docs/Phase-25-Prep-and-Purchasing-Forecast.md` (amendments listed there). Report: `docs/Phase-25-Completion-Report.md`.
+
+- **Shared rules:** `selectHistoryDates` and the weighted average moved to `src/shared/forecasting/` (Scheduling re-exports them unchanged), with a decimal weighted average.
+- **Read queries** owned by their modules: `orders/queries/item-sales-history.ts` (portions and modifier choices per item and date; equals the item-mix report), `menu/queries/forecast-menu.ts` (items on the location's menus for a date, station routing, modifier effects), `recipes/queries/menu-item-requirements.ts` (the revision in effect and its per-portion requirements, as SEND resolves them), `scheduling/queries/forecast-inputs.ts` (look-back, minimum, excluded dates).
+- **Workflow** `src/workflows/forecast-items/`: the item and ingredient rules (pure), the item forecast, the prep list and the forecast usage handed to Inventory. Read-only: it writes nothing and moves no stock.
+- **Prep list:** Kitchen → Prep list (`/kitchen/prep`, `GET /api/kitchen/prep-list`), per KITCHEN station under `kitchen.view` and per BAR station under `bar.view`, today to six days ahead: whole portions (rounded up; today less what has been sent), the usual modifiers ("about 3 Extra Pickles") and the ingredients in base units. Worked out when opened, never stored.
+- **Suggested orders:** `?basis=forecast&through=` on the preview, `{ basis: "forecast", throughDate, idempotencyKey }` to create; audit `purchasing.suggested-orders-created` gains the basis, date and stored forecast ID.
+- **Permissions:** none new (149).
+- **Leftovers:** a click-until-shown E2E helper for the settlements clicks lost before hydration under `next dev`, one booking date (two days ahead) for the whole online-booking spec, and the 16 unused Docker volumes removed with the owner's confirmation.
+- **Demo data:** `db:seed:demo` adds six weeks of fake closed takeout checks at MAIN selling "Demo prep burger", "Demo prep fries" and "Demo prep wings" (copies of the demo kitchen items, made with the clock moved back so their price and recipe cover the history), after one demo stock adjustment per ingredient.
+- **Migrations:** `0063` (tables and the purchase-order column) and `0064` (custom: snapshot tables append-only).
+
 ### Phase 24 Demand Forecasting
 
 Phase 24 builds the fourth group of section 39 (demand forecasting from historical sales and reservations, for staffing), with the Phase 23 leftovers, by owner decision on 2026-11-12 (plan approved with D1–D12 as recommended). It supersedes the Phase 4 plan's "Do not implement demand forecasting from sales or reservations yet". Plan: `docs/Phase-24-Demand-Forecasting.md` (amendments listed there). Report: `docs/Phase-24-Completion-Report.md`.
@@ -2214,6 +2236,12 @@ A demand forecast per hour for each schedule date, from the same weekday's close
 
 Approved by the owner on 2026-11-12, with decisions D1–D12 as recommended in the plan.
 
+### Phase 25: Prep and Purchasing Forecast
+
+Expected portions per menu item from the same weekday's closed checks, the ingredients they take from the recipe in effect and the usual modifiers, a prep list per station, suggested orders from the forecast with the forecast stored when drafts are made, and an item forecast-vs-actual report. Plus the Phase 24 leftovers. Plan: `docs/Phase-25-Prep-and-Purchasing-Forecast.md`.
+
+Approved by the owner on 2026-11-16, with decisions D1–D12 as recommended in the plan.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2320,7 +2348,7 @@ Architect for, but do not implement unless specifically requested:
 - Accounting integrations
 - SMS/email notifications to staff (guest service messages were built in Phase 22)
 - Full offline synchronization
-- Demand forecasting based on historical sales/reservations (built in Phase 24 for staffing: a same-weekday average with a booked-covers floor, sizing shifts on request; forecasting sales, prep or purchasing remains future work)
+- Demand forecasting based on historical sales/reservations (built in Phase 24 for staffing: a same-weekday average with a booked-covers floor, sizing shifts on request; extended in Phase 25 to item portions, prep lists and forecast-based suggested orders; forecasting sales money remains future work)
 - Ingredient lots/FIFO/expiration-by-lot (built in Phase 23 for quantity and expiry, first to expire first; cost stays weighted average, so FIFO costing remains future work)
 - Vendor EDI
 - Nutritional analysis (allergen labeling was built in Phase 21)

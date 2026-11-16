@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 // Phase 15 UI conventions shared by the end-to-end specs.
 
@@ -30,4 +30,30 @@ export async function confirmDialog(page: Page, confirmLabel: string) {
 /** A success message shown as a toast. */
 export async function expectToast(page: Page, text: string) {
   await expect(page.getByTestId("toast-region")).toContainText(text);
+}
+
+/**
+ * Phase 25 policy 16: clicks until `shown` passes. Under `next dev` a click that lands before
+ * hydration is lost, so a later attempt checks for the result first and clicks again only if
+ * it isn't there. Use only where clicking twice is harmless. `shown` should wait briefly
+ * (for example `{ timeout: 5_000 }`).
+ */
+export async function clickUntilShown(target: Locator, shown: () => Promise<void>, timeout = 60_000) {
+  let attempted = false;
+
+  await expect(async () => {
+    if (attempted) {
+      try {
+        await shown();
+
+        return;
+      } catch {
+        // Not there yet: click again.
+      }
+    }
+
+    attempted = true;
+    await target.click({ timeout: 5_000 });
+    await shown();
+  }).toPass({ timeout });
 }

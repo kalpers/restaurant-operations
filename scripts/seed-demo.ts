@@ -20,6 +20,7 @@ import { addRecurringAvailability } from "../src/modules/scheduling/services/ava
 import { seedDeclaredAllergens, seedGuestProfiles, seedIngredientAllergens, type DemoProfile } from "./demo-guests-allergens";
 import { seedDemoForecastHistory } from "./demo-forecast-history";
 import { seedDemoKitchen } from "./demo-kitchen";
+import { seedDemoPrepHistory } from "./demo-prep-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -243,6 +244,17 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo forecast history: ${history.checks} closed checks added over the last six weeks (${history.datesAlreadyPresent} dates already had them, ${history.skipped} skipped for want of a free table), ${history.ratios} staffing ratios added.`,
+    );
+
+    // Phase 25 (D11): item history with recipes and modifiers for the prep and purchasing forecast.
+    const prepOwner = await mainOwnerActor("purchasing.manage");
+    const prep = await seedDemoPrepHistory(database, prepOwner, {
+      timeZone: clock?.timeZone ?? null,
+      businessDayCutoff: clock?.businessDayCutoff ?? "04:00",
+    });
+
+    console.log(
+      `Demo prep history: ${prep.checks} closed takeout checks added (${prep.datesAlreadyPresent} dates already had them), ${prep.stockAdded} ingredients topped up first.`,
     );
   } finally {
     await closeDatabase();

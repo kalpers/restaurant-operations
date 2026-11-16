@@ -251,7 +251,13 @@ export async function createPurchaseOrder(
 export async function createPurchaseOrderIn(
   transaction: DatabaseTransaction,
   actor: Actor,
-  input: { supplierId: string; expectedAt: Date | null; notes: string | null },
+  input: {
+    supplierId: string;
+    expectedAt: Date | null;
+    notes: string | null;
+    /** Phase 25 (D7): set only by the forecast-based suggestion. */
+    purchasingForecastId?: string | null;
+  },
 ) {
   assertPermission(actor, "purchasing.manage");
 
@@ -284,6 +290,7 @@ export async function createPurchaseOrderIn(
         poNumber: formatPoNumber(sequenceNumber),
         expectedAt: input.expectedAt,
         notes: input.notes,
+        purchasingForecastId: input.purchasingForecastId ?? null,
         createdByUserId: actor.userId,
       })
       .returning();

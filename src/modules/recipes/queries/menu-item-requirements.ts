@@ -24,7 +24,22 @@ export async function resolveCurrentRequirementsForMenuItems(
   menuItemIds: readonly string[],
   at: Date,
 ): Promise<Map<string, PortionRequirement[] | null>> {
-  const result = new Map<string, PortionRequirement[] | null>();
+  const resolved = await resolveRevisionRequirementsForMenuItems(executor, organizationId, menuItemIds, at);
+
+  return new Map([...resolved].map(([id, entry]) => [id, entry ? entry.requirements : null]));
+}
+
+/**
+ * Phase 25 policy 5: the same answer with the revision in effect, for the item forecast's
+ * snapshot. Null when the item has no recipe or no revision in effect at `at`.
+ */
+export async function resolveRevisionRequirementsForMenuItems(
+  executor: DatabaseExecutor,
+  organizationId: string,
+  menuItemIds: readonly string[],
+  at: Date,
+): Promise<Map<string, { recipeVersionId: string; requirements: PortionRequirement[] } | null>> {
+  const result = new Map<string, { recipeVersionId: string; requirements: PortionRequirement[] } | null>();
 
   for (const id of menuItemIds) {
     result.set(id, null);
@@ -55,7 +70,7 @@ export async function resolveCurrentRequirementsForMenuItems(
 
     if (effective) {
       revisionToItem.set(effective.id, menuItemId);
-      result.set(menuItemId, []);
+      result.set(menuItemId, { recipeVersionId: effective.id, requirements: [] });
     }
   }
 
@@ -91,7 +106,7 @@ export async function resolveCurrentRequirementsForMenuItems(
   ingredients.forEach((row, index) => {
     const menuItemId = revisionToItem.get(row.recipeVersionId)!;
 
-    result.get(menuItemId)!.push({ inventoryItemId: row.inventoryItemId, baseQuantity: baseQuantities[index]! });
+    result.get(menuItemId)!.requirements.push({ inventoryItemId: row.inventoryItemId, baseQuantity: baseQuantities[index]! });
   });
 
   return result;

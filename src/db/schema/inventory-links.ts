@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  numeric,
   pgTable,
   text,
   unique,
@@ -12,9 +14,9 @@ import {
 
 import { uuidPrimaryKey } from "../helpers/columns";
 import { quantity } from "../helpers/numeric";
-import { createdAt, updatedAt } from "../helpers/timestamps";
+import { calendarDate, createdAt, updatedAt } from "../helpers/timestamps";
 import { versionColumn } from "../helpers/versioning";
-import { inventoryItems } from "./inventory";
+import { inventoryItems, purchasingForecasts } from "./inventory";
 import { menuItems, modifiers } from "./menu";
 import { organizations } from "./organization";
 import { recipeVersions, unitsOfMeasure } from "./recipes";
@@ -121,5 +123,52 @@ export const modifierInventoryEffects = pgTable(
         OR (${table.effectType} = 'ADJUST' AND ${table.quantity} <> 0 AND ${table.unitOfMeasureId} IS NOT NULL)`,
     ),
     index("modifier_inventory_effects_menu_item_idx").on(table.menuItemId),
+  ],
+);
+
+/**
+ * Phase 25 (D7, policy 14): the item forecast behind a stored purchasing forecast: portions per
+ * business date and menu item, as forecast then. Append-only. Read by "Item forecast vs actual".
+ */
+export const purchasingForecastItems = pgTable(
+  "purchasing_forecast_items",
+  {
+    id: uuidPrimaryKey(),
+    purchasingForecastId: uuid("purchasing_forecast_id").notNull(),
+    businessDate: calendarDate("business_date").notNull(),
+    menuItemId: uuid("menu_item_id").notNull(),
+    status: text("status").notNull(),
+    /** Whole-day forecast portions; null without enough history. */
+    portions: numeric("portions", { precision: 14, scale: 2, mode: "string" }),
+    newItem: boolean("new_item").notNull(),
+    recipeVersionId: uuid("recipe_version_id"),
+  },
+  (table) => [
+    foreignKey({
+      name: "purchasing_forecast_items_recipe_version_fk",
+      columns: [table.recipeVersionId],
+      foreignColumns: [recipeVersions.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "purchasing_forecast_items_forecast_fk",
+      columns: [table.purchasingForecastId],
+      foreignColumns: [purchasingForecasts.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "purchasing_forecast_items_menu_item_fk",
+      columns: [table.menuItemId],
+      foreignColumns: [menuItems.id],
+    }).onDelete("restrict"),
+    unique("purchasing_forecast_items_forecast_date_item_unique").on(
+      table.purchasingForecastId,
+      table.businessDate,
+      table.menuItemId,
+    ),
+    check("purchasing_forecast_items_status_valid", sql`${table.status} IN ('OK', 'NOT_ENOUGH_HISTORY')`),
+    check(
+      "purchasing_forecast_items_portions_match_status",
+      sql`(${table.status} = 'OK') = (${table.portions} IS NOT NULL)`,
+    ),
+    index("purchasing_forecast_items_date_idx").on(table.businessDate),
   ],
 );

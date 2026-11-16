@@ -163,3 +163,27 @@ export async function quantitiesOnHand(
 
   return result;
 }
+
+/**
+ * Phase 25: code, name and base unit code per inventory item, for the prep list and the
+ * purchasing forecast. No cost, levels or supplier data.
+ */
+export async function findInventoryItemLabels(
+  executor: DatabaseExecutor,
+  organizationId: string,
+  inventoryItemIds: readonly string[],
+): Promise<Map<string, { code: string; name: string; baseUnitCode: string }>> {
+  const ids = [...new Set(inventoryItemIds)];
+
+  if (ids.length === 0) {
+    return new Map();
+  }
+
+  const rows = await executor
+    .select({ id: inventoryItems.id, code: inventoryItems.code, name: inventoryItems.name, baseUnitCode: unitsOfMeasure.code })
+    .from(inventoryItems)
+    .innerJoin(unitsOfMeasure, eq(unitsOfMeasure.id, inventoryItems.baseUnitId))
+    .where(and(eq(inventoryItems.organizationId, organizationId), inArray(inventoryItems.id, ids)));
+
+  return new Map(rows.map((row) => [row.id, { code: row.code, name: row.name, baseUnitCode: row.baseUnitCode }]));
+}

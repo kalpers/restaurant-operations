@@ -22,13 +22,15 @@ let setup: OnlineSetup;
 const guest = { name: "", phone: uniquePhone() };
 let manageUrl = "";
 
-function tomorrow(): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Detroit", year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(Date.now() + 86_400_000),
-  );
-
-  return parts;
-}
+// Phase 25 policy 17: one booking date for the whole file, worked out once at load and two
+// days ahead in the location's zone, so a run crossing midnight can't move it, and it stays
+// past the two-hour lead time and inside the 30-day window.
+const BOOKING_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Detroit",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(new Date(Date.now() + 2 * 86_400_000));
 
 async function signedIn(browser: Browser, account: OrdersAccount): Promise<Page> {
   const page = await (await browser.newContext({ timezoneId: "America/Detroit" })).newPage();
@@ -82,11 +84,10 @@ test("a signed-out guest books a table with a peanut allergy and text consent, a
 
   const form = page.getByRole("form", { name: "Book a table" });
 
-  // Tomorrow, so the evening is bookable whatever the time of day the suite runs (Phase 23
-  // fix: today's 19:00 is inside the two-hour lead time once it is past 17:00 here).
+  // Two days ahead, so the evening is bookable whatever the time of day the suite runs.
   // Under `next dev` a fill before hydration is reset to today, so fill until it holds.
   await expect(async () => {
-    await form.getByLabel("Date").fill(tomorrow());
+    await form.getByLabel("Date").fill(BOOKING_DATE);
     await expect(page.getByRole("button", { name: "19:00" })).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
 
@@ -154,7 +155,7 @@ test("an open reservations board shows new online and staff bookings without a r
   const form = page.getByRole("form", { name: "Book a table" });
 
   await expect(async () => {
-    await form.getByLabel("Date").fill(tomorrow());
+    await form.getByLabel("Date").fill(BOOKING_DATE);
     await expect(page.getByRole("button", { name: "19:30" })).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
   await form.getByLabel("Guests").selectOption("2");
@@ -170,7 +171,7 @@ test("an open reservations board shows new online and staff bookings without a r
   // Another device of the staff books by phone.
   const other = await signedIn(browser, setup.host);
   const created = await other.request.post("/api/reservations", {
-    data: { guestName: phoned, partySize: 3, localDate: tomorrow(), localTime: "18:00", source: "PHONE" },
+    data: { guestName: phoned, partySize: 3, localDate: BOOKING_DATE, localTime: "18:00", source: "PHONE" },
   });
 
   expect(created.status()).toBe(201);

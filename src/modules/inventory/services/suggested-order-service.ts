@@ -8,18 +8,30 @@ import {
   purchaseOrderLines,
   purchaseOrderReceiptLines,
   purchaseOrders,
+  purchasingForecastItems,
+  purchasingForecastLines,
+  purchasingForecasts,
   supplierItems,
   suppliers,
   unitsOfMeasure,
 } from "@/db/schema";
-import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import {
+  withTransaction,
+  type DatabaseExecutor,
+  type DatabaseTransaction,
+} from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { toScale } from "@/shared/decimal/decimal";
 
 import { extendCost } from "../rules/costing";
-import { suggestPurchaseLines, type SuggestionCandidate } from "../rules/replenishment";
+import {
+  suggestForecastPurchaseLines,
+  suggestPurchaseLines,
+  type SuggestionBasis,
+  type SuggestionCandidate,
+} from "../rules/replenishment";
 import { assertPermission, canSeeCost } from "./access";
 import { addPurchaseOrderLineIn, createPurchaseOrderIn } from "./purchase-order-service";
 
@@ -133,7 +145,7 @@ export type SuggestedOrders = {
   suppliers: {
     supplierId: string;
     supplierName: string;
-    lines: {
+    lines: ({
       inventoryItemId: string;
       code: string;
       name: string;
@@ -146,15 +158,78 @@ export type SuggestedOrders = {
       orderedQuantity: string;
       /** Null without `inventory.cost.view`, or when the supplier item has no cost. */
       estimatedLineCost: string | null;
-    }[];
+    } & ForecastLineFields)[];
   }[];
-  withoutSupplier: { inventoryItemId: string; code: string; name: string; needBaseQuantity: string; baseUnitCode: string }[];
+  withoutSupplier: ({
+    inventoryItemId: string;
+    code: string;
+    name: string;
+    needBaseQuantity: string;
+    baseUnitCode: string;
+  } & ForecastLineFields)[];
+  /** Phase 25: present on the forecast basis only. */
+  forecast?: { fromDate: string; throughDate: string; dates: ForecastBasisInput["dates"] };
 };
 
-async function buildSuggestion(executor: DatabaseExecutor, actor: Actor): Promise<SuggestedOrders> {
+/** Phase 25 policy 11: present on the forecast basis only, so the par response is unchanged. */
+type ForecastLineFields = {
+  basis?: SuggestionBasis;
+  /** Base units the forecast uses through the chosen date; null on the PAR basis. */
+  forecastUsageBaseQuantity?: string | null;
+  reorderFloor?: string | null;
+};
+
+/**
+ * Phase 25 (D6, D9): the forecast usage the `forecast-items` workflow works out and hands to
+ * Inventory. Inventory never reads orders, recipes, menus or schedules itself.
+ */
+export type ForecastBasisInput = {
+  fromDate: string;
+  throughDate: string;
+  /** Base units per inventory item. */
+  usage: ReadonlyMap<string, string>;
+  dates: { businessDate: string; status: string; sampleDates: string[] }[];
+};
+
+/** Phase 25 policy 14: what is stored with drafts made on the forecast basis. */
+export type ForecastSnapshotInput = ForecastBasisInput & {
+  items: {
+    businessDate: string;
+    menuItemId: string;
+    status: string;
+    portions: string | null;
+    newItem: boolean;
+    recipeVersionId: string | null;
+  }[];
+  method: Record<string, unknown>;
+};
+
+async function buildSuggestion(
+  executor: DatabaseExecutor,
+  actor: Actor,
+  forecast?: ForecastBasisInput,
+): Promise<SuggestedOrders> {
   const candidates = await loadCandidates(executor, actor);
   const byId = new Map(candidates.map((row) => [row.inventoryItemId, row]));
-  const { bySupplier, withoutSupplier } = suggestPurchaseLines(candidates);
+  // Phase 25 policy 12: on the forecast basis each item uses its forecast usage, or par.
+  const { bySupplier, withoutSupplier } = forecast
+    ? suggestForecastPurchaseLines(
+        candidates.map((row) => ({ ...row, forecastUsage: forecast.usage.get(row.inventoryItemId) ?? null })),
+      )
+    : suggestPurchaseLines(candidates);
+  const forecastFields = (inventoryItemId: string, line: object): ForecastLineFields => {
+    if (!forecast || !("basis" in line)) {
+      return {};
+    }
+
+    const basis = line.basis as SuggestionBasis;
+
+    return {
+      basis,
+      forecastUsageBaseQuantity: basis === "FORECAST" ? toScale(forecast.usage.get(inventoryItemId)!, 4) : null,
+      reorderFloor: byId.get(inventoryItemId)!.thresholds.reorderLevel,
+    };
+  };
   const supplierItemIds = [...bySupplier.values()].flat().map((line) => line.supplierItemId);
   const details =
     supplierItemIds.length === 0
@@ -197,6 +272,7 @@ async function buildSuggestion(executor: DatabaseExecutor, actor: Actor): Promis
               showCost && supplierItem.lastUnitCost !== null
                 ? extendCost(line.orderedQuantity, supplierItem.lastUnitCost)
                 : null,
+            ...forecastFields(line.inventoryItemId, line),
           };
         }),
       }))
@@ -210,16 +286,27 @@ async function buildSuggestion(executor: DatabaseExecutor, actor: Actor): Promis
         name: item.name,
         needBaseQuantity: entry.needBaseQuantity,
         baseUnitCode: item.baseUnitCode,
+        ...forecastFields(entry.inventoryItemId, entry),
       };
     }),
+    ...(forecast
+      ? { forecast: { fromDate: forecast.fromDate, throughDate: forecast.throughDate, dates: forecast.dates } }
+      : {}),
   };
 }
 
-/** Policy 16: what would go on draft orders now. Writes nothing. */
-export async function previewSuggestedOrders(executor: DatabaseExecutor, actor: Actor): Promise<SuggestedOrders> {
+/**
+ * Policy 16: what would go on draft orders now. Writes nothing. Phase 25 policy 11: with a
+ * forecast, on the forecast basis.
+ */
+export async function previewSuggestedOrders(
+  executor: DatabaseExecutor,
+  actor: Actor,
+  forecast?: ForecastBasisInput,
+): Promise<SuggestedOrders> {
   assertPermission(actor, "purchasing.manage");
 
-  return buildSuggestion(executor, actor);
+  return buildSuggestion(executor, actor, forecast);
 }
 
 export type CreatedSuggestedOrders = {
@@ -231,7 +318,17 @@ export type CreatedSuggestedOrders = {
 export async function createSuggestedOrders(
   database: Database,
   actor: Actor,
-  input: { idempotencyKey: string },
+  input: {
+    idempotencyKey: string;
+    /**
+     * Phase 25 policy 13: the forecast basis. `compute` works the forecast out again inside
+     * this transaction; the calling workflow supplies it.
+     */
+    forecast?: {
+      throughDate: string;
+      compute: (transaction: DatabaseTransaction) => Promise<ForecastSnapshotInput>;
+    };
+  },
 ): Promise<{ replayed: boolean } & CreatedSuggestedOrders> {
   assertPermission(actor, "purchasing.manage");
 
@@ -243,20 +340,25 @@ export async function createSuggestedOrders(
         scope: SUGGEST_SCOPE,
         key: input.idempotencyKey,
         actorUserId: actor.userId,
-        request: { locationId: actor.locationId },
+        request: input.forecast
+          ? { locationId: actor.locationId, basis: "FORECAST", throughDate: input.forecast.throughDate }
+          : { locationId: actor.locationId },
       },
       async (): Promise<CreatedSuggestedOrders> => {
         // Serializes concurrent suggestions at a location, so two can't both order the shortfall.
         await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`purchasing.suggest:${actor.locationId}`}))`);
 
-        const suggestion = await buildSuggestion(transaction, actor);
+        const snapshot = input.forecast ? await input.forecast.compute(transaction) : undefined;
+        const suggestion = await buildSuggestion(transaction, actor, snapshot);
+        const purchasingForecastId = snapshot ? await storeForecast(transaction, actor, snapshot, suggestion) : null;
         const created: CreatedSuggestedOrders["purchaseOrders"] = [];
 
         for (const group of suggestion.suppliers) {
           const order = await createPurchaseOrderIn(transaction, actor, {
             supplierId: group.supplierId,
             expectedAt: null,
-            notes: "Suggested from low stock.",
+            notes: snapshot ? `Suggested from the forecast through ${snapshot.throughDate}.` : "Suggested from low stock.",
+            purchasingForecastId,
           });
           let version = order.version;
 
@@ -280,6 +382,7 @@ export async function createSuggestedOrders(
             details: {
               poNumbers: created.map((order) => order.poNumber),
               lineCount: created.reduce((sum, order) => sum + order.lineCount, 0),
+              ...(snapshot ? { basis: "FORECAST", throughDate: snapshot.throughDate, purchasingForecastId } : {}),
             },
           });
         }
@@ -290,4 +393,78 @@ export async function createSuggestedOrders(
   );
 
   return { replayed: outcome.replayed, ...outcome.response };
+}
+
+/**
+ * Phase 25 policy 14 (D7): stores the forecast behind forecast-based drafts, append-only, in
+ * the drafts' transaction: the item forecast per date and the suggested lines.
+ */
+async function storeForecast(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  snapshot: ForecastSnapshotInput,
+  suggestion: SuggestedOrders,
+): Promise<string> {
+  const [forecast] = await transaction
+    .insert(purchasingForecasts)
+    .values({
+      organizationId: actor.organizationId,
+      locationId: actor.locationId,
+      createdByUserId: actor.userId,
+      fromDate: snapshot.fromDate,
+      throughDate: snapshot.throughDate,
+      method: { ...snapshot.method, dates: snapshot.dates },
+    })
+    .returning({ id: purchasingForecasts.id });
+  const id = forecast!.id;
+
+  for (let start = 0; start < snapshot.items.length; start += 500) {
+    await transaction.insert(purchasingForecastItems).values(
+      snapshot.items.slice(start, start + 500).map((item) => ({
+        purchasingForecastId: id,
+        businessDate: item.businessDate,
+        menuItemId: item.menuItemId,
+        status: item.status,
+        portions: item.portions,
+        newItem: item.newItem,
+        recipeVersionId: item.recipeVersionId,
+      })),
+    );
+  }
+
+  const candidates = new Map((await loadCandidates(transaction, actor)).map((row) => [row.inventoryItemId, row]));
+  const lines: {
+    inventoryItemId: string;
+    needBaseQuantity: string;
+    basis?: SuggestionBasis;
+    forecastUsageBaseQuantity?: string | null;
+    supplierItemId: string | null;
+    orderedQuantity: string | null;
+  }[] = [
+    ...suggestion.suppliers.flatMap((group) => group.lines),
+    ...suggestion.withoutSupplier.map((entry) => ({ ...entry, supplierItemId: null, orderedQuantity: null })),
+  ];
+
+  if (lines.length > 0) {
+    await transaction.insert(purchasingForecastLines).values(
+      lines.map((line) => {
+        const candidate = candidates.get(line.inventoryItemId)!;
+
+        return {
+          purchasingForecastId: id,
+          inventoryItemId: line.inventoryItemId,
+          basis: line.basis!,
+          forecastUsage: line.forecastUsageBaseQuantity ?? null,
+          reorderFloor: candidate.thresholds.reorderLevel,
+          quantityOnHand: candidate.quantityOnHand,
+          onOrder: candidate.outstandingBaseQuantity,
+          need: line.needBaseQuantity,
+          supplierItemId: line.supplierItemId,
+          orderedQuantity: line.orderedQuantity,
+        };
+      }),
+    );
+  }
+
+  return id;
 }

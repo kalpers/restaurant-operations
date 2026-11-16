@@ -1,10 +1,15 @@
-import {
-  compareDecimals,
-  divideRoundHalfUp,
-  wholeQuotientCeiling,
-} from "@/shared/decimal/decimal";
+import { compareDecimals, wholeQuotientCeiling } from "@/shared/decimal/decimal";
+import { weightedAverage } from "@/shared/forecasting/history-dates";
 import { businessDateOf, type BusinessDateSettings } from "@/shared/time/business-date-service";
-import { addDays, localMinutesOf } from "@/shared/time/zoned-time";
+import { localMinutesOf } from "@/shared/time/zoned-time";
+
+// Phase 25 policy 1: the history-date rules moved to `src/shared/forecasting`; re-exported here
+// so the Phase 24 callers and tests are unchanged.
+export {
+  MAXIMUM_HISTORY_WEEKS,
+  selectHistoryDates,
+  weightedAverage,
+} from "@/shared/forecasting/history-dates";
 
 // Phase 24 demand forecast rules (policies 3, 4, 8 and 9). Pure and deterministic: the same
 // history, bookings, settings and ratios always give the same forecast and suggestions.
@@ -24,9 +29,6 @@ export const MEASURE_LABELS: Record<DemandMeasure, { name: string; unit: string 
   TAKEOUT_CHECKS: { name: "Takeout checks", unit: "takeout checks" },
   ALL_CHECKS: { name: "All checks", unit: "checks" },
 };
-
-/** History is never looked for further back than this many weeks (policy 3). */
-export const MAXIMUM_HISTORY_WEEKS = 12;
 
 export type ForecastSettings = {
   lookbackWeeks: number;
@@ -55,57 +57,6 @@ export type DateForecast = {
   sampleDates: string[];
   hours: HourForecast[];
 };
-
-/**
- * Policy 3: the usable history dates for a target date: earlier dates with the same
- * weekday, newest first, within 12 weeks, before today's business date, not excluded and
- * with at least one closed check; the first `lookbackWeeks` of them.
- */
-export function selectHistoryDates(input: {
-  targetDate: string;
-  today: string;
-  openDates: ReadonlySet<string>;
-  excludedDates: ReadonlySet<string>;
-  lookbackWeeks: number;
-}): string[] {
-  const dates: string[] = [];
-
-  for (let week = 1; week <= MAXIMUM_HISTORY_WEEKS && dates.length < input.lookbackWeeks; week += 1) {
-    const date = addDays(input.targetDate, -7 * week);
-
-    if (date >= input.today || input.excludedDates.has(date) || !input.openDates.has(date)) {
-      continue;
-    }
-
-    dates.push(date);
-  }
-
-  return dates;
-}
-
-/**
- * Policy 3: the weighted mean of whole counts, newest first, weights n down to 1, as a
- * decimal string to two places (half up). Integer arithmetic only.
- */
-export function weightedAverage(valuesNewestFirst: readonly number[]): string {
-  const count = valuesNewestFirst.length;
-
-  if (count === 0) {
-    throw new Error("A weighted average needs at least one value.");
-  }
-
-  let numerator = 0;
-  let denominator = 0;
-
-  valuesNewestFirst.forEach((value, index) => {
-    const weight = count - index;
-
-    numerator += weight * value;
-    denominator += weight;
-  });
-
-  return divideRoundHalfUp(String(numerator), String(denominator), 2);
-}
 
 function maxDecimal(value: string, floor: number): string {
   const floorText = `${floor}.00`;

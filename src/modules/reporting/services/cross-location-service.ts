@@ -99,6 +99,9 @@ const FIGURES: Record<CrossLocationArea, Figure[]> = {
     { key: "wasteEntries", label: "Waste entries", kind: "count", total: "sum" },
     { key: "wasteCost", label: "Waste cost", kind: "cost", total: "sum", needs: "cost" },
     { key: "inTransit", label: "Value in transit", kind: "cost", total: "sum", needs: "cost" },
+    // Phase 25 (policy 15): portions on past dates covered by a stored purchasing forecast.
+    { key: "forecastPortions", label: "Forecast portions", kind: "quantity", total: "sum" },
+    { key: "soldPortions", label: "Sold portions (forecast dates)", kind: "quantity", total: "sum" },
   ],
   tips: [
     { key: "tips", label: "Tips", kind: "money", total: "sum" },
@@ -174,6 +177,8 @@ function figuresOf(area: CrossLocationArea, sections: ReportSection[]): ReportRo
         wasteEntries: section(sections, "waste")?.rows.length ?? 0,
         wasteCost: sumOf(usage, "wasteCost", 4),
         inTransit: sumOf(section(sections, "in-transit")?.rows, "value", 4),
+        forecastPortions: sumOf(section(sections, "itemForecastAccuracy")?.rows, "forecast", 2),
+        soldPortions: sumOf(section(sections, "itemForecastAccuracy")?.rows, "actual", 2),
       };
     }
     case "tips": {

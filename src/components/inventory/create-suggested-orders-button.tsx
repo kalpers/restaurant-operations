@@ -17,9 +17,16 @@ function newKey(): string {
 
 /**
  * Creates the suggested DRAFT orders (Phase 19 policy 17). The idempotency key is kept until
- * the request succeeds, so a retry after a lost response returns the same drafts.
+ * the request succeeds, so a retry after a lost response returns the same drafts. Phase 25
+ * (policy 13): with `forecastThrough`, on the forecast basis through that date.
  */
-export function CreateSuggestedOrdersButton({ supplierCount }: { supplierCount: number }) {
+export function CreateSuggestedOrdersButton({
+  supplierCount,
+  forecastThrough = null,
+}: {
+  supplierCount: number;
+  forecastThrough?: string | null;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [key, setKey] = useState(newKey);
@@ -35,7 +42,11 @@ export function CreateSuggestedOrdersButton({ supplierCount }: { supplierCount: 
       const response = await apiFetch("/api/purchasing/suggested-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idempotencyKey: key }),
+        body: JSON.stringify(
+          forecastThrough
+            ? { basis: "forecast", throughDate: forecastThrough, idempotencyKey: key }
+            : { idempotencyKey: key },
+        ),
       });
 
       if (response.status === 401) {

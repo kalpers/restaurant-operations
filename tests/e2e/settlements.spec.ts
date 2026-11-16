@@ -15,6 +15,7 @@ import {
   tenderTextFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
+import { clickUntilShown } from "../helpers/e2e-ui";
 
 // Settlement is record only: these flows record what happened at a register or an
 // external card terminal; nothing here processes a payment. Accounts, tables and cleanup
@@ -54,6 +55,9 @@ test.afterAll(async () => {
 
 test.describe("settlements", () => {
   test("dine-in cash with change closes the order; the session then completes on the floor", async ({ page }) => {
+    // Phase 25 policy 16: about ten steps that can each take up to 15 seconds under `next dev`.
+    test.setTimeout(90_000);
+
     const manager = await account("MANAGER");
     const server = await account("SERVER");
     const menu = await createOrderMenu(manager);
@@ -67,8 +71,10 @@ test.describe("settlements", () => {
 
     // The open check blocks the physical session completion.
     await page.goto("/restaurant/floor");
-    await page.getByRole("listitem", { name: `Table ${tableNumber}` }).getByRole("button", { name: "Complete session" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "open order" })).toBeVisible();
+    await clickUntilShown(
+      page.getByRole("listitem", { name: `Table ${tableNumber}` }).getByRole("button", { name: "Complete session" }),
+      () => expect(page.getByRole("alert").filter({ hasText: "open order" })).toBeVisible({ timeout: 5_000 }),
+    );
 
     await openSettlementScreen(page, orderId, "$5.00");
     await expect(page.getByLabel("Total due")).toHaveText("$5.00");
@@ -101,8 +107,9 @@ test.describe("settlements", () => {
     const card = page.getByRole("listitem", { name: `Table ${tableNumber}` });
 
     await expect(card).toContainText("Occupied");
-    await card.getByRole("button", { name: "Complete session" }).click();
-    await expect(card).toContainText("Dirty");
+    await clickUntilShown(card.getByRole("button", { name: "Complete session" }), () =>
+      expect(card).toContainText("Dirty", { timeout: 5_000 }),
+    );
   });
 
   test("takeout with partial cash, then the rest on an external card", async ({ page }) => {

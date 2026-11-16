@@ -525,7 +525,7 @@ export const AUDIT_ACTIONS = {
     category: "INVENTORY",
     entityType: "location",
     scope: "LOCATION",
-    fields: ["poNumbers", "lineCount"],
+    fields: ["poNumbers", "lineCount", "basis", "throughDate", "purchasingForecastId"],
   },
 
   // Settlements: tender details only as recorded; card data is never stored.

@@ -10,6 +10,7 @@ import { addDecimals } from "@/shared/decimal/decimal";
 import { businessDateOf } from "@/shared/time/business-date-service";
 
 import { forecastAccuracySection } from "../queries/forecast-report";
+import { itemForecastAccuracySection } from "../queries/item-forecast-report";
 import { fulfillmentSections } from "../queries/fulfillment-report";
 import { inventorySections } from "../queries/inventory-report";
 import { laborSections } from "../queries/labor-report";
@@ -55,6 +56,8 @@ export const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<Re
     await eightySixHistorySection(context),
     // Phase 23 (policy 14): transfers sent and not yet received.
     await inTransitSection(context),
+    // Phase 25 (policy 15): item forecast vs actual.
+    await itemForecastAccuracySection(context),
   ],
   fulfillment: fulfillmentSections,
   // Phase 24 (policy 16): forecast vs actual, after the existing labor sections.

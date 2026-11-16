@@ -182,9 +182,21 @@ export const approveCountSchema = z.object({
 });
 
 // Phase 19: draft purchase orders from the low-stock shortfall.
-export const createSuggestedOrdersSchema = z.object({
-  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
-});
+export const createSuggestedOrdersSchema = z.union([
+  // Phase 25 policy 13: drafts from the forecast through a chosen business date.
+  z.object({
+    basis: z.literal("forecast"),
+    throughDate: businessDate,
+    idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+  }),
+  z.object({ basis: z.literal("par").optional(), idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN) }),
+]);
+
+/** Phase 25 policy 11: the basis of a suggested-order preview; par when none is given. */
+export const suggestedOrdersQuerySchema = z.union([
+  z.object({ basis: z.literal("forecast"), through: businessDate }),
+  z.object({ basis: z.literal("par").optional() }),
+]);
 
 /** Phase 23 (policies 10–15): transfer records. */
 const transferLine = z.object({

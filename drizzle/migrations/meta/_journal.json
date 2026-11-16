@@ -442,6 +442,20 @@
       "when": 1794540119977,
       "tag": "0062_demand_forecasting_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794843007083,
+      "tag": "0063_purchasing_forecasts",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794843011240,
+      "tag": "0064_purchasing_forecast_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -66,7 +66,7 @@ const RealDate = Date;
 let offsetMs = 0;
 
 /** Moves `new Date()` and `Date.now()` for this script only. Restored by `restoreClock`. */
-function installShiftedClock(): void {
+export function installShiftedClock(): void {
   class ShiftedDate extends RealDate {
     constructor(...args: unknown[]) {
       if (args.length === 0) {
@@ -84,11 +84,11 @@ function installShiftedClock(): void {
   globalThis.Date = ShiftedDate as DateConstructor;
 }
 
-function setClock(instant: Date): void {
+export function setClock(instant: Date): void {
   offsetMs = instant.getTime() - RealDate.now();
 }
 
-function restoreClock(): void {
+export function restoreClock(): void {
   globalThis.Date = RealDate;
   offsetMs = 0;
 }

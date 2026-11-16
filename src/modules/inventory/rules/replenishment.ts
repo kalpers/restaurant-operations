@@ -1,4 +1,5 @@
 import {
+  addDecimals,
   compareDecimals,
   isPositiveDecimal,
   subtractDecimals,
@@ -122,6 +123,95 @@ export function suggestPurchaseLines(candidates: readonly SuggestionCandidate[])
       supplierId: candidate.preferred.supplierId,
       needBaseQuantity: need,
       orderedQuantity: wholeQuotientCeiling(need, candidate.preferred.baseUnitsPerPurchase),
+    });
+    bySupplier.set(candidate.preferred.supplierId, lines);
+  }
+
+  return { bySupplier, withoutSupplier };
+}
+
+export type SuggestionBasis = "FORECAST" | "PAR";
+
+export type ForecastSuggestionCandidate = SuggestionCandidate & {
+  /** Base units the forecast says will be used through the chosen date; null when none covers it. */
+  forecastUsage: string | null;
+};
+
+/**
+ * Phase 25 policy 12 (D6): the need for one item on the forecast basis: usage through the
+ * chosen date + the reorder level as a safety floor − on hand − already on order. Negative on
+ * hand is used as it is. Null when there is no positive need.
+ */
+export function forecastNeed(input: {
+  forecastUsage: string;
+  reorderLevel: string | null;
+  quantityOnHand: string;
+  outstandingBaseQuantity: string;
+}): string | null {
+  const need = toScale(
+    subtractDecimals(
+      subtractDecimals(addDecimals(input.forecastUsage, input.reorderLevel ?? "0"), input.quantityOnHand),
+      input.outstandingBaseQuantity,
+    ),
+    4,
+  );
+
+  return isPositiveDecimal(need) ? need : null;
+}
+
+/**
+ * Phase 25 policy 12: draft lines on the forecast basis. An item with forecast usage uses
+ * `forecastNeed`; one without falls back to the Phase 19 par rule. Lines become whole purchase
+ * units of the preferred supplier item, rounded up, grouped by supplier in input order.
+ */
+export function suggestForecastPurchaseLines(candidates: readonly ForecastSuggestionCandidate[]): {
+  bySupplier: Map<string, (SuggestedLine & { basis: SuggestionBasis })[]>;
+  withoutSupplier: { inventoryItemId: string; needBaseQuantity: string; basis: SuggestionBasis }[];
+} {
+  const bySupplier = new Map<string, (SuggestedLine & { basis: SuggestionBasis })[]>();
+  const withoutSupplier: { inventoryItemId: string; needBaseQuantity: string; basis: SuggestionBasis }[] = [];
+
+  for (const candidate of candidates) {
+    let need: string | null;
+    let basis: SuggestionBasis;
+
+    if (candidate.forecastUsage !== null) {
+      basis = "FORECAST";
+      need = forecastNeed({
+        forecastUsage: candidate.forecastUsage,
+        reorderLevel: candidate.thresholds.reorderLevel,
+        quantityOnHand: candidate.quantityOnHand,
+        outstandingBaseQuantity: candidate.outstandingBaseQuantity,
+      });
+    } else {
+      basis = "PAR";
+      const { suggestedQuantity } = evaluateStock(candidate.quantityOnHand, candidate.thresholds);
+      const parNeed =
+        suggestedQuantity === null
+          ? null
+          : toScale(subtractDecimals(suggestedQuantity, candidate.outstandingBaseQuantity), 4);
+
+      need = parNeed !== null && isPositiveDecimal(parNeed) ? parNeed : null;
+    }
+
+    if (need === null) {
+      continue;
+    }
+
+    if (!candidate.preferred) {
+      withoutSupplier.push({ inventoryItemId: candidate.inventoryItemId, needBaseQuantity: need, basis });
+      continue;
+    }
+
+    const lines = bySupplier.get(candidate.preferred.supplierId) ?? [];
+
+    lines.push({
+      inventoryItemId: candidate.inventoryItemId,
+      supplierItemId: candidate.preferred.supplierItemId,
+      supplierId: candidate.preferred.supplierId,
+      needBaseQuantity: need,
+      orderedQuantity: wholeQuotientCeiling(need, candidate.preferred.baseUnitsPerPurchase),
+      basis,
     });
     bySupplier.set(candidate.preferred.supplierId, lines);
   }
