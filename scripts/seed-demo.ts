@@ -21,6 +21,7 @@ import { seedDeclaredAllergens, seedGuestProfiles, seedIngredientAllergens, type
 import { seedDemoForecastHistory } from "./demo-forecast-history";
 import { seedDemoKitchen } from "./demo-kitchen";
 import { seedDemoPrepHistory } from "./demo-prep-history";
+import { seedDemoServiceHistory } from "./demo-service-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -255,6 +256,17 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo prep history: ${prep.checks} closed takeout checks added (${prep.datesAlreadyPresent} dates already had them), ${prep.stockAdded} ingredients topped up first.`,
+    );
+
+    // Service, labor, tips and front-of-house history on a larger menu.
+    const serviceOwner = await mainOwnerActor("orders.submit");
+    const service = await seedDemoServiceHistory(database, serviceOwner, {
+      timeZone: clock?.timeZone ?? null,
+      businessDayCutoff: clock?.businessDayCutoff ?? "04:00",
+    });
+
+    console.log(
+      `Demo service history: ${service.menuItems} menu items, ${service.periods} schedule weeks, ${service.purchaseOrders} weekly purchase orders, ${service.checks} closed checks, ${service.punches} shifts punched, ${service.tipDays} tip days finalized, ${service.upcomingReservations} upcoming reservations, ${service.waitlist} waitlist parties added.`,
     );
   } finally {
     await closeDatabase();

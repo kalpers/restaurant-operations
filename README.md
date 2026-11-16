@@ -1970,6 +1970,14 @@ Phase 25 carries the Phase 24 forecast into the kitchen and purchasing, by owner
 - **Permissions:** none new (149).
 - **Leftovers:** a click-until-shown E2E helper for the settlements clicks lost before hydration under `next dev`, one booking date (two days ahead) for the whole online-booking spec, and the 16 unused Docker volumes removed with the owner's confirmation.
 - **Demo data:** `db:seed:demo` adds six weeks of fake closed takeout checks at MAIN selling "Demo prep burger", "Demo prep fries" and "Demo prep wings" (copies of the demo kitchen items, made with the clock moved back so their price and recipe cover the history), after one demo stock adjustment per ingredient.
+- **Demo service history** (added on owner request after the phase, `scripts/demo-service-history.ts`, run by `db:seed:demo`):
+  - **Menu:** twelve more dishes and drinks, with their ingredients, supplier items, recipes and a salad add-on group, made with the clock moved back six weeks under a "Restaurant sales tax (6%)" category.
+  - **Schedules:** a "Demo week" staffing template and weekly schedules generated and published before each week.
+  - **Service:** about 20 checks a day at MAIN (dine-in with the server on shift, bar and takeout), with tickets worked to completed, a few voids and manager comps, card and cash tenders with tips, and tables completed and cleaned. Some parties come from reservations linked to guest profiles. The original five items join from 2026-11-12, when their tax rate starts, and items on the 86 list are left off.
+  - **Stock:** received on weekly purchase orders.
+  - **Labor and tips:** time clock punches for the past shifts (one overtime week, one missed clock-out yesterday) and each past day's tip pool finalized.
+  - **Front of house:** reservations for the next seven days (phone, and online with consent, which turns on online booking at MAIN if it was off) and tonight's waitlist.
+  - Each unit of work records a `seed_runs` key, so a rerun adds nothing.
 - **Migrations:** `0063` (tables and the purchase-order column) and `0064` (custom: snapshot tables append-only).
 
 ### Phase 24 Demand Forecasting
