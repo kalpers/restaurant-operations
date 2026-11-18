@@ -72,7 +72,9 @@ import { addRequirement, applyTemplate, createTemplate } from "../src/modules/sc
 import { runGeneration } from "../src/modules/scheduling/services/generation-service";
 import { createPeriod, publishPeriod } from "../src/modules/scheduling/services/schedule-service";
 import { clockIn, clockOut } from "../src/modules/scheduling/services/timeclock-service";
+import { closeDrawerSession, createDrawer, getDrawerSetting, listDrawerSessions, listDrawers, openDrawerSession } from "../src/modules/settlements/services/drawer-service";
 import { openSettlement, recordTender } from "../src/modules/settlements/services/settlement-service";
+import { readTipRule, saveTipRule } from "../src/modules/settlements/services/tip-service";
 import { addDecimals, compareDecimals, multiplyExact, roundHalfUp, subtractDecimals, toScale, wholeQuotientCeiling } from "../src/shared/decimal/decimal";
 import { AppError } from "../src/shared/errors/app-error";
 import { businessDateOf } from "../src/shared/time/business-date-service";
@@ -247,6 +249,71 @@ async function unlessExists(codes: readonly string[], work: () => Promise<unknow
       throw error;
     }
   }
+}
+
+/** A tip pool for the location when it has none: servers and bartenders share by hours and points. */
+async function ensureTipRule(database: Database, owner: Actor): Promise<void> {
+  if ((await readTipRule(database, owner.locationId)).id) {
+    return;
+  }
+
+  const ids = new Map(
+    (await database.select({ id: positions.id, code: positions.code }).from(positions).where(eq(positions.organizationId, owner.organizationId))).map((row) => [row.code, row.id]),
+  );
+
+  await saveTipRule(database, owner, {
+    name: "Demo tip pool",
+    active: true,
+    positions: [
+      { positionId: need(ids, "SERVER", "position"), points: "10" },
+      { positionId: need(ids, "BARTENDER", "position"), points: "10" },
+    ],
+    expectedVersion: null,
+  });
+}
+
+/**
+ * When the location requires a drawer for cash, one drawer session per served day: opened that
+ * morning with a float (an open session left by an interrupted run is reused), closed after the
+ * day's checks with the count equal to the expected cash.
+ */
+async function openDemoDrawer(database: Database, owner: Actor, date: string, at: (date: string, time: string) => Date): Promise<string | null> {
+  if (!(await getDrawerSetting(database, owner)).required) {
+    return null;
+  }
+
+  const [open] = await listDrawerSessions(database, owner, { status: "OPEN", limit: 1 });
+
+  if (open) {
+    return open.id;
+  }
+
+  const drawers = await listDrawers(database, owner);
+  const drawer = drawers.find((row) => row.code === "DEMO") ?? (await createDrawer(database, owner, { code: "DEMO", name: "Demo drawer" }));
+
+  setClock(at(date, "08:45"));
+
+  return (await openDrawerSession(database, owner, drawer.id, { openingFloat: "200.00", idempotencyKey: `demo-drawer-open-${date}` })).id;
+}
+
+async function closeDemoDrawer(database: Database, owner: Actor, context: ServiceContext, date: string, at: (date: string, time: string) => Date): Promise<void> {
+  if (!context.drawerSessionId) {
+    return;
+  }
+
+  const [session] = await listDrawerSessions(database, owner, { status: "OPEN", limit: 1 });
+
+  if (session) {
+    setClock(at(addDays(date, 1), "02:30"));
+    await closeDrawerSession(database, owner, session.id, {
+      countedAmount: session.totals.expected,
+      closeNote: null,
+      expectedVersion: session.version,
+      idempotencyKey: `demo-drawer-close-${date}`,
+    });
+  }
+
+  context.drawerSessionId = null;
 }
 
 async function codeOf(work: Promise<unknown>): Promise<string | null> {
@@ -520,6 +587,8 @@ export async function seedDemoServiceHistory(
       summary.purchaseOrders += await stockTheWeek(database, owner, context, plans.flatMap((plan) => plan.checks), at(firstDay, "09:00"), at(lastDay, "23:00"));
 
       for (const plan of plans) {
+        context.drawerSessionId = plan.checks.length > 0 ? await openDemoDrawer(database, owner, plan.date, at) : null;
+
         for (const check of plan.checks) {
           try {
             await serveCheck(database, owner, context, plan.date, check, at);
@@ -530,11 +599,15 @@ export async function seedDemoServiceHistory(
           await record(`demo.service.check.${check.key}`);
           summary.checks += 1;
         }
+
+        await closeDemoDrawer(database, owner, context, plan.date, at);
       }
     }
 
     // ------------------------------------------------- 4. punches and tips
     summary.punches += await punchShifts(database, owner, { first, yesterday, today, at, done, record });
+
+    await ensureTipRule(database, owner);
 
     for (let date = first; date <= addDays(today, -2); date = addDays(date, 1)) {
       const key = `demo.service.tips.${date}`;
@@ -549,6 +622,11 @@ export async function seedDemoServiceHistory(
 
       if (code === null) {
         summary.tipDays += 1;
+      } else if (code !== "TIP_DISTRIBUTION_FINALIZED") {
+        // Refused for a reason that may pass later (no pool, open checks or time entries): leave
+        // the day unmarked so a rerun tries it again.
+        console.warn(`Demo tips for ${date} not finalized (${code}).`);
+        continue;
       }
 
       await record(key);
@@ -815,6 +893,8 @@ type ServiceContext = {
   profiles: { id: string; name: string }[];
   serverPositionId: string;
   compId: string;
+  /** The drawer session cash goes into on the day being served; null when the location doesn't require one. */
+  drawerSessionId: string | null;
 };
 
 async function serviceContext(database: Database, owner: Actor): Promise<ServiceContext> {
@@ -863,7 +943,7 @@ async function serviceContext(database: Database, owner: Actor): Promise<Service
   const [server] = await database.select({ id: positions.id }).from(positions).where(and(eq(positions.organizationId, owner.organizationId), eq(positions.code, "SERVER")));
   const comp = (await listDiscountDefinitions(database, owner)).find((row) => row.code === "MANAGER_COMP");
 
-  return { items, picks, tables, profiles, serverPositionId: server!.id, compId: comp!.id };
+  return { items, picks, tables, profiles, serverPositionId: server!.id, compId: comp!.id, drawerSessionId: null };
 }
 
 /** Receives what the week will use on purchase orders from each supplier, at the week's start. */
@@ -1222,6 +1302,7 @@ async function serveCheck(
     await recordTender(database, owner, opened.settlementId, {
       idempotencyKey: `demo-svc-tender-${order.id}`,
       tenderType: cash ? "CASH" : "EXTERNAL_CARD",
+      cashDrawerSessionId: cash ? context.drawerSessionId : null,
       outcome: "RECORDED",
       amount,
       tipAmount: compareDecimals(tip, "0") > 0 ? tip : null,
