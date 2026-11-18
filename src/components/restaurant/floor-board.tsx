@@ -3,7 +3,7 @@
 import { Ban, BedDouble, CircleCheck, Clock, Sparkles, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 import { ActionButton } from "@/components/forms/action-button";
 import { ApiErrorMessage } from "@/components/forms/api-error-message";
@@ -14,6 +14,11 @@ import { cn } from "@/components/ui/cn";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { INPUT_STYLE } from "@/components/ui/field";
+import {
+  FLOOR_EVENT_TYPES,
+  RESERVATION_EVENT_TYPES,
+  useRealtimeRefresh,
+} from "@/components/realtime/realtime-provider";
 import type { TableAvailability } from "@/modules/restaurant/types";
 import type { TableHoldIndicator } from "@/modules/reservations/services/hold-service";
 import type { FloorSession, FloorTable } from "@/modules/restaurant/services/floor-service";
@@ -59,15 +64,18 @@ const AVAILABILITY_ICONS: Record<TableAvailability, LucideIcon> = {
   INACTIVE: BedDouble,
 };
 
-/** The floor has no realtime yet, so it re-reads on a short interval while open. */
+/**
+ * Phase 27 (policy 4): the floor re-reads when a session, a table's condition, a reservation
+ * hold or a check changes on any device, and on the shared 30-second fallback.
+ */
+const FLOOR_BOARD_EVENTS = [
+  ...FLOOR_EVENT_TYPES,
+  ...RESERVATION_EVENT_TYPES,
+  "order.closed",
+] as const;
+
 function useFloorRefresh(): void {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = setInterval(() => router.refresh(), 30_000);
-
-    return () => clearInterval(timer);
-  }, [router]);
+  useRealtimeRefresh(FLOOR_BOARD_EVENTS);
 }
 
 function useSubmit() {

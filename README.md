@@ -1611,7 +1611,7 @@ Scheduling permissions are separate for viewing/editing/generating/publishing (`
 
 **Permissions.** `restaurant.view`, `.tables.manage`, `.sections.manage`, `.seat`, `.move`, `.complete-session`, `.cancel-session`, `.clean-table`, `.condition.manage`, `.server.assign`, `.capacity.override` and `.schedule.override`. Phase 2's `restaurant.manage` was never enforced and is retired by the `security.restaurant-permissions` seed. Owner, General Manager and Manager hold all of them. Host holds `view`, `seat`, `move`, `complete-session`, `clean-table` and `server.assign`. Server and Bartender add `complete-session` and `clean-table`; Wait Staff adds `clean-table`. Only capacity and schedule matching can be overridden. Location, inactive, occupied, dirty, out-of-service and position rules cannot.
 
-The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Phase 9 added orders that reference a session, and a session can't be completed or cancelled while any of its orders is OPEN (see the Phase 9 policies). The floor refreshes every 30 seconds; Phase 10's realtime covers kitchen, bar, order and notification events, and floor events are not yet published.
+The development seed adds tables T01 to T04 in the Dining Room and B01 and B02 at the Bar, with sections `DINING_A` and `BAR`, at `MAIN`. It creates no sessions. Phase 9 added orders that reference a session, and a session can't be completed or cancelled while any of its orders is OPEN (see the Phase 9 policies). The floor refreshes every 30 seconds; Phase 10's realtime covers kitchen, bar, order and notification events. Phase 27 publishes floor and waitlist events (section 33), and the floor and waitlist boards refresh on them.
 
 ### Phase 6 Reservations and Waitlist
 
@@ -1958,9 +1958,20 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 27 Polish and Leftovers
+
+Phase 27 closes the two leftovers still open after Phase 26, approved by the owner on 2026-11-18 (D1–D9 as recommended). A review found the other candidates already done (reservations board realtime in Phase 24; the allergen move/share test and seed data in Phase 22; sign-in failure and lock audit in Phase 16; the Edge Runtime warning gone in Phase 22). Plan: `docs/Phase-27-Polish-and-Leftovers.md`. Report: `docs/Phase-27-Completion-Report.md`.
+
+- **Floor events** (Restaurant module, `services/floor-events.ts`): `table.session-opened` (seat-party workflow), `table.session-moved`, `table.session-tables-changed` (combine, remove), `table.session-server-assigned`, `table.session-completed`, `table.session-cancelled`, with `{ sessionId, tableIds }`; `table.condition-changed` with `{ tableId }` for each table turned DIRTY, cleaned or changed by a manager. The constraint `outbox_events_event_type_format` allows no hyphen before the dot, hence `table.session-*`.
+- **Waitlist events** (Reservations, `services/waitlist-events.ts`): `waitlist.entry-added`, `.entry-updated` (also when a mistaken seating is undone), `.entry-notified`, `.tables-assigned`, `.entry-removed` (also when a waiting reservation is cancelled), `.entry-seated` (written by `markPartySeated`), with `{ waitlistEntryId }`. Never names or contact details.
+- All are written in the transaction of the change, so a refused change writes none, and delivered after commit. Table and section configuration aren't evented.
+- **Boards:** the floor listens to floor, reservation and `order.closed` events; the waitlist to waitlist, floor, reservation and `guest.allergies-changed` events; both keep the 30-second fallback.
+- **Navigation memory:** the `nav_groups` cookie (group IDs and open/closed only; `SameSite=Lax`, one year) is read by the app layout on the server, so the first render matches. On arrival the current page's group opens; other groups follow the cookie. "Expand all / Collapse all" sits at the top of the navigation; Collapse all keeps the current page's group open.
+- No migration and no new permission (149).
+
 ### Phase 26 Collapsible Navigation
 
-Phase 26 makes the left navigation less busy, by owner request on 2026-11-18. The five groups are expandable sections; only the group holding the current page starts open, and a group the person toggles keeps that choice until the page is reloaded. Presentation only: the links, groups, order and permissions are unchanged, and collapsing a link is usability, not authorization. Plan: `docs/Phase-26-Collapsible-Navigation.md`. Report: `docs/Phase-26-Completion-Report.md`.
+Phase 26 makes the left navigation less busy, by owner request on 2026-11-18. The five groups are expandable sections; only the group holding the current page starts open, and a group the person toggles keeps that choice until the page is reloaded (Phase 27 remembers it across reloads). Presentation only: the links, groups, order and permissions are unchanged, and collapsing a link is usability, not authorization. Plan: `docs/Phase-26-Collapsible-Navigation.md`. Report: `docs/Phase-26-Completion-Report.md`.
 
 ### Phase 25 Prep and Purchasing Forecast
 
@@ -2257,6 +2268,12 @@ Approved by the owner on 2026-11-16, with decisions D1–D12 as recommended in t
 ### Phase 26: Collapsible Navigation
 
 Expandable navigation groups (current page's group open by default), the phone drawer behaving the same way, and the e2e specs adapted through a shared `expandNavGroups` helper. No migration.
+
+Requested by the owner on 2026-11-18.
+
+### Phase 27: Polish and Leftovers
+
+Outbox events for table sessions, table condition and the waitlist, so the floor and waitlist boards update live; open navigation groups remembered in a cookie, with Expand all / Collapse all. No migration, no new permission. Plan: `docs/Phase-27-Polish-and-Leftovers.md`.
 
 Requested by the owner on 2026-11-18.
 

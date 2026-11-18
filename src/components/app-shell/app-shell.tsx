@@ -10,7 +10,19 @@ import { cn } from "@/components/ui/cn";
 import { ToastProvider } from "@/components/ui/toast";
 
 import { NAV_ICONS } from "./nav-icons";
-import { activeHref, type NavigationGroup } from "./navigation";
+import {
+  activeHref,
+  isNavGroupOpen,
+  NAV_GROUPS_COOKIE,
+  NAV_GROUPS_COOKIE_MAX_AGE_SECONDS,
+  serializeNavGroupsCookie,
+  setAllNavGroups,
+  toggleNavGroup,
+  type NavGroupMemory,
+  type NavGroupState,
+  type NavigationGroup,
+  type NavigationGroupId,
+} from "./navigation";
 import { SignOutButton } from "./sign-out-button";
 
 type AppShellProps = {
@@ -18,8 +30,17 @@ type AppShellProps = {
   email: string;
   /** Server-chosen header controls, e.g. the location switcher and notifications. */
   headerActions: ReactNode;
+  /** Phase 27: the open groups remembered in the `nav_groups` cookie, read by the layout. */
+  initialNavMemory?: NavGroupMemory;
   children: ReactNode;
 };
+
+/** A presentation preference only: group IDs and open/closed, never personal data. */
+function writeNavGroupsCookie(memory: NavGroupMemory): void {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+
+  document.cookie = `${NAV_GROUPS_COOKIE}=${serializeNavGroupsCookie(memory)}; Path=/; Max-Age=${NAV_GROUPS_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
+}
 
 /** Pages that need every pixel of width: boards and timelines. */
 const FULL_WIDTH_PREFIXES = ["/restaurant/floor", "/kitchen", "/bar", "/expo", "/scheduling/timeline"];
@@ -33,7 +54,7 @@ function isFullWidth(pathname: string): boolean {
  * an off-canvas drawer below it. Which links appear is decided on the server by
  * permission, and that is usability only; every page and API checks again.
  */
-export function AppShell({ groups, email, headerActions, children }: AppShellProps) {
+export function AppShell({ groups, email, headerActions, initialNavMemory = {}, children }: AppShellProps) {
   const pathname = usePathname();
   // The drawer is open only on the page it was opened from, so navigating closes it.
   const [openedOn, setOpenedOn] = useState<string | null>(null);
@@ -42,8 +63,25 @@ export function AppShell({ groups, email, headerActions, children }: AppShellPro
   const menuButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLElement>(null);
   const current = activeHref(pathname, groups.flatMap((group) => group.items));
-  // Groups the person opened or closed by hand; absent means "open only if it holds the current page".
-  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  // Phase 27 (policies 6–8): the groups the person keeps open, from the cookie the layout read.
+  const [navState, setNavState] = useState<NavGroupState>({ memory: initialNavMemory, currentChoice: null });
+  const openGroups = Object.fromEntries(
+    groups.map((group) => [
+      group.id,
+      isNavGroupOpen({
+        groupId: group.id,
+        holdsCurrent: group.items.some((item) => item.href === current),
+        pathname,
+        memory: navState.memory,
+        currentChoice: navState.currentChoice,
+      }),
+    ]),
+  ) as Record<NavigationGroupId, boolean>;
+  const anyClosed = groups.some((group) => !openGroups[group.id]);
+  const remember = (next: NavGroupState) => {
+    setNavState(next);
+    writeNavGroupsCookie(next.memory);
+  };
 
   const focusMenuOnClose = useRef(false);
 
@@ -115,10 +153,20 @@ export function AppShell({ groups, email, headerActions, children }: AppShellPro
             </button>
           </div>
           <nav aria-label="Main" className="flex-1 overflow-y-auto px-2 py-3">
+            {groups.length > 1 && (
+              <div className="mb-1 flex justify-end px-1">
+                <button
+                  type="button"
+                  onClick={() => remember(setAllNavGroups(groups.map((group) => group.id), { open: anyClosed, pathname }))}
+                  className="inline-flex min-h-11 items-center rounded-md px-3 text-xs font-medium text-brand-700 hover:bg-neutral-100"
+                >
+                  {anyClosed ? "Expand all" : "Collapse all"}
+                </button>
+              </div>
+            )}
             {groups.map((group) => {
               const holdsCurrent = group.items.some((item) => item.href === current);
-              // A group the person toggled keeps that choice; otherwise only the current page's group is open.
-              const open = toggled[group.id] ?? holdsCurrent;
+              const open = openGroups[group.id];
 
               return (
                 <div key={group.id} className="mb-1">
@@ -127,7 +175,9 @@ export function AppShell({ groups, email, headerActions, children }: AppShellPro
                     id={`nav-group-${group.id}`}
                     aria-expanded={open}
                     aria-controls={`nav-group-items-${group.id}`}
-                    onClick={() => setToggled((previous) => ({ ...previous, [group.id]: !open }))}
+                    onClick={() =>
+                      remember(toggleNavGroup(navState, { groupId: group.id, holdsCurrent, pathname, open: !open }))
+                    }
                     className="flex min-h-11 w-full items-center justify-between rounded-md px-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 hover:bg-neutral-100"
                   >
                     <span>{group.label}</span>

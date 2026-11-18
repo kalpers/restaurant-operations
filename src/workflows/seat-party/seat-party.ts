@@ -29,6 +29,7 @@ import {
   checkCapacity,
   lockTablesAtLocation,
 } from "@/modules/restaurant/services/seating-checks";
+import { writeTableSessionEvent } from "@/modules/restaurant/services/floor-events";
 import {
   checkServerAssignment,
   isServerAssignableWithoutOverride,
@@ -263,6 +264,12 @@ export async function seatPartyInTransaction(
       occurredAt: now,
     });
   }
+
+  await writeTableSessionEvent(transaction, actor, "table.session-opened", {
+    sessionId: session!.id,
+    tableIds,
+    occurredAt: now,
+  });
 
   return {
     id: session!.id,

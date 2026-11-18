@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import { ALL_PERMISSION_CODES } from "@/modules/auth/permission-catalog";
 
-import { activeHref, visibleNavigation, visibleNavigationGroups } from "./navigation";
+import {
+  activeHref,
+  isNavGroupOpen,
+  parseNavGroupsCookie,
+  serializeNavGroupsCookie,
+  setAllNavGroups,
+  toggleNavGroup,
+  visibleNavigation,
+  visibleNavigationGroups,
+  type NavGroupState,
+} from "./navigation";
 
 const labels = (permissions: Parameters<typeof visibleNavigation>[0]) =>
   visibleNavigation(permissions).map((item) => item.label);
@@ -113,5 +123,63 @@ describe("activeHref", () => {
 
   it("doesn't match a prefix that isn't a path segment", () => {
     expect(activeHref("/menus", items)).toBeNull();
+  });
+});
+
+describe("nav group memory (Phase 27)", () => {
+  it("parses and serializes the cookie, ignoring anything unexpected", () => {
+    expect(parseNavGroupsCookie("insights_1.back-of-house_0")).toEqual({ insights: true, "back-of-house": false });
+    expect(serializeNavGroupsCookie({ people: false, insights: true })).toBe("insights_1.people_0");
+    expect(parseNavGroupsCookie(serializeNavGroupsCookie({ admin: true, service: false }))).toEqual({
+      admin: true,
+      service: false,
+    });
+
+    for (const bad of [undefined, null, "", "nope", "insights_2", "unknown_1", "insights:1", "x".repeat(201)]) {
+      expect(parseNavGroupsCookie(bad)).toEqual({});
+    }
+
+    expect(parseNavGroupsCookie("unknown_1.people_1")).toEqual({ people: true });
+  });
+
+  const open = (state: NavGroupState, groupId: "service" | "people", holdsCurrent: boolean, pathname: string) =>
+    isNavGroupOpen({ groupId, holdsCurrent, pathname, memory: state.memory, currentChoice: state.currentChoice });
+
+  it("opens the current page's group on arrival even if remembered closed, and follows memory elsewhere", () => {
+    const state: NavGroupState = { memory: { service: false, people: true }, currentChoice: null };
+
+    expect(open(state, "service", true, "/orders")).toBe(true);
+    expect(open(state, "people", false, "/orders")).toBe(true);
+    expect(open({ memory: {}, currentChoice: null }, "people", false, "/orders")).toBe(false);
+  });
+
+  it("keeps a toggle of the current group on that page only, and remembers it", () => {
+    const closed = toggleNavGroup({ memory: {}, currentChoice: null }, {
+      groupId: "service",
+      holdsCurrent: true,
+      pathname: "/orders",
+      open: false,
+    });
+
+    expect(closed.memory).toEqual({ service: false });
+    expect(open(closed, "service", true, "/orders")).toBe(false);
+    // Arriving on another page of the same group opens it again.
+    expect(open(closed, "service", true, "/kitchen")).toBe(true);
+    // From a page in another group it stays closed.
+    expect(open(closed, "service", false, "/employees")).toBe(false);
+  });
+
+  it("expands all, and collapses all but the current page's group", () => {
+    const ids = ["insights", "service", "people"] as const;
+    const expanded = setAllNavGroups(ids, { open: true, pathname: "/orders" });
+
+    expect(expanded.memory).toEqual({ insights: true, service: true, people: true });
+    expect(open(expanded, "people", false, "/orders")).toBe(true);
+
+    const collapsed = setAllNavGroups(ids, { open: false, pathname: "/orders" });
+
+    expect(collapsed.memory).toEqual({ insights: false, service: false, people: false });
+    expect(open(collapsed, "service", true, "/orders")).toBe(true);
+    expect(open(collapsed, "people", false, "/orders")).toBe(false);
   });
 });

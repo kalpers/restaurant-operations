@@ -9,6 +9,7 @@ import {
 } from "./guest-message-service";
 import { loadPartyGuestFacts } from "./party-allergy-service";
 import type { PartyGuestView } from "./reservation-service";
+import { writeWaitlistEvent } from "./waitlist-events";
 
 import type { Database } from "@/db";
 import { isUniqueViolation } from "@/db/helpers/database-errors";
@@ -237,6 +238,8 @@ export async function addToWaitlist(
         })
         .returning({ id: waitlistEntries.id, version: waitlistEntries.version });
 
+      await writeWaitlistEvent(transaction, actor, "waitlist.entry-added", entry!.id, now);
+
       return entry!;
     });
   } catch (error) {
@@ -267,6 +270,7 @@ export async function updateWaitlistEntry(
 
   return withTransaction(database, async (transaction) => {
     await lockWaitlistEntry(transaction, actor, entryId, input.expectedVersion);
+    await writeWaitlistEvent(transaction, actor, "waitlist.entry-updated", entryId);
 
     return bumpEntry(transaction, entryId, {
       quotedWaitMinutes: input.quotedWaitMinutes,
@@ -313,6 +317,8 @@ export async function notifyWaitlistEntry(
       trigger: `v${notified.version}`,
       now,
     });
+
+    await writeWaitlistEvent(transaction, actor, "waitlist.entry-notified", entryId, now);
 
     return { ...notified, messagesQueued };
   });
@@ -384,6 +390,7 @@ export async function assignWaitlistTables(
       userId: actor.userId,
       at: now,
     });
+    await writeWaitlistEvent(transaction, actor, "waitlist.tables-assigned", entryId, now);
 
     return bumpEntry(transaction, entryId, { status: next });
   });
@@ -441,6 +448,7 @@ export async function removeWaitlistEntry(
     }
 
     await cancelQueuedMessages(transaction, { waitlistEntryId: entryId, now });
+    await writeWaitlistEvent(transaction, actor, "waitlist.entry-removed", entryId, now);
 
     return bumpEntry(transaction, entryId, {
       status: input.outcome,

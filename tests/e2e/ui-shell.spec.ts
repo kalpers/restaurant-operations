@@ -70,6 +70,48 @@ test.describe("app shell", () => {
     }
   });
 
+  // Phase 27 (policies 6–8).
+  test("open groups are remembered across a reload, and Expand all / Collapse all work", async ({ page }) => {
+    await signIn(page, await createRoleAccount("MANAGER", SHELL_SCOPE));
+
+    const nav = mainNavigation(page);
+    const group = (name: string) => nav.getByRole("button", { name, exact: true });
+
+    await page.goto("/orders");
+    await expect(group("Service")).toHaveAttribute("aria-expanded", "true");
+    await group("People").click();
+    await expect(group("People")).toHaveAttribute("aria-expanded", "true");
+    // Closing the current page's group is remembered, but it opens again on arrival.
+    await group("Service").click();
+    await expect(group("Service")).toHaveAttribute("aria-expanded", "false");
+
+    await page.reload();
+    await expect(group("People")).toHaveAttribute("aria-expanded", "true");
+    await expect(group("Service")).toHaveAttribute("aria-expanded", "true");
+    await expect(group("Insights")).toHaveAttribute("aria-expanded", "false");
+
+    await page.goto("/dashboard");
+    await expect(group("Insights")).toHaveAttribute("aria-expanded", "true");
+    await expect(group("People")).toHaveAttribute("aria-expanded", "true");
+    await expect(group("Service")).toHaveAttribute("aria-expanded", "false");
+
+    await nav.getByRole("button", { name: "Expand all", exact: true }).click();
+    await expect(nav.locator('button[aria-expanded="false"]')).toHaveCount(0);
+    await expect(nav.getByRole("button", { name: "Collapse all", exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(nav.locator('button[aria-expanded="false"]')).toHaveCount(0);
+
+    await nav.getByRole("button", { name: "Collapse all", exact: true }).click();
+    await expect(nav.locator('button[aria-expanded="true"]')).toHaveCount(1);
+    await expect(group("Insights")).toHaveAttribute("aria-expanded", "true");
+    await expect(nav.getByRole("button", { name: "Expand all", exact: true })).toBeVisible();
+
+    await page.goto("/orders");
+    await expect(nav.locator('button[aria-expanded="true"]')).toHaveCount(1);
+    await expect(group("Service")).toHaveAttribute("aria-expanded", "true");
+  });
+
   test("at phone width the navigation opens as a drawer and closes after navigating", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     await signIn(page, await createRoleAccount("MANAGER", SHELL_SCOPE));

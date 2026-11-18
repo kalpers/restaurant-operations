@@ -1,9 +1,14 @@
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell/app-shell";
 import { LocationSwitcher } from "@/components/app-shell/location-switcher";
 import { PageLocation } from "@/components/forms/page-location";
-import { visibleNavigationGroups } from "@/components/app-shell/navigation";
+import {
+  NAV_GROUPS_COOKIE,
+  parseNavGroupsCookie,
+  visibleNavigationGroups,
+} from "@/components/app-shell/navigation";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { RealtimeProvider } from "@/components/realtime/realtime-provider";
 import { LocationTimeZoneProvider } from "@/components/time/location-time-zone";
@@ -16,6 +21,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const location = await resolveCurrentLocation(auth);
   const groups = visibleNavigationGroups(location?.permissions ?? []);
   const timeZone = location ? await getLocationTimeZone(getDatabase(), location.locationId) : "UTC";
+  // Phase 27 (policy 6): read on the server so the first render shows the remembered groups.
+  const navMemory = parseNavGroupsCookie((await cookies()).get(NAV_GROUPS_COOKIE)?.value);
 
   return (
     <LocationTimeZoneProvider timeZone={timeZone}>
@@ -24,6 +31,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <AppShell
         groups={groups}
         email={auth.email}
+        initialNavMemory={navMemory}
         headerActions={
           <>
             {location && (

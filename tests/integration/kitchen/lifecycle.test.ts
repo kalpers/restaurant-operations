@@ -347,11 +347,12 @@ describe("fulfillment lifecycle", () => {
         publishToSubscribers(event);
       });
 
-      expect(count).toBe(2);
+      // Seating the fixture's dine-in party writes `table.session-opened` (Phase 27).
+      expect(count).toBe(3);
       expect(published.map((event) => event.sequence)).toEqual(
         [...published.map((event) => event.sequence)].sort((a, b) => a - b),
       );
-      expect(received.sort()).toEqual(["kitchen.ticket-created", "order.items-submitted"]);
+      expect(received.sort()).toEqual(["kitchen.ticket-created", "order.items-submitted", "table.session-opened"]);
       expect(otherLocation).toEqual([]);
       expect(await processOutboxBatch(database(), () => {})).toBe(0);
 
@@ -377,12 +378,13 @@ describe("fulfillment lifecycle", () => {
     const pending = await database().select().from(outboxEvents).where(isNull(outboxEvents.publishedAt));
 
     expect(count).toBe(0);
-    expect(pending.length).toBe(2);
+    // The SEND's two events and the seating's `table.session-opened` (Phase 27).
+    expect(pending.length).toBe(3);
     expect(pending.every((row) => row.attempts === 1 && row.lastError === "TypeError")).toBe(true);
     // Backed off by one second (Phase 16), then published.
     expect(pending.every((row) => row.nextAttemptAt !== null && row.failedAt === null)).toBe(true);
     expect(await processOutboxBatch(database(), () => {})).toBe(0);
-    expect(await processOutboxBatch(database(), () => {}, { now: new Date(Date.now() + 2000) })).toBe(2);
+    expect(await processOutboxBatch(database(), () => {}, { now: new Date(Date.now() + 2000) })).toBe(3);
   });
 
   it("a recipient-only notification event reaches only that user", async () => {

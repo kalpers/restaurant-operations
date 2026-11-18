@@ -172,3 +172,88 @@ export function activeHref(pathname: string, items: readonly Pick<NavigationItem
 
   return best;
 }
+
+// Phase 27 (policies 6–7): which groups the person keeps open, remembered in a cookie the app
+// layout reads on the server, so the first render already matches and nothing flashes. It
+// holds group IDs and open/closed only.
+
+export const NAV_GROUPS_COOKIE = "nav_groups";
+export const NAV_GROUPS_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+/** A group's remembered choice; a group never toggled is absent. */
+export type NavGroupMemory = Partial<Record<NavigationGroupId, boolean>>;
+
+/** The current page's group as toggled on that page; it applies only while on `path`. */
+export type CurrentGroupChoice = { path: string; open: boolean } | null;
+
+const MAX_COOKIE_LENGTH = 200;
+
+/** `insights_1.service_0`: cookie-safe characters only. Anything unexpected is ignored. */
+export function parseNavGroupsCookie(value: string | undefined | null): NavGroupMemory {
+  const memory: NavGroupMemory = {};
+
+  if (!value || value.length > MAX_COOKIE_LENGTH) {
+    return memory;
+  }
+
+  for (const entry of value.split(".")) {
+    const match = /^([a-z-]+)_([01])$/.exec(entry);
+
+    if (match && (GROUP_ORDER as readonly string[]).includes(match[1]!)) {
+      memory[match[1] as NavigationGroupId] = match[2] === "1";
+    }
+  }
+
+  return memory;
+}
+
+export function serializeNavGroupsCookie(memory: NavGroupMemory): string {
+  return GROUP_ORDER.filter((id) => memory[id] !== undefined)
+    .map((id) => `${id}_${memory[id] ? "1" : "0"}`)
+    .join(".");
+}
+
+/**
+ * On arrival the current page's group is open, whatever was remembered; it can still be
+ * closed on that page. Every other group follows the remembered choice, closed if none.
+ */
+export function isNavGroupOpen(input: {
+  groupId: NavigationGroupId;
+  holdsCurrent: boolean;
+  pathname: string;
+  memory: NavGroupMemory;
+  currentChoice: CurrentGroupChoice;
+}): boolean {
+  if (input.holdsCurrent) {
+    return input.currentChoice?.path === input.pathname ? input.currentChoice.open : true;
+  }
+
+  return input.memory[input.groupId] ?? false;
+}
+
+export type NavGroupState = { memory: NavGroupMemory; currentChoice: CurrentGroupChoice };
+
+/** One group opened or closed by hand. */
+export function toggleNavGroup(
+  state: NavGroupState,
+  input: { groupId: NavigationGroupId; holdsCurrent: boolean; pathname: string; open: boolean },
+): NavGroupState {
+  return {
+    memory: { ...state.memory, [input.groupId]: input.open },
+    currentChoice: input.holdsCurrent ? { path: input.pathname, open: input.open } : state.currentChoice,
+  };
+}
+
+/**
+ * Expand all opens every group. Collapse all closes every group except the current page's,
+ * which stays open on this page. Either way the result is remembered.
+ */
+export function setAllNavGroups(
+  groupIds: readonly NavigationGroupId[],
+  input: { open: boolean; pathname: string },
+): NavGroupState {
+  return {
+    memory: Object.fromEntries(groupIds.map((id) => [id, input.open])) as NavGroupMemory,
+    currentChoice: { path: input.pathname, open: true },
+  };
+}

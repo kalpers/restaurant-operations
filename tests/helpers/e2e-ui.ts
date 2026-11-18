@@ -17,7 +17,14 @@ export async function expandNavGroups(page: Page) {
   }
 
   const collapsed = nav.locator('button[aria-expanded="false"]');
+  // Phase 27 (policy 8): one click opens every group (and remembers it for this browser).
+  const expandAll = nav.getByRole("button", { name: "Expand all", exact: true });
 
+  if (await expandAll.isVisible()) {
+    await expandAll.click();
+  }
+
+  // Fallback, and a retry if that click landed before hydration: open what is still collapsed.
   // Each click re-renders the list, so always take the first one still collapsed.
   // The bound keeps a click lost before hydration (under `next dev`) from looping forever.
   for (let attempt = 0; attempt < 20 && (await collapsed.count()) > 0; attempt += 1) {

@@ -28,6 +28,39 @@ type RealtimeContextValue = {
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
 
+/** Phase 27: table sessions and table condition (Restaurant). */
+export const FLOOR_EVENT_TYPES = [
+  "table.session-opened",
+  "table.session-moved",
+  "table.session-tables-changed",
+  "table.session-server-assigned",
+  "table.session-completed",
+  "table.session-cancelled",
+  "table.condition-changed",
+] as const;
+
+/** Phase 27: waitlist entries (Reservations). */
+export const WAITLIST_EVENT_TYPES = [
+  "waitlist.entry-added",
+  "waitlist.entry-updated",
+  "waitlist.entry-notified",
+  "waitlist.tables-assigned",
+  "waitlist.entry-removed",
+  "waitlist.entry-seated",
+] as const;
+
+/** The reservation events a board showing holds or recommendations listens to. */
+export const RESERVATION_EVENT_TYPES = [
+  "reservation.online-booked",
+  "reservation.guest-cancelled",
+  "reservation.created",
+  "reservation.updated",
+  "reservation.cancelled",
+  "reservation.checked-in",
+  "reservation.no-show",
+  "reservation.seated",
+] as const;
+
 const EVENT_TYPES = [
   "ready",
   "order.items-submitted",
@@ -65,6 +98,9 @@ const EVENT_TYPES = [
   "reservation.checked-in",
   "reservation.no-show",
   "reservation.seated",
+  // Phase 27: the floor and the waitlist.
+  ...FLOOR_EVENT_TYPES,
+  ...WAITLIST_EVENT_TYPES,
 ];
 
 /**

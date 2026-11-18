@@ -33,6 +33,7 @@ import {
 } from "../repositories/table-repository";
 import type { TableCondition } from "../types";
 import { actorHolds, assertPermission } from "./access";
+import { writeTableConditionEvents } from "./floor-events";
 
 type TableInput = {
   restaurantAreaId: string;
@@ -280,13 +281,18 @@ export async function cleanTable(
       );
     }
 
-    return writeTableCondition(transaction, {
+    const occurredAt = new Date();
+    const result = await writeTableCondition(transaction, {
       tableId,
       condition: "CLEAN",
       reason: "Cleaned",
       userId: actor.userId,
-      occurredAt: new Date(),
+      occurredAt,
     });
+
+    await writeTableConditionEvents(transaction, actor, [tableId], occurredAt);
+
+    return result;
   });
 }
 
@@ -329,12 +335,17 @@ export async function changeTableCondition(
       );
     }
 
-    return writeTableCondition(transaction, {
+    const occurredAt = new Date();
+    const result = await writeTableCondition(transaction, {
       tableId,
       condition: input.condition,
       reason: input.reason,
       userId: actor.userId,
-      occurredAt: new Date(),
+      occurredAt,
     });
+
+    await writeTableConditionEvents(transaction, actor, [tableId], occurredAt);
+
+    return result;
   });
 }

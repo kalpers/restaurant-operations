@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, type FormEvent } from "react";
 
 import type { Recommendation } from "@/modules/reservations/rules/table-recommendation";
 import type { WaitlistView } from "@/modules/reservations/services/waitlist-service";
@@ -23,6 +22,12 @@ import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbiliti
 import { GuestMessagesPanel, MessageConsentFields, type HostMessageAbilities, type MessageConsent } from "./guest-messages";
 import { StatusBadge } from "@/components/format/status-badge";
 import { apiFetch } from "@/components/forms/page-location";
+import {
+  FLOOR_EVENT_TYPES,
+  RESERVATION_EVENT_TYPES,
+  useRealtimeRefresh,
+  WAITLIST_EVENT_TYPES,
+} from "@/components/realtime/realtime-provider";
 
 export type WaitlistAbilities = {
   manage: boolean;
@@ -48,14 +53,20 @@ type WaitlistBoardProps = {
   abilities: WaitlistAbilities;
 };
 
+/**
+ * Phase 27 (policy 4): the waitlist re-reads when an entry, a table session, a table's
+ * condition, a reservation hold or a party's allergies change on any device, and on the
+ * shared 30-second fallback.
+ */
+const WAITLIST_BOARD_EVENTS = [
+  ...WAITLIST_EVENT_TYPES,
+  ...FLOOR_EVENT_TYPES,
+  ...RESERVATION_EVENT_TYPES,
+  "guest.allergies-changed",
+] as const;
+
 function useRefresh(): void {
-  const router = useRouter();
-
-  useEffect(() => {
-    const timer = setInterval(() => router.refresh(), 30_000);
-
-    return () => clearInterval(timer);
-  }, [router]);
+  useRealtimeRefresh(WAITLIST_BOARD_EVENTS);
 }
 
 function AddForm({

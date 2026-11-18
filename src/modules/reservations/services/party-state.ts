@@ -16,6 +16,7 @@ import { endWaitlistAssignments } from "../repositories/waitlist-repository";
 import { partyStatusForReservation } from "../rules/lifecycle";
 import type { ReservationStatus } from "../types";
 import { cancelQueuedMessages } from "./guest-message-service";
+import { writeWaitlistEvent } from "./waitlist-events";
 
 // The Guest Party, its Reservation and its Waitlist entry change together. These functions
 // are what the seating workflows call inside their one transaction, and each expects the
@@ -50,6 +51,7 @@ export async function cancelOpenWaitlistEntry(
     .where(eq(waitlistEntries.id, graph.waitlistEntry.id));
   // Phase 22 (policy 2): a table-ready text for an entry that ended is never sent.
   await cancelQueuedMessages(transaction, { waitlistEntryId: graph.waitlistEntry.id, now: at });
+  await writeWaitlistEvent(transaction, actor, "waitlist.entry-removed", graph.waitlistEntry.id, at);
 }
 
 /** Refuses before any table is touched, so a party that can't be seated costs nothing. */
@@ -124,6 +126,7 @@ export async function markPartySeated(
         version: nextVersion(waitlistEntries.version),
       })
       .where(eq(waitlistEntries.id, graph.waitlistEntry.id));
+    await writeWaitlistEvent(transaction, actor, "waitlist.entry-seated", graph.waitlistEntry.id, at);
   }
 
   await changePartyStatus(transaction, {
@@ -197,6 +200,8 @@ export async function revertPartySeating(
         version: nextVersion(waitlistEntries.version),
       })
       .where(eq(waitlistEntries.id, entry.id));
+    // Back on the waitlist after a seating made by mistake.
+    await writeWaitlistEvent(transaction, actor, "waitlist.entry-updated", entry.id, at);
   }
 
   if (graph.reservation?.status === "SEATED") {

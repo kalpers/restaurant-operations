@@ -29,6 +29,7 @@ import {
   type TableRow,
 } from "../repositories/table-repository";
 import { assertPermission } from "./access";
+import { writeTableConditionEvents, writeTableSessionEvent } from "./floor-events";
 import {
   assertOneArea,
   assertTablesSeatable,
@@ -120,6 +121,8 @@ async function markUsedTablesDirty(
       occurredAt,
     });
   }
+
+  await writeTableConditionEvents(transaction, actor, tableIds, occurredAt);
 }
 
 /** The unique index can only fire here if a concurrent writer slipped past the locks. */
@@ -240,6 +243,12 @@ export async function moveSession(
       });
     }
 
+    await writeTableSessionEvent(transaction, actor, "table.session-moved", {
+      sessionId,
+      tableIds: targetIds,
+      occurredAt: now,
+    });
+
     return bumpSession(transaction, sessionId);
   }).catch((error: unknown) => {
     throw mapOccupancyViolation(error);
@@ -321,6 +330,12 @@ export async function addTableToSession(
       });
     }
 
+    await writeTableSessionEvent(transaction, actor, "table.session-tables-changed", {
+      sessionId,
+      tableIds: [...currentIds, input.tableId],
+      occurredAt: now,
+    });
+
     return bumpSession(transaction, sessionId);
   }).catch((error: unknown) => {
     throw mapOccupancyViolation(error);
@@ -394,6 +409,12 @@ export async function removeTableFromSession(
       });
     }
 
+    await writeTableSessionEvent(transaction, actor, "table.session-tables-changed", {
+      sessionId,
+      tableIds: remaining.map((table) => table.id),
+      occurredAt: now,
+    });
+
     return bumpSession(transaction, sessionId);
   });
 }
@@ -419,12 +440,10 @@ export async function assignSessionServer(
 
     await lockActiveSession(transaction, actor, sessionId, input.expectedVersion);
 
+    const tableIds = await currentTableIds(transaction, sessionId);
+
     if (input.serverEmployeeId) {
-      const tables = await lockTablesAtLocation(
-        transaction,
-        actor.locationId,
-        await currentTableIds(transaction, sessionId),
-      );
+      const tables = await lockTablesAtLocation(transaction, actor.locationId, tableIds);
       const { scheduleOverrideReason } = await checkServerAssignment(
         transaction,
         actor,
@@ -446,6 +465,12 @@ export async function assignSessionServer(
         });
       }
     }
+
+    await writeTableSessionEvent(transaction, actor, "table.session-server-assigned", {
+      sessionId,
+      tableIds,
+      occurredAt: now,
+    });
 
     return bumpSession(transaction, sessionId, {
       assignedServerEmployeeId: input.serverEmployeeId,
@@ -495,6 +520,11 @@ export async function completeSessionInTransaction(
   await lockTablesAtLocation(transaction, actor.locationId, tableIds);
   await endMemberships(transaction, { sessionId, tableIds, leftAt: now });
   await markUsedTablesDirty(transaction, actor, tableIds, "Session completed", now);
+  await writeTableSessionEvent(transaction, actor, "table.session-completed", {
+    sessionId,
+    tableIds,
+    occurredAt: now,
+  });
 
   return {
     ...(await bumpSession(transaction, sessionId, {
@@ -544,6 +574,11 @@ export async function cancelSessionInTransaction(
 
   await lockTablesAtLocation(transaction, actor.locationId, tableIds);
   await endMemberships(transaction, { sessionId, tableIds, leftAt: now });
+  await writeTableSessionEvent(transaction, actor, "table.session-cancelled", {
+    sessionId,
+    tableIds,
+    occurredAt: now,
+  });
 
   return {
     ...(await bumpSession(transaction, sessionId, {
