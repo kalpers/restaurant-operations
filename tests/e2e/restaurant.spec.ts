@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { confirmDialog, expectToast, openNavLink } from "../helpers/e2e-ui";
+import { confirmDialog, expectToast, openNavLink, signInWithRetry } from "../helpers/e2e-ui";
 
 import {
   allSessionIdsAt,
@@ -19,11 +19,7 @@ import {
 } from "../helpers/e2e-restaurant";
 
 async function signIn(page: Page, account: RestaurantAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 const mainNavigation = (page: Page) =>

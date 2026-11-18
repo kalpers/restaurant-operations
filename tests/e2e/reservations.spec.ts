@@ -17,13 +17,10 @@ import {
   waitlistEntryFor,
   type ReservationAccount,
 } from "../helpers/e2e-reservations";
+import { clickUntilShown, signInWithRetry } from "../helpers/e2e-ui";
 
 async function signIn(page: Page, account: ReservationAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 const hostViews = (page: Page) => page.getByRole("navigation", { name: "Host views" });
@@ -35,8 +32,10 @@ const waitlistCard = (page: Page, name: string) =>
   page.getByRole("listitem", { name: `Waitlist entry for ${name}`, exact: true });
 
 async function openView(page: Page, view: "Floor" | "Reservations" | "Waitlist") {
-  await hostViews(page).getByRole("link", { name: view, exact: true }).click();
-  await expect(page.getByRole("heading", { name: view, exact: true })).toBeVisible();
+  // A link click that lands before hydration is lost under `next dev`; following it twice is harmless.
+  await clickUntilShown(hostViews(page).getByRole("link", { name: view, exact: true }), () =>
+    expect(page.getByRole("heading", { name: view, exact: true })).toBeVisible({ timeout: 5_000 }),
+  );
 }
 
 test.afterAll(async () => {

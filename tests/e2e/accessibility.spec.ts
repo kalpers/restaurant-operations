@@ -9,16 +9,13 @@ import {
   UI_SCOPE,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
+import { signInWithRetry } from "../helpers/e2e-ui";
 
 // Phase 15: an automated WCAG 2.1 A/AA check of the main screens. It fails on serious or
 // critical violations; minor and moderate findings are printed for review.
 
 async function signIn(page: Page, account: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 async function expectAccessible(page: Page, name: string) {

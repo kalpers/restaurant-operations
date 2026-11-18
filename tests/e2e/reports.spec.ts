@@ -12,6 +12,7 @@ import {
   settleInCashFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
+import { signInWithRetry } from "../helpers/e2e-ui";
 
 // Reporting is read-only. Other specs sell at MAIN on parallel workers, so these tests
 // assert this spec's own uniquely coded menu item, never location-wide totals.
@@ -19,11 +20,7 @@ import {
 const account = (roleCode: string) => createRoleAccount(roleCode, REPORTS_SCOPE);
 
 async function signIn(page: Page, user: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Password").fill(user.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, user);
 }
 
 /** Two sodas sold and settled on a closed takeout order, plus one left open. */

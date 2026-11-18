@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { createPermissionAccount, type OrdersAccount } from "../helpers/e2e-orders";
 import { createPrepFixture, PREP_SCOPE, removePrepE2eData, type PrepFixture } from "../helpers/e2e-prep-forecast";
-import { clickUntilShown } from "../helpers/e2e-ui";
+import { clickUntilShown, signInWithRetry } from "../helpers/e2e-ui";
 
 // Phase 25: a cook reads the prep list for a station, and a purchasing manager orders from the
 // forecast. History is made through the real services in this process (see the helper); the
@@ -15,11 +15,7 @@ test.use({ timezoneId: "America/Detroit" });
 let fixture: PrepFixture;
 
 async function signIn(page: Page, account: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 test.beforeAll(async () => {

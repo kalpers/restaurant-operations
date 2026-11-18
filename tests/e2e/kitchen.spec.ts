@@ -12,13 +12,10 @@ import {
   ticketItemStatuses,
   type KitchenAccount,
 } from "../helpers/e2e-kitchen";
+import { signInWithRetry } from "../helpers/e2e-ui";
 
 async function signIn(page: Page, account: KitchenAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 const card = (page: Page, orderNumber: number) =>

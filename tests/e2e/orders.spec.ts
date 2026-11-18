@@ -12,13 +12,10 @@ import {
   takeoutWithDraft,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
+import { signInWithRetry } from "../helpers/e2e-ui";
 
 async function signIn(page: Page, account: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 /** Picks an item from the menu with the given modifiers and adds it as a draft. */

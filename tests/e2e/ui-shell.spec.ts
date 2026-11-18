@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { confirmDialog, expectToast, mainNavigation } from "../helpers/e2e-ui";
+import { confirmDialog, expectToast, mainNavigation, signInWithRetry } from "../helpers/e2e-ui";
 import {
   createOrderMenu,
   createRoleAccount,
@@ -15,11 +15,7 @@ import {
 // route-level not-found, and the order workspace's menu search.
 
 async function signIn(page: Page, account: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 function hasHorizontalScroll(page: Page) {

@@ -57,3 +57,26 @@ export async function clickUntilShown(target: Locator, shown: () => Promise<void
     await shown();
   }).toPass({ timeout });
 }
+
+/**
+ * Signs in through the login page and waits for the dashboard. Under `next dev` the first
+ * request after a recompile can fail outright (ECONNRESET) or land before the form is
+ * interactive, so the whole sign-in is retried until the dashboard shows. If an earlier
+ * attempt did sign in but its response was lost, the login page sends the user on to the
+ * dashboard and the retry stops there. For sign-ins that are expected to succeed; a test
+ * of a failed sign-in must drive the form itself.
+ */
+export async function signInWithRetry(page: Page, account: { email: string; password: string }, timeout = 60_000) {
+  await expect(async () => {
+    await page.goto("/login");
+
+    if (new URL(page.url()).pathname === "/dashboard") {
+      return;
+    }
+
+    await page.getByLabel("Email").fill(account.email);
+    await page.getByLabel("Password").fill(account.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL(/\/dashboard$/, { timeout: 10_000 });
+  }).toPass({ timeout });
+}

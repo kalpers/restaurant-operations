@@ -10,6 +10,7 @@ import {
   settleInCashFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
+import { signInWithRetry } from "../helpers/e2e-ui";
 
 // The audit trail is append-only and shared by parallel workers, so these tests look for
 // rows made by this spec's own accounts, never for counts.
@@ -17,11 +18,7 @@ import {
 const account = (roleCode: string) => createRoleAccount(roleCode, AUDIT_SCOPE);
 
 async function signIn(page: Page, user: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(user.email);
-  await page.getByLabel("Password").fill(user.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, user);
 }
 
 test.afterAll(async () => {

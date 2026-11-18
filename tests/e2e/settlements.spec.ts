@@ -15,7 +15,7 @@ import {
   tenderTextFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
-import { clickUntilShown } from "../helpers/e2e-ui";
+import { clickUntilShown, signInWithRetry } from "../helpers/e2e-ui";
 
 // Settlement is record only: these flows record what happened at a register or an
 // external card terminal; nothing here processes a payment. Accounts, tables and cleanup
@@ -24,11 +24,7 @@ import { clickUntilShown } from "../helpers/e2e-ui";
 const account = (roleCode: string) => createRoleAccount(roleCode, SETTLEMENTS_SCOPE);
 
 async function signIn(page: Page, account: OrdersAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 async function openSettlementScreen(page: Page, orderId: string, amount: string) {

@@ -17,10 +17,16 @@ const { APP_BASE_URL: baseURL } = getEnv();
 export default defineConfig({
   testDir: "./tests/e2e",
   forbidOnly: isCi(),
-  retries: isCi() ? 2 : 0,
+  // Dev mode retries as CI does: under `next dev` a route recompile or a lost click can fail a
+  // test once (ECONNRESET, a click before hydration). A test that passes on retry is reported
+  // as flaky, not failed; one that fails every attempt still fails the run.
+  retries: 2,
   // `next dev` compiles each route on its first request. With more workers, those
   // compiles take longer than the 5-second assertion wait, and unrelated tests fail.
   workers: 2,
+  // Under `next dev` the longer multi-step tests (a transfer, a shift swap, a settlement) can pass
+  // 30 seconds with every step working; CI mode (a production build) keeps the 30-second limit.
+  timeout: isCi() ? 30_000 : 60_000,
   reporter: "list",
   // Phase 23: under `next dev`, requests every route once so it compiles before the tests.
   globalSetup: "./tests/helpers/e2e-warm-up.ts",

@@ -1,17 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { confirmDialog } from "../helpers/e2e-ui";
+import { confirmDialog, signInWithRetry } from "../helpers/e2e-ui";
 
 import { createMenuE2e, type MenuAccount } from "../helpers/e2e-menu";
 
 const { createPermissionAccount, createRoleAccount, removeMenuE2eData, uniqueCode } = createMenuE2e("RECIPES");
 
 async function signIn(page: Page, account: MenuAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await signInWithRetry(page, account);
 }
 
 test.afterAll(async () => {
