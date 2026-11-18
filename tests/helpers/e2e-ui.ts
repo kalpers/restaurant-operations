@@ -5,16 +5,29 @@ import { expect, type Locator, type Page } from "@playwright/test";
 export const mainNavigation = (page: Page) => page.getByRole("navigation", { name: "Main" });
 
 /**
- * Follows a main-navigation link. Below the `lg` breakpoint the navigation lives in a
- * drawer, so the Menu button opens it first.
+ * Opens every collapsed group in the main navigation so any permitted link can be reached.
+ * Below the `lg` breakpoint the navigation lives in a drawer, so the Menu button opens it first.
  */
-export async function openNavLink(page: Page, name: string) {
+export async function expandNavGroups(page: Page) {
   const menu = page.getByRole("button", { name: "Menu", exact: true });
+  const nav = mainNavigation(page);
 
-  if (await menu.isVisible()) {
+  if ((await menu.isVisible()) && (await menu.getAttribute("aria-expanded")) !== "true") {
     await menu.click();
   }
 
+  const collapsed = nav.locator('button[aria-expanded="false"]');
+
+  // Each click re-renders the list, so always take the first one still collapsed.
+  // The bound keeps a click lost before hydration (under `next dev`) from looping forever.
+  for (let attempt = 0; attempt < 20 && (await collapsed.count()) > 0; attempt += 1) {
+    await collapsed.first().click();
+  }
+}
+
+/** Follows a main-navigation link, opening its group first. */
+export async function openNavLink(page: Page, name: string) {
+  await expandNavGroups(page);
   await mainNavigation(page).getByRole("link", { name, exact: true }).click();
 }
 

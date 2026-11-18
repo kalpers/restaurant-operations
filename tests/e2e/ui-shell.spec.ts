@@ -34,17 +34,30 @@ test.describe("app shell", () => {
 
     const nav = mainNavigation(page);
 
-    await expect(nav.getByText("Service", { exact: true })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Orders", exact: true })).toBeVisible();
+    const service = nav.getByRole("button", { name: "Service", exact: true });
+
+    // Only the group holding the current page (Insights, for the dashboard) starts open.
+    await expect(service).toHaveAttribute("aria-expanded", "false");
+    await expect(nav.getByRole("link", { name: "Orders", exact: true })).toBeHidden();
     // A server holds no administration or audit permission, so those groups don't appear.
     await expect(nav.getByText("Admin", { exact: true })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Audit" })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
 
+    await service.click();
+    await expect(service).toHaveAttribute("aria-expanded", "true");
+    await expect(nav.getByRole("link", { name: "Orders", exact: true })).toBeVisible();
+
     await nav.getByRole("link", { name: "Orders", exact: true }).click();
     await expect(page).toHaveURL(/\/orders$/);
     await expect(nav.getByRole("link", { name: "Orders", exact: true })).toHaveAttribute("aria-current", "page");
-    await expect(nav.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current", "page");
+    // Insights held the previous page and nobody opened it, so it closes behind us.
+    await expect(nav.getByRole("button", { name: "Insights", exact: true })).toHaveAttribute("aria-expanded", "false");
+
+    // Closing a group hides its links again, even the current page's.
+    await service.click();
+    await expect(service).toHaveAttribute("aria-expanded", "false");
+    await expect(nav.getByRole("link", { name: "Orders", exact: true })).toBeHidden();
   });
 
   test("an owner sees every group", async ({ page }) => {
@@ -67,6 +80,7 @@ test.describe("app shell", () => {
     await expect(nav.getByRole("link", { name: "Floor", exact: true })).toBeHidden();
     await menu.click();
     await expect(menu).toHaveAttribute("aria-expanded", "true");
+    await nav.getByRole("button", { name: "Service", exact: true }).click();
     await expect(nav.getByRole("link", { name: "Floor", exact: true })).toBeVisible();
 
     // Escape closes it and returns focus to the Menu button.

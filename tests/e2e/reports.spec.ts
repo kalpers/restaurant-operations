@@ -12,7 +12,7 @@ import {
   settleInCashFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
-import { signInWithRetry } from "../helpers/e2e-ui";
+import { expandNavGroups, signInWithRetry } from "../helpers/e2e-ui";
 
 // Reporting is read-only. Other specs sell at MAIN on parallel workers, so these tests
 // assert this spec's own uniquely coded menu item, never location-wide totals.
@@ -51,6 +51,7 @@ test.describe("reports", () => {
     await expect(page.getByLabel("Sales", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Labor", { exact: true })).toHaveCount(0);
 
+    await expandNavGroups(page);
     await page.getByRole("navigation").getByRole("link", { name: "Reports" }).first().click();
     await expect(page).toHaveURL(/\/reports$/);
     await expect(page.getByRole("link", { name: /^Labor/ })).toHaveCount(0);

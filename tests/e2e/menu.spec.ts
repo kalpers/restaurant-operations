@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectToast, signInWithRetry } from "../helpers/e2e-ui";
+import { expandNavGroups, expectToast, signInWithRetry } from "../helpers/e2e-ui";
 
 import { createMenuE2e, type MenuAccount } from "../helpers/e2e-menu";
 
@@ -32,6 +32,7 @@ test.describe("menu administration", () => {
     });
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Manage menu", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Manage menu", exact: true })).toBeVisible();
 
@@ -83,6 +84,7 @@ test.describe("menu administration", () => {
     await expect(attached).toContainText("Extra bacon ($2.00)");
 
     // The operational menu now shows the item, its price and its modifier choices.
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Menu", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Menu", exact: true })).toBeVisible();
 
@@ -131,6 +133,7 @@ test.describe("menu administration", () => {
     await expect(page.getByRole("listitem", { name: `Menu item ${itemName}` })).toBeVisible();
 
     // 86 it: still in the catalog, but not for sale.
+    await expandNavGroups(page);
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Manage menu" }).click();
     await page.getByRole("link", { name: `Edit ${itemName}` }).click();
 
@@ -148,6 +151,7 @@ test.describe("menu administration", () => {
     const server = await createRoleAccount("SERVER");
 
     await signIn(page, server);
+    await expandNavGroups(page);
     await expect(mainNavigation(page).getByRole("link", { name: "Menu", exact: true })).toBeVisible();
     await expect(mainNavigation(page).getByRole("link", { name: "Manage menu" })).toHaveCount(0);
 
@@ -220,6 +224,7 @@ test.describe("modifier validation", () => {
     const groupName = `E2E Add-ons ${groupCode.slice(-6)}`;
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Modifiers", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Modifiers", exact: true, level: 1 })).toBeVisible();
 
@@ -270,6 +275,7 @@ test.describe("prep stations", () => {
     const itemName = `E2E Wings ${itemCode.slice(-6)}`;
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Prep stations", exact: true }).click();
     await page.getByLabel("Code (capitals, digits, underscores)").fill(stationCode);
     await page.getByLabel("Name", { exact: true }).first().fill(`E2E Fryer ${stationCode.slice(-6)}`);

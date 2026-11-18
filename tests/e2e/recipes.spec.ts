@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { confirmDialog, signInWithRetry } from "../helpers/e2e-ui";
+import { confirmDialog, expandNavGroups, signInWithRetry } from "../helpers/e2e-ui";
 
 import { createMenuE2e, type MenuAccount } from "../helpers/e2e-menu";
 
@@ -21,6 +21,7 @@ test.describe("recipe administration", () => {
     const name = `E2E Sauce ${code.slice(-6)}`;
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Recipes", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Recipes", exact: true })).toBeVisible();
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectToast, signInWithRetry } from "../helpers/e2e-ui";
+import { expandNavGroups, expectToast, signInWithRetry } from "../helpers/e2e-ui";
 
 import {
   createEmployeeRecord,
@@ -34,6 +34,7 @@ test.describe("employee management", () => {
     const lastName = `Created-${randomUUID()}`;
 
     await signIn(page, owner);
+    await expandNavGroups(page);
     await page
       .getByRole("navigation", { name: "Main" })
       .getByRole("link", { name: "Employees", exact: true })

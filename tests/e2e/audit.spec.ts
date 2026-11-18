@@ -10,7 +10,7 @@ import {
   settleInCashFor,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
-import { signInWithRetry } from "../helpers/e2e-ui";
+import { expandNavGroups, signInWithRetry } from "../helpers/e2e-ui";
 
 // The audit trail is append-only and shared by parallel workers, so these tests look for
 // rows made by this spec's own accounts, never for counts.
@@ -43,6 +43,7 @@ test.describe("audit trail", () => {
     await expect(page.getByText("Invalid email or password")).toBeVisible();
 
     await signIn(page, owner);
+    await expandNavGroups(page);
     await page.getByRole("navigation").getByRole("link", { name: "Audit" }).first().click();
     await expect(page).toHaveURL(/\/audit$/);
     await expect(page.getByRole("heading", { name: "Audit trail" })).toBeVisible({ timeout: 20_000 });

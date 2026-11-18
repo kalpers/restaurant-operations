@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { confirmDialog, signInWithRetry } from "../helpers/e2e-ui";
+import { confirmDialog, expandNavGroups, signInWithRetry } from "../helpers/e2e-ui";
 import {
   createForecastHistory,
   createMondayServerTemplate,
@@ -45,6 +45,7 @@ test.describe("manager scheduling", () => {
     const name = `E2E ${randomUUID().slice(0, 8)}`;
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await mainNavigation(page)
       .getByRole("link", { name: "Scheduling", exact: true })
       .click();
@@ -238,6 +239,7 @@ test.describe("employee self-service", () => {
     await publish(owner, published.id);
 
     await signIn(page, account);
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "My schedule" }).click();
     await expect(page.getByTestId("my-shift")).toHaveCount(1);
     await expect(page.getByTestId("my-shift")).toContainText(week.monday);
@@ -508,6 +510,7 @@ test.describe("schedule timeline", () => {
 
     await approvedTimeOff(owner, staff.id, { date: week.monday, start: "09:00", end: "12:00" });
     await signIn(page, manager);
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Timeline", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Schedule timeline" })).toBeVisible();
     await page.getByLabel("Date").fill(week.monday);

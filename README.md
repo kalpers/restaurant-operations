@@ -1958,6 +1958,10 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 26 Collapsible Navigation
+
+Phase 26 makes the left navigation less busy, by owner request on 2026-11-18. The five groups are expandable sections; only the group holding the current page starts open, and a group the person toggles keeps that choice until the page is reloaded. Presentation only: the links, groups, order and permissions are unchanged, and collapsing a link is usability, not authorization. Plan: `docs/Phase-26-Collapsible-Navigation.md`. Report: `docs/Phase-26-Completion-Report.md`.
+
 ### Phase 25 Prep and Purchasing Forecast
 
 Phase 25 carries the Phase 24 forecast into the kitchen and purchasing, by owner decision on 2026-11-16 (plan approved with D1–D12 as recommended), with the Phase 24 leftovers. It supersedes the Phase 24 plan's "Phase 19 suggestions stay par-based": the par basis is unchanged and stays the default. Plan: `docs/Phase-25-Prep-and-Purchasing-Forecast.md` (amendments listed there). Report: `docs/Phase-25-Completion-Report.md`.
@@ -2249,6 +2253,12 @@ Approved by the owner on 2026-11-12, with decisions D1–D12 as recommended in t
 Expected portions per menu item from the same weekday's closed checks, the ingredients they take from the recipe in effect and the usual modifiers, a prep list per station, suggested orders from the forecast with the forecast stored when drafts are made, and an item forecast-vs-actual report. Plus the Phase 24 leftovers. Plan: `docs/Phase-25-Prep-and-Purchasing-Forecast.md`.
 
 Approved by the owner on 2026-11-16, with decisions D1–D12 as recommended in the plan.
+
+### Phase 26: Collapsible Navigation
+
+Expandable navigation groups (current page's group open by default), the phone drawer behaving the same way, and the e2e specs adapted through a shared `expandNavGroups` helper. No migration.
+
+Requested by the owner on 2026-11-18.
 
 ### Cloud Deployment: On Hold
 

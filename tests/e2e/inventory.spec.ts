@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectToast, signInWithRetry } from "../helpers/e2e-ui";
+import { expandNavGroups, expectToast, signInWithRetry } from "../helpers/e2e-ui";
 
 import {
   createPermissionAccount,
@@ -44,6 +44,7 @@ test.describe("inventory receiving", () => {
     await signIn(page, manager);
 
     // Draft an order for 10 cases and submit it.
+    await expandNavGroups(page);
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Purchase orders", exact: true }).click();
 
     const create = page.getByRole("region", { name: "New purchase order" });
@@ -224,6 +225,7 @@ test.describe("inventory count", () => {
     const item = await createStockedItem(manager, { name, baseUnit: "SLICE", opening: "10" });
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Inventory counts", exact: true }).click();
 
     // Starting a full count from the screen works.

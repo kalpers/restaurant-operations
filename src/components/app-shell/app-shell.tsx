@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Menu, UtensilsCrossed, X } from "lucide-react";
+import { ChevronDown, KeyRound, Menu, UtensilsCrossed, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -42,6 +42,8 @@ export function AppShell({ groups, email, headerActions, children }: AppShellPro
   const menuButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLElement>(null);
   const current = activeHref(pathname, groups.flatMap((group) => group.items));
+  // Groups the person opened or closed by hand; absent means "open only if it holds the current page".
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
 
   const focusMenuOnClose = useRef(false);
 
@@ -113,37 +115,56 @@ export function AppShell({ groups, email, headerActions, children }: AppShellPro
             </button>
           </div>
           <nav aria-label="Main" className="flex-1 overflow-y-auto px-2 py-3">
-            {groups.map((group) => (
-              <div key={group.id} className="mb-4">
-                <p id={`nav-group-${group.id}`} className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-600">
-                  {group.label}
-                </p>
-                <ul aria-labelledby={`nav-group-${group.id}`} className="grid gap-0.5">
-                  {group.items.map((item) => {
-                    const Icon = NAV_ICONS[item.icon];
-                    const active = item.href === current;
+            {groups.map((group) => {
+              const holdsCurrent = group.items.some((item) => item.href === current);
+              // A group the person toggled keeps that choice; otherwise only the current page's group is open.
+              const open = toggled[group.id] ?? holdsCurrent;
 
-                    return (
-                      <li key={item.href}>
-                        <Link
-                          href={item.href}
-                          aria-current={active ? "page" : undefined}
-                          className={cn(
-                            "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium",
-                            active
-                              ? "bg-brand-50 text-brand-800 ring-1 ring-brand-200"
-                              : "text-neutral-800 hover:bg-neutral-100",
-                          )}
-                        >
-                          <Icon aria-hidden className={cn("size-4 shrink-0", active ? "text-brand-700" : "text-neutral-500")} />
-                          {item.label}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
+              return (
+                <div key={group.id} className="mb-1">
+                  <button
+                    type="button"
+                    id={`nav-group-${group.id}`}
+                    aria-expanded={open}
+                    aria-controls={`nav-group-items-${group.id}`}
+                    onClick={() => setToggled((previous) => ({ ...previous, [group.id]: !open }))}
+                    className="flex min-h-11 w-full items-center justify-between rounded-md px-3 text-xs font-semibold uppercase tracking-wide text-neutral-600 hover:bg-neutral-100"
+                  >
+                    <span>{group.label}</span>
+                    <ChevronDown aria-hidden className={cn("size-4 transition-transform", !open && "-rotate-90")} />
+                  </button>
+                  <ul
+                    id={`nav-group-items-${group.id}`}
+                    aria-labelledby={`nav-group-${group.id}`}
+                    hidden={!open}
+                    className="mb-2 grid gap-0.5"
+                  >
+                    {group.items.map((item) => {
+                      const Icon = NAV_ICONS[item.icon];
+                      const active = item.href === current;
+
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            aria-current={active ? "page" : undefined}
+                            className={cn(
+                              "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium",
+                              active
+                                ? "bg-brand-50 text-brand-800 ring-1 ring-brand-200"
+                                : "text-neutral-800 hover:bg-neutral-100",
+                            )}
+                          >
+                            <Icon aria-hidden className={cn("size-4 shrink-0", active ? "text-brand-700" : "text-neutral-500")} />
+                            {item.label}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
           </nav>
         </aside>
 

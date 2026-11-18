@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { ALL_PERMISSION_CODES } from "../../src/modules/auth/permission-catalog";
-import { confirmDialog } from "../helpers/e2e-ui";
+import { confirmDialog, expandNavGroups } from "../helpers/e2e-ui";
 
 import {
   assignAt,
@@ -266,6 +266,7 @@ test.describe("permission-aware navigation", () => {
 
       await signInAndWait(page, await createAccount(role));
 
+      await expandNavGroups(page);
       for (const label of visible) {
         await expect(
           mainNav(page).getByRole("link", { name: label, exact: true }),
@@ -366,6 +367,7 @@ test.describe("location-aware authorization", () => {
     });
 
     await switcher.selectOption({ label: secondName });
+    await expandNavGroups(page);
     await expect(usersLink).toBeVisible();
     expect((await page.request.get("/api/admin/users")).status()).toBe(200);
 

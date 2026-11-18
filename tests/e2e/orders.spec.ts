@@ -12,7 +12,7 @@ import {
   takeoutWithDraft,
   type OrdersAccount,
 } from "../helpers/e2e-orders";
-import { signInWithRetry } from "../helpers/e2e-ui";
+import { expandNavGroups, signInWithRetry } from "../helpers/e2e-ui";
 
 async function signIn(page: Page, account: OrdersAccount) {
   await signInWithRetry(page, account);
@@ -96,6 +96,7 @@ test.describe("orders", () => {
     const menu = await createOrderMenu(manager);
 
     await signIn(page, manager);
+    await expandNavGroups(page);
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Orders", exact: true }).click();
 
     const takeout = page.getByRole("region", { name: "Takeout" });

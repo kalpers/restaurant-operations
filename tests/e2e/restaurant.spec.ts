@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { confirmDialog, expectToast, openNavLink, signInWithRetry } from "../helpers/e2e-ui";
+import { confirmDialog, expandNavGroups, expectToast, openNavLink, signInWithRetry } from "../helpers/e2e-ui";
 
 import {
   allSessionIdsAt,
@@ -396,6 +396,7 @@ test.describe("manager controls", () => {
     await putOnShift(owner, staff);
     await signIn(page, await createRoleAccount("MANAGER"));
 
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Tables", exact: true }).click();
     await page.getByLabel("Table number").first().fill(tableNumber);
     await page.getByLabel("Area").first().selectOption({ label: "Dining Room" });
@@ -411,6 +412,7 @@ test.describe("manager controls", () => {
     await row.getByRole("button", { name: "Save table" }).click();
     await expectToast(page, "Saved.");
 
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Sections", exact: true }).click();
     await page.getByLabel("Code").fill(code);
     await page.getByLabel("Name").first().fill("E2E section");
@@ -436,6 +438,7 @@ test.describe("manager controls", () => {
     await expect(card(page, tableNumber)).toContainText("E2E section");
 
     // Ending the section's assignment doesn't take the server from the seated party.
+    await expandNavGroups(page);
     await mainNavigation(page).getByRole("link", { name: "Sections", exact: true }).click();
     await page
       .getByRole("listitem", { name: `Section ${code}`, exact: true })
