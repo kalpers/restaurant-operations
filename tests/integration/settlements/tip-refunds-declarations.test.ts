@@ -20,6 +20,7 @@ import {
   tender,
   type SettlementScenario,
 } from "../../fixtures/settlement-fixtures";
+import { textWithoutIds } from "../../helpers/leak-text";
 
 // Phase 20 policies 18 and 20 (D17, D19): tip refunds and cash tip declarations.
 
@@ -157,7 +158,7 @@ describe("tip refunds and declarations (Phase 20)", () => {
       .from(auditEvents)
       .where(and(eq(auditEvents.action, "tips.declaration-recorded"), eq(auditEvents.entityId, declared.id)));
 
-    expect(JSON.stringify(audit)).not.toContain("18.00");
+    expect(textWithoutIds(audit)).not.toContain("18.00");
 
     // A second declaration without the version is a stale write; with it, a correction.
     await expect(

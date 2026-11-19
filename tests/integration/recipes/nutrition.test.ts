@@ -153,7 +153,8 @@ describe("nutrition (Phase 28)", () => {
     const last = audits.at(-1)!;
 
     expect(last.details).toEqual({ itemCode: expect.any(String), changedFields: ["calories"] });
-    expect(JSON.stringify(audits)).not.toContain("190");
+    // Only the payloads can carry a figure; IDs, sequences and timestamps may contain "190" by chance.
+    expect(JSON.stringify(audits.map(({ before, after, details }) => ({ before, after, details })))).not.toContain("190");
 
     await expect(
       setIngredientNutrition(database(), server, {

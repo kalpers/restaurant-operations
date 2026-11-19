@@ -23,6 +23,7 @@ import {
   tender,
   type SettlementScenario,
 } from "../../fixtures/settlement-fixtures";
+import { textWithoutIds } from "../../helpers/leak-text";
 
 const database = () => getDatabase();
 
@@ -160,7 +161,7 @@ describe("settlement authorization", () => {
 
     expect(asServer.current!.tenders[0]!.reference).toBeNull();
     expect(asManager.current!.tenders[0]!.reference).toMatchObject({ cardBrand: "Visa", cardLastFour: "4242" });
-    expect(JSON.stringify(asServer)).not.toContain("4242");
+    expect(textWithoutIds(asServer)).not.toContain("4242");
   });
 
   it("scopes everything to the actor's location", async () => {

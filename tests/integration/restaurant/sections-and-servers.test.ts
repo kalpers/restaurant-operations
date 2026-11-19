@@ -36,6 +36,7 @@ import {
   tableFixture,
   type RestaurantScenario,
 } from "../../fixtures/restaurant-fixtures";
+import { textWithoutIds } from "../../helpers/leak-text";
 
 const database = () => getDatabase();
 
@@ -767,7 +768,7 @@ describe("server sections and qualification", () => {
         "scheduledNow",
       ]);
       expect(candidates[0]).toMatchObject({ employeeId: server, scheduledNow: true });
-      expect(JSON.stringify(candidates)).not.toContain("98765");
+      expect(textWithoutIds(candidates)).not.toContain("98765");
     });
 
     it("omits people who don't qualify for the area", async () => {

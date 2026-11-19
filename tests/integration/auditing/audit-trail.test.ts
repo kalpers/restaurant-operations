@@ -22,6 +22,7 @@ import { actorWith, clearEmployeeData, createEmployeeFixture } from "../../fixtu
 import { createKitchenScenario, sendOrder, type KitchenScenario } from "../../fixtures/kitchen-fixtures";
 import { clearOrderData, itemRows, newKey } from "../../fixtures/order-fixtures";
 import { opened, SERVER_SETTLEMENT_PERMISSIONS, settlementRow, tender } from "../../fixtures/settlement-fixtures";
+import { textWithoutIds } from "../../helpers/leak-text";
 
 const database = () => getDatabase();
 
@@ -321,7 +322,7 @@ describe("audit trail", () => {
 
       expect(changed?.after).toMatchObject({ payType: "HOURLY", rate: true, effectiveFrom: "2024-02-01" });
       expect(events.map((event) => event.action)).toContain("hr.compensation-viewed");
-      expect(JSON.stringify(events)).not.toContain("23.75");
+      expect(textWithoutIds(events)).not.toContain("23.75");
     });
 
     it("records personal-data changes by field name only, and personal-data views", async () => {

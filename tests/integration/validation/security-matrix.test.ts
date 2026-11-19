@@ -30,6 +30,7 @@ import {
   type RestaurantDay,
 } from "../../fixtures/restaurant-day";
 import { tender } from "../../fixtures/settlement-fixtures";
+import { textWithoutIds } from "../../helpers/leak-text";
 
 const database = () => getDatabase();
 
@@ -263,7 +264,7 @@ describe("Phase 13: security validation", () => {
 
       expect(JSON.stringify(history)).toContain("12.00");
       expect(event).toBeDefined();
-      expect(JSON.stringify(event)).not.toContain("12.00");
+      expect(textWithoutIds(event)).not.toContain("12.00");
     });
   });
 });
