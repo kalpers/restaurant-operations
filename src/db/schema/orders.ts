@@ -314,6 +314,12 @@ export const orderItems = pgTable(
     pricePeriodId: uuid("price_period_id").references(() => pricePeriods.id, { onDelete: "restrict" }),
     pricePeriodNameSnapshot: text("price_period_name_snapshot"),
     regularPriceSnapshot: money("regular_price_snapshot"),
+    /**
+     * Phase 29 (policies 2, 5): the seat the item is for, 1 to 30; null is "Table" (shared or
+     * not assigned). Not a snapshot: it stays editable after SEND while the check is OPEN, so the
+     * freeze trigger doesn't list it. Moves carry it unchanged.
+     */
+    seatNumber: smallint("seat_number"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -359,6 +365,7 @@ export const orderItems = pgTable(
       sql`${table.specialInstructions} IS NULL OR length(${table.specialInstructions}) <= 500`,
     ),
     check("order_items_course_range", sql`${table.courseNumber} BETWEEN 1 AND 5`),
+    check("order_items_seat_range", sql`${table.seatNumber} IS NULL OR ${table.seatNumber} BETWEEN 1 AND 30`),
     check(
       "order_items_tax_snapshot_fields",
       sql`(${table.taxCategoryId} IS NULL) = (${table.taxCategoryCodeSnapshot} IS NULL)

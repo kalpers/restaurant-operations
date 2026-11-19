@@ -14,6 +14,7 @@ import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { lockOrder, recomputeAndBumpOrder } from "../repositories/order-repository";
 import { assertItemIsDraft, assertOrderOpen } from "../rules/order-lifecycle";
 import { calculateLineAmounts } from "../rules/order-totals";
+import { assertSeatAllowed, validateSeat } from "../rules/seats";
 import { assertPermission } from "./access";
 
 // Draft items are previews: their price columns show what the item would cost now, and
@@ -27,6 +28,8 @@ export type DraftItemInput = {
   specialInstructions: string | null;
   /** Phase 17: course 1 to 5; omitted means course 1 (or unchanged on an edit). */
   courseNumber?: number;
+  /** Phase 29: the seat on add (null or omitted is "Table"); changed later through the seat route. */
+  seatNumber?: number | null;
 };
 
 type Versioned = { id: string; version: number };
@@ -107,6 +110,12 @@ export async function addDraftItem(
 
     assertOrderOpen(order.status);
 
+    const seatNumber = validateSeat(entry.seatNumber ?? null);
+
+    if (seatNumber !== null) {
+      assertSeatAllowed(order);
+    }
+
     const sellable = await resolveSellableItem(transaction, actor, {
       menuItemId: entry.menuItemId,
       selections: entry.selections,
@@ -121,6 +130,7 @@ export async function addDraftItem(
         quantity: entry.quantity,
         specialInstructions: entry.specialInstructions,
         courseNumber: entry.courseNumber ?? 1,
+        seatNumber,
         addedByUserId: actor.userId,
         ...draftColumns(sellable, entry.quantity),
       })

@@ -477,6 +477,20 @@
       "when": 1795036495507,
       "tag": "0067_price_period_items_restrict",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795060299134,
+      "tag": "0068_seat_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795093825066,
+      "tag": "0069_seat_numbers_guards",
+      "breakpoints": true
     }
   ]
 }

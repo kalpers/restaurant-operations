@@ -22,6 +22,8 @@ const EVENTS = [
   "kitchen.ticket-ready",
   "kitchen.course-fired",
   "order.items-moved",
+  // Phase 29: a seat fix reaches the pass.
+  "order.item-seat-changed",
 ];
 
 function ExpoCard({ order }: { order: ExpoOrder }) {
@@ -62,6 +64,11 @@ function ExpoCard({ order }: { order: ExpoOrder }) {
           <li key={item.orderItemId} className="flex items-start justify-between gap-2 text-base">
             <span>
               <span className="font-semibold">
+                {item.seatNumber !== null && (
+                  <span data-testid="expo-seat" className="mr-1.5 rounded bg-neutral-900 px-1 text-xs font-bold text-white">
+                    S{item.seatNumber}
+                  </span>
+                )}
                 {item.quantity}× {item.name}
               </span>
               <span className="block text-xs text-neutral-700">

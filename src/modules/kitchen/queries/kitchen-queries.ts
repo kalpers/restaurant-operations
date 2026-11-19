@@ -28,6 +28,8 @@ export type QueueItem = {
   instructions: string | null;
   /** Phase 21 (policy 14): "ALLERGY: ..." when the server acknowledged a conflict. */
   allergyAlert: string | null;
+  /** Phase 29 (policy 8): the order item's current seat (null is "Table"), read live, never snapshotted. */
+  seatNumber: number | null;
   attemptNumber: number;
   submittedAt: string;
   startedAt: string | null;
@@ -78,7 +80,10 @@ const RECENT_MINUTES = 30;
 type ItemRow = typeof kitchenTicketItems.$inferSelect;
 type TicketRow = typeof kitchenTickets.$inferSelect;
 
-function toQueueItem(actor: Actor, ticket: TicketRow, item: ItemRow): QueueItem {
+/** Seat by order item. */
+type SeatsByItem = ReadonlyMap<string, number | null>;
+
+function toQueueItem(actor: Actor, ticket: TicketRow, item: ItemRow, seats: SeatsByItem): QueueItem {
   const canWork = canWorkStationType(actor, ticket.stationTypeSnapshot as StationType);
   const can = (action: "start" | "ready" | "complete") =>
     canWork && actor.permissions.has(ACTION_PERMISSION[action]);
@@ -93,6 +98,7 @@ function toQueueItem(actor: Actor, ticket: TicketRow, item: ItemRow): QueueItem 
     modifiers: item.modifierSnapshots as ModifierSnapshot[],
     instructions: item.kitchenInstructionsSnapshot,
     allergyAlert: item.allergyAlertSnapshot,
+    seatNumber: seats.get(item.orderItemId) ?? null,
     attemptNumber: item.attemptNumber,
     submittedAt: item.submittedAt.toISOString(),
     startedAt: item.startedAt?.toISOString() ?? null,
@@ -113,7 +119,7 @@ function ageSecondsFrom(firedAt: Date | null, now: Date): number {
   return firedAt ? Math.max(0, Math.floor((now.getTime() - firedAt.getTime()) / 1000)) : 0;
 }
 
-function toQueueTicket(actor: Actor, ticket: TicketRow, items: ItemRow[], now: Date): QueueTicket {
+function toQueueTicket(actor: Actor, ticket: TicketRow, items: ItemRow[], seats: SeatsByItem, now: Date): QueueTicket {
   const sorted = [...items].sort((a, b) =>
     compareQueue(
       { submittedAt: a.submittedAt, ticketId: a.ticketId, id: a.id },
@@ -142,7 +148,7 @@ function toQueueTicket(actor: Actor, ticket: TicketRow, items: ItemRow[], now: D
     ageSeconds: ageSecondsFrom(ticket.firedAt, now),
     ageBand: ticket.firedAt ? ageBand(ticket.firedAt, now) : "normal",
     status: deriveTicketStatus(items.map((item) => item.status as KitchenItemStatus)),
-    items: sorted.map((item) => toQueueItem(actor, ticket, item)),
+    items: sorted.map((item) => toQueueItem(actor, ticket, item, seats)),
   };
 }
 
@@ -181,6 +187,22 @@ function loadTickets(
   return { conditions, activeTicketIds };
 }
 
+/** Phase 29 (policy 8): the current seat of each order item, so a seat fix reaches the pass. */
+async function seatsForOrderItems(executor: DatabaseExecutor, orderItemIds: readonly string[]): Promise<SeatsByItem> {
+  const ids = [...new Set(orderItemIds)];
+
+  if (ids.length === 0) {
+    return new Map();
+  }
+
+  const rows = await executor
+    .select({ id: orderItems.id, seatNumber: orderItems.seatNumber })
+    .from(orderItems)
+    .where(inArray(orderItems.id, ids));
+
+  return new Map(rows.map((row) => [row.id, row.seatNumber]));
+}
+
 /**
  * A Kitchen or Bar queue: tickets with active work, FIFO, plus recently completed tickets.
  * The station type is the authorization boundary; the station, status and order-type
@@ -216,8 +238,9 @@ export async function getStationQueue(
       ? []
       : await executor.select().from(kitchenTicketItems).where(inArray(kitchenTicketItems.ticketId, ticketIds));
   const itemsOf = (ticketId: string) => items.filter((item) => item.ticketId === ticketId);
+  const seats = await seatsForOrderItems(executor, items.map((item) => item.orderItemId));
   const active = activeTickets
-    .map((ticket) => toQueueTicket(actor, ticket, itemsOf(ticket.id), now))
+    .map((ticket) => toQueueTicket(actor, ticket, itemsOf(ticket.id), seats, now))
     .map((ticket) =>
       filter.status ? { ...ticket, items: ticket.items.filter((item) => item.status === filter.status) } : ticket,
     )
@@ -225,7 +248,7 @@ export async function getStationQueue(
   const cutoff = now.getTime() - RECENT_MINUTES * 60_000;
   const recentlyCompleted = recentTickets
     .filter((ticket) => !activeTickets.some((entry) => entry.id === ticket.id))
-    .map((ticket) => toQueueTicket(actor, ticket, itemsOf(ticket.id), now))
+    .map((ticket) => toQueueTicket(actor, ticket, itemsOf(ticket.id), seats, now))
     .filter(
       (ticket) =>
         ticket.status === "COMPLETED" &&
@@ -259,6 +282,8 @@ export type ExpoOrder = {
     /** Phase 17: the item's course is held (not yet fired). */
     held: boolean;
     courseNumber: number;
+    /** Phase 29 (policy 8): the item's current seat, null for "Table". */
+    seatNumber: number | null;
     stations: { code: string; name: string; status: KitchenItemStatus; attemptNumber: number }[];
   }[];
 };
@@ -299,6 +324,7 @@ export async function getExpoView(
       orderNumber: orders.orderNumber,
       orderType: orders.orderType,
       courseNumber: orderItems.courseNumber,
+      seatNumber: orderItems.seatNumber,
     })
     .from(kitchenTicketItems)
     .innerJoin(kitchenTickets, eq(kitchenTickets.id, kitchenTicketItems.ticketId))
@@ -331,6 +357,7 @@ export async function getExpoView(
         status: deriveTicketStatus(work.map((row) => row.item.status as KitchenItemStatus)),
         held: work.some((row) => row.ticket.firedAt === null && row.item.status === "NEW"),
         courseNumber: work[0]!.courseNumber,
+        seatNumber: work[0]!.seatNumber,
         stations: work.map((row) => ({
           code: row.ticket.stationCodeSnapshot,
           name: row.ticket.stationNameSnapshot,

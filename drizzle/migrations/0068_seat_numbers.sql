@@ -1,0 +1,2 @@
+ALTER TABLE "order_items" ADD COLUMN "seat_number" smallint;--> statement-breakpoint
+ALTER TABLE "order_items" ADD CONSTRAINT "order_items_seat_range" CHECK ("order_items"."seat_number" IS NULL OR "order_items"."seat_number" BETWEEN 1 AND 30);

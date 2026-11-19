@@ -270,4 +270,84 @@ test.describe("kitchen and bar", () => {
     await expect(page.getByLabel("Order total")).toHaveText("$12.00");
     await expect(page.getByRole("listitem", { name: `Sent ${menu.soda.name}` })).toHaveCount(0);
   });
+
+  test("a server rings by seat, the kitchen sees the seat, and the check splits by seat (Phase 29)", async ({ browser }) => {
+    const manager = await createKitchenRoleAccount("MANAGER");
+    const server = await createKitchenRoleAccount("SERVER");
+    const cook = await createKitchenRoleAccount("COOK");
+    const menu = await createKitchenMenu(manager);
+    const medium = await mediumSelection(menu.burger.id);
+    const sent = await sendKitchenOrder(server, manager, [
+      { menuItemId: menu.burger.id, selections: medium, seatNumber: 1 },
+      { menuItemId: menu.burger.id, selections: medium, seatNumber: 3 },
+    ]);
+    const serverPage = await (await browser.newContext()).newPage();
+    const cookPage = await (await browser.newContext()).newPage();
+
+    await signIn(serverPage, server);
+    await serverPage.goto(`/orders/${sent.orderId}`);
+
+    // A soda for the whole table, rung from the screen.
+    await serverPage.getByRole("group", { name: "Seat for new items" }).getByRole("button", { name: "Table" }).click();
+
+    const menuRegion = serverPage.getByRole("region", { name: "Menu" });
+
+    await menuRegion.getByRole("tab", { name: menu.categoryName }).click();
+    await menuRegion.getByRole("button", { name: new RegExp(menu.soda.name) }).click();
+
+    const picker = serverPage.getByRole("form", { name: `Add ${menu.soda.name}` });
+
+    await expect(picker).toContainText("for the table");
+    await picker.getByRole("button", { name: "Add to order" }).click();
+    await serverPage.getByRole("button", { name: "Send 1 item" }).click();
+    await expect(serverPage.getByRole("listitem", { name: `Sent ${menu.soda.name}` })).toBeVisible();
+
+    // The kitchen sees each burger's seat.
+    await signIn(cookPage, cook);
+    await cookPage.goto("/kitchen");
+
+    const ticket = card(cookPage, sent.orderNumber);
+
+    const seatsOn = async (page: Page) =>
+      (await card(page, sent.orderNumber).getByTestId("ticket-seat").allTextContents()).sort();
+
+    await expect(ticket.getByTestId("ticket-seat").first()).toBeVisible({ timeout: 10_000 });
+    expect(await seatsOn(cookPage)).toEqual(["S1", "S3"]);
+
+    // The server fixes a seat after SEND; the kitchen shows the change.
+    const burgerSeats = serverPage.getByLabel(`Seat for ${menu.burger.name}`);
+    const values = await burgerSeats.evaluateAll((elements) => elements.map((element) => (element as HTMLSelectElement).value));
+    const onSeat3 = burgerSeats.nth(values.indexOf("3"));
+
+    await onSeat3.selectOption("2");
+    await expect(burgerSeats.nth(values.indexOf("3"))).toHaveValue("2");
+    await expect(async () => {
+      await cookPage.reload();
+      await expect(card(cookPage, sent.orderNumber).getByTestId("ticket-seat").first()).toBeVisible({ timeout: 2_000 });
+      expect(await seatsOn(cookPage)).toEqual(["S1", "S2"]);
+    }).toPass({ timeout: 20_000 });
+
+    // Split by seat: seat 1 and the Table soda stay, seat 2 gets its own check.
+    await serverPage.getByRole("button", { name: "Split by seat" }).click();
+
+    const split = serverPage.getByRole("form", { name: "Split by seat" });
+
+    await expect(split).toContainText("Seat 1 and the Table items stay");
+    await split.getByRole("button", { name: "Split into 2 checks" }).click();
+    await expect(serverPage.getByRole("listitem", { name: `Sent ${menu.burger.name}` })).toHaveCount(1);
+    await expect(serverPage.getByRole("listitem", { name: `Sent ${menu.soda.name}` })).toBeVisible();
+
+    // The Table soda can then be shared with the seat 2 check.
+    await serverPage
+      .getByRole("listitem", { name: `Sent ${menu.soda.name}` })
+      .getByRole("button", { name: "Share between checks" })
+      .click();
+
+    const dialog = serverPage.getByRole("dialog");
+
+    await dialog.getByLabel("Share 1 goes on").selectOption("THIS");
+    await dialog.getByLabel("Share 2 goes on").selectOption({ index: 1 });
+    await dialog.getByRole("button", { name: "Share item" }).click();
+    await expect(serverPage.getByRole("list", { name: `Shares of ${menu.soda.name}` })).toContainText("Share 1/2");
+  });
 });

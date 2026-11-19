@@ -16,6 +16,7 @@ import {
   orderItemInventoryConsumption,
   orderItemModifiers,
   orderItems,
+  orderItemShares,
   orderItemStatusHistory,
   orderItemVoids,
   orders,
@@ -171,7 +172,13 @@ async function seatKitchenParty(owner: KitchenAccount) {
 export async function sendKitchenOrder(
   server: KitchenAccount,
   seater: KitchenAccount,
-  lines: { menuItemId: string; selections?: { modifierGroupId: string; modifierId: string }[]; courseNumber?: number }[],
+  lines: {
+    menuItemId: string;
+    selections?: { modifierGroupId: string; modifierId: string }[];
+    courseNumber?: number;
+    /** Phase 29: the seat on add. */
+    seatNumber?: number | null;
+  }[],
   orderType: "DINE_IN" | "TAKEOUT" = "DINE_IN",
   options: { send?: boolean } = {},
 ) {
@@ -191,6 +198,7 @@ export async function sendKitchenOrder(
       selections: line.selections ?? [],
       specialInstructions: null,
       courseNumber: line.courseNumber,
+      seatNumber: line.seatNumber,
     });
 
     version = added.orderVersion;
@@ -258,6 +266,8 @@ const GUARDED: readonly [string, string][] = [
   ["kitchen_tickets", "kitchen_tickets_guard_trigger"],
   ["order_items", "order_items_freeze_trigger"],
   ["order_item_modifiers", "order_item_modifiers_freeze_trigger"],
+  // Phase 29: the split-by-seat test shares an item.
+  ["order_item_shares", "order_item_shares_guard_trigger"],
   ["kitchen_ticket_items", "kitchen_ticket_items_guard_trigger"],
   ["notifications", "notifications_guard_trigger"],
 ];
@@ -324,6 +334,8 @@ export async function removeKitchenE2eData(): Promise<void> {
       ).map((row) => row.id);
 
       if (itemIds.length) {
+        // Phase 29: shares of these items, wherever they sit.
+        await transaction.delete(orderItemShares).where(inArray(orderItemShares.orderItemId, itemIds));
         await transaction.delete(orderItemVoids).where(inArray(orderItemVoids.orderItemId, itemIds));
         await transaction
           .delete(orderItemInventoryConsumption)

@@ -77,3 +77,13 @@ export async function tableNumbersForSessions(executor: DatabaseExecutor, sessio
 
   return result;
 }
+
+/** Phase 29 (policy 11): the party size of a session, for the seats an order screen offers. */
+export async function partySizeForSession(executor: DatabaseExecutor, sessionId: string): Promise<number | null> {
+  const [row] = await executor
+    .select({ partySize: tableSessions.partySize })
+    .from(tableSessions)
+    .where(eq(tableSessions.id, sessionId));
+
+  return row?.partySize ?? null;
+}

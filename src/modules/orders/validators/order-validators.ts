@@ -49,6 +49,20 @@ export const addDraftItemSchema = z.object({
   selections,
   specialInstructions,
   courseNumber: z.int().min(1).max(5).optional(),
+  /** Phase 29: seat 1 to 30, or null/omitted for "Table". Later changes use the seat route. */
+  seatNumber: z.int().min(1).max(30).nullable().optional(),
+});
+
+/** Phase 29 (policy 5): set or clear an item's seat, draft or sent. */
+export const setItemSeatSchema = z.object({
+  expectedVersion,
+  seatNumber: z.int().min(1).max(30).nullable(),
+});
+
+/** Phase 29 (policy 9): split a check into one check per seat. */
+export const splitBySeatSchema = z.object({
+  expectedVersion,
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
 });
 
 export const updateDraftItemSchema = z.object({

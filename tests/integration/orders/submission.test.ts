@@ -180,6 +180,61 @@ describe("order submission (SEND)", () => {
     expect(await onHand(database(), burger.stock.beef.id)).toBe("92.0000");
   });
 
+  it("sends the canonical burger on seat 2 with the same snapshots and an idempotent retry (Phase 29)", async () => {
+    const plain = await dineInOrder();
+    const plainAdded = await addBurger(plain.id, plain.version);
+
+    await sendOrderItems(database(), scenario.serverActor, plain.id, {
+      expectedVersion: plainAdded.orderVersion,
+      idempotencyKey: newKey(),
+    });
+
+    const order = await dineInOrder();
+    const added = await addDraftItem(database(), scenario.serverActor, order.id, {
+      expectedVersion: order.version,
+      menuItemId: burger.menuItem.id,
+      quantity: 1,
+      selections: burger.canonicalSelections,
+      specialInstructions: null,
+      seatNumber: 2,
+    });
+    const input = { expectedVersion: added.orderVersion, idempotencyKey: newKey() };
+    const first = await sendOrderItems(database(), scenario.serverActor, order.id, input);
+    const beefAfterFirst = await onHand(database(), burger.stock.beef.id);
+    const retry = await sendOrderItems(database(), scenario.serverActor, order.id, input);
+
+    expect(retry).toEqual({ ...first, replayed: true });
+    expect(await onHand(database(), burger.stock.beef.id)).toBe(beefAfterFirst);
+
+    const [seated] = await itemRows(database(), order.id);
+    const [unseated] = await itemRows(database(), plain.id);
+    const frozen = (row: typeof seated) => ({
+      basePriceSnapshot: row!.basePriceSnapshot,
+      modifierTotalSnapshot: row!.modifierTotalSnapshot,
+      unitPriceSnapshot: row!.unitPriceSnapshot,
+      lineTotalSnapshot: row!.lineTotalSnapshot,
+      recipeId: row!.recipeId,
+      recipeVersionId: row!.recipeVersionId,
+      kitchenInstructionsSnapshot: row!.kitchenInstructionsSnapshot,
+      prepStationIdsSnapshot: row!.prepStationIdsSnapshot,
+    });
+
+    expect(seated!.seatNumber).toBe(2);
+    expect(unseated!.seatNumber).toBeNull();
+    expect(frozen(seated)).toEqual(frozen(unseated));
+
+    const consumption = async (orderItemId: string) =>
+      (
+        await database()
+          .select({ id: orderItemInventoryConsumption.inventoryItemId, quantity: orderItemInventoryConsumption.baseQuantity })
+          .from(orderItemInventoryConsumption)
+          .where(eq(orderItemInventoryConsumption.orderItemId, orderItemId))
+      ).sort((a, b) => a.id.localeCompare(b.id));
+
+    expect(await consumption(seated!.id)).toEqual(await consumption(unseated!.id));
+    expect(await database().select().from(orderSendBatches).where(eq(orderSendBatches.orderId, order.id))).toHaveLength(1);
+  });
+
   it("refuses a reused key with a different request, and another user's key", async () => {
     const order = await dineInOrder();
     const added = await addBurger(order.id, order.version);

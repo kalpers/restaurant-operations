@@ -865,7 +865,7 @@ BAR
 TAKEOUT
 ```
 
-Table session to orders is one-to-many to support split checks. Since Phase 17, draft and sent items can move between OPEN orders on one session (or into a new check there); each move is recorded in `order_item_transfers`, and an item's snapshots, consumption and kitchen work move with it. Since Phase 20 one sent item can be shared between checks on its session: it becomes `SPLIT` and its `order_item_shares` carry the money, while its kitchen work and consumption stay with it. Items carry a course number (1 to 5); see section 18 for hold and fire.
+Table session to orders is one-to-many to support split checks. Since Phase 17, draft and sent items can move between OPEN orders on one session (or into a new check there); each move is recorded in `order_item_transfers`, and an item's snapshots, consumption and kitchen work move with it. Since Phase 20 one sent item can be shared between checks on its session: it becomes `SPLIT` and its `order_item_shares` carry the money, while its kitchen work and consumption stay with it. Items carry a course number (1 to 5); see section 18 for hold and fire. Since Phase 29 items on a check at a table session (not takeout) carry an optional seat number (`order_items.seat_number`, 1 to 30; null is "Table"). It is not a snapshot: it stays editable after SEND while the check is OPEN with no OPEN settlement and the item isn't VOIDED (the freeze trigger lets a SUBMITTED or SPLIT item change only its seat), changes nothing computed from it, isn't audited and emits `order.item-seat-changed`. "Split by seat" moves every seat but the lowest to its own new check on the session through ordinary moves; "Table" items, voided items and shared originals stay.
 
 An order has a UUID primary key plus a separate human-readable order number.
 
@@ -965,6 +965,8 @@ As built in Phase 10, the approved Phase 10 policies replace recall with an expl
 Overall order state and kitchen fulfillment state remain separate.
 
 Phase 21: a ticket item sent after an allergy acknowledgment carries `allergy_alert_snapshot` ("ALLERGY: Peanuts (severe)"), shown at the top of the item; a remake keeps it.
+
+Phase 29: station queues and Expo show each item's seat ("S2"), read from the order item when shown, not snapshotted, so a seat fixed after SEND reaches the pass. No kitchen schema change.
 
 Phase 25: a read-only **prep list** per station (Kitchen → Prep list) shows, for today and the next six days, the portions the item forecast expects (rounded up; today less what has been sent), the modifiers guests usually choose and the ingredients those portions take. Station access follows the queues (`kitchen.view` for KITCHEN, `bar.view` for BAR). It is worked out when opened and stored nowhere; prep itself is not tracked. See section 16 and "Phase 25 Prep and Purchasing Forecast" in section 33.
 
@@ -1975,6 +1977,18 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 29 Seat Numbers and Split by Seat
+
+Phase 29 lets servers ring items by seat and split a check into one check per seat (plan approved 2026-11-18, D1–D12 as recommended, with five amendments). Plan: `docs/Phase-29-Seat-Numbers-and-Split-by-Seat.md`. Report: `docs/Phase-29-Completion-Report.md`.
+
+- **Seats** (section 17): `order_items.seat_number`, 1 to 30 or null ("Table"), only on DINE_IN and BAR checks at a table session (`SEAT_NOT_ALLOWED`). Set on add; changed through `PATCH /api/orders/{id}/items/{itemId}/seat` (`orders.edit`, the order's `expectedVersion`) for drafts and sent items while the check is OPEN with no OPEN settlement; not for VOIDED items. Moves carry the seat; a shared original keeps it.
+- **Kitchen** (section 18): station queues and Expo read the current seat.
+- **Split by seat:** `POST /api/orders/{id}/split-by-seat` (`orders.move-items` + `orders.create`, idempotency scope `orders.split-by-seat`): the check keeps its lowest seat and its "Table" items; each other seat goes to a new check in seat order, each as one Phase 17 move (transfer rows, recompute, `order.items-moved`, `orders.items-moved` audit). Voided items and shared originals stay. Fewer than two seats is refused (`NOTHING_TO_SPLIT`). Nothing is shared automatically; order discounts stay on the first check.
+- **Order screen:** a seat selector above the menu (Table, 1 to the party size, "+ seat"), a seat picker on each line, a "By seat" view with per-seat subtotals before check discounts and tax, and "Split by seat".
+- **Permissions:** none new (149). No audit action; outbox event `order.item-seat-changed`.
+- **Demo data:** `db:seed:demo` rings dining room lines by seat.
+- **Migrations:** `0068` (the column and its range check) and `0069` (custom: the freeze trigger lets a sent or shared item change only its seat).
+
 ### Phase 28 Happy Hour Pricing, Sales Forecast, Accounting Exports and Nutrition
 
 Phase 28 builds four features from the owner's enhancement list (plan approved 2026-11-18, D1–D17 as recommended, with five amendments). FIFO lot costing and guest loyalty were deferred because each would change a rule; the plan's section 11 explains what each would take. Plan: `docs/Phase-28-Pricing-Forecast-Exports-and-Nutrition.md`. Report: `docs/Phase-28-Completion-Report.md`.
@@ -2311,6 +2325,12 @@ Requested by the owner on 2026-11-18.
 Happy hour prices by local days and times per location, decided at SEND and snapshotted; expected net sales from the demand forecast for `reports.sales` holders; a balanced daily sales and tax journal and a payroll hours file as CSV; nutrition worked out from recipes and modifiers or declared per item, with missing data marked. FIFO lot costing and guest loyalty deferred. Plan: `docs/Phase-28-Pricing-Forecast-Exports-and-Nutrition.md`.
 
 Approved by the owner on 2026-11-18, with decisions D1–D17 as recommended in the plan.
+
+### Phase 29: Seat Numbers and Split by Seat
+
+A seat number on order items (1 to 30, or Table), editable after SEND while the check is open, shown on kitchen queues and Expo, and "Split by seat" making one check per seat through ordinary moves. No new permission. Plan: `docs/Phase-29-Seat-Numbers-and-Split-by-Seat.md`.
+
+Requested and approved by the owner on 2026-11-18, with decisions D1–D12 as recommended in the plan.
 
 ### Cloud Deployment: On Hold
 

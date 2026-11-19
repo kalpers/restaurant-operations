@@ -27,6 +27,8 @@ const QUEUE_EVENTS = [
   "kitchen.ticket-ready",
   // Phase 17: a fired course joins the queue.
   "kitchen.course-fired",
+  // Phase 29: a seat fix reaches the pass.
+  "order.item-seat-changed",
 ];
 
 const ACTION_LABEL = { start: "Start", ready: "Ready", complete: "Bump" } as const;
@@ -78,6 +80,11 @@ function ItemRow({ item }: { item: QueueItem }) {
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-xl font-bold">
+            {item.seatNumber !== null && (
+              <span data-testid="ticket-seat" className="mr-2 rounded bg-neutral-900 px-1.5 align-middle text-sm font-bold text-white">
+                S{item.seatNumber}
+              </span>
+            )}
             {item.quantity}× {item.name}
             {item.attemptNumber > 1 && (
               <span className="ml-2 rounded bg-purple-100 px-2 align-middle text-xs font-bold text-purple-900">

@@ -15,7 +15,7 @@ import {
 } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
-import { tableNumbersForSessions } from "@/modules/restaurant/queries/session-facts";
+import { partySizeForSession, tableNumbersForSessions } from "@/modules/restaurant/queries/session-facts";
 import { NotFoundError } from "@/shared/errors/app-error";
 
 import { findOrder } from "../repositories/order-repository";
@@ -137,6 +137,8 @@ export async function readOrderSummaries(
 }
 
 export type OrderDetail = OrderSummary & {
+  /** Phase 29 (policy 11): the table session's party size, which shapes the seats offered. */
+  partySize: number | null;
   voidedAt: string | null;
   voidReason: string | null;
   items: {
@@ -155,6 +157,8 @@ export type OrderDetail = OrderSummary & {
     batchNumber: number | null;
     /** Phase 17: the item's course, and its tax rate snapshot (null when untaxed or a draft). */
     courseNumber: number;
+    /** Phase 29: the seat, 1 to 30, or null for "Table". Editable while the check is OPEN. */
+    seatNumber: number | null;
     taxRate: string | null;
     submittedAt: string | null;
     voidedAt: string | null;
@@ -350,6 +354,7 @@ export async function readOrderDetail(
 
   return {
     ...summary!,
+    partySize: order.tableSessionId ? await partySizeForSession(executor, order.tableSessionId) : null,
     allergy,
     voidedAt: order.voidedAt?.toISOString() ?? null,
     voidReason: order.voidReason,
@@ -368,6 +373,7 @@ export async function readOrderDetail(
       kitchenInstructions: item.kitchenInstructionsSnapshot,
       batchNumber: batchNumber ?? null,
       courseNumber: item.courseNumber,
+      seatNumber: item.seatNumber,
       taxRate: item.taxRateSnapshot,
       submittedAt: item.submittedAt?.toISOString() ?? null,
       voidedAt: item.voidedAt?.toISOString() ?? null,

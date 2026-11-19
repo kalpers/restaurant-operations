@@ -18,6 +18,13 @@ import { useToast } from "@/components/ui/toast";
 import type { OrderItemFulfillment } from "@/modules/kitchen/queries/kitchen-queries";
 import type { OperationalMenuItem } from "@/modules/menu/queries/operational-menu";
 import type { OrderDetail } from "@/modules/orders/queries/order-queries";
+import {
+  MAX_SEAT,
+  planSplitBySeat,
+  seatLabel,
+  seatSubtotals,
+  type SplitBySeatPlan,
+} from "@/modules/orders/rules/seats";
 import { sumDecimals } from "@/shared/decimal/decimal";
 
 import { AllergyPanel, ItemAllergenNote, type AllergenChoice } from "./allergy-panel";
@@ -151,11 +158,14 @@ function ItemPicker({
   orderId,
   version,
   item,
+  seat,
   onDone,
 }: {
   orderId: string;
   version: number;
   item: MenuEntry;
+  /** Phase 29: the seat chosen above the menu; undefined where seats aren't used. */
+  seat: number | null | undefined;
   onDone: () => void;
 }) {
   const { run, pending, error } = useAction();
@@ -191,6 +201,7 @@ function ItemPicker({
       ),
       specialInstructions: instructions.trim() || null,
       courseNumber: course,
+      ...(seat === undefined ? {} : { seatNumber: seat }),
     });
 
     if (result.ok) {
@@ -205,7 +216,12 @@ function ItemPicker({
       className="grid gap-4 rounded-lg border-2 border-brand-600 bg-surface p-4 shadow-sm"
     >
       <p className="flex justify-between text-lg font-semibold">
-        <span>{item.name}</span>
+        <span>
+          {item.name}
+          {seat !== undefined && (
+            <span className="ml-2 text-sm font-medium text-neutral-600">{seat === null ? "for the table" : `for seat ${seat}`}</span>
+          )}
+        </span>
         <span className="tabular">{formatMoney(item.price)}</span>
       </p>
       {item.periodLabel ? (
@@ -373,7 +389,15 @@ function useStockHints(orderVersion: number): StockHints | undefined {
   return hints;
 }
 
-function MenuBrowser({ order, categories }: { order: OrderDetail; categories: MenuCategory[] }) {
+function MenuBrowser({
+  order,
+  categories,
+  seat,
+}: {
+  order: OrderDetail;
+  categories: MenuCategory[];
+  seat: number | null | undefined;
+}) {
   const stock = useStockHints(order.version);
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [picking, setPicking] = useState<MenuEntry | null>(null);
@@ -459,7 +483,7 @@ function MenuBrowser({ order, categories }: { order: OrderDetail; categories: Me
         </p>
       )}
       {picking ? (
-        <ItemPicker orderId={order.id} version={order.version} item={picking} onDone={() => setPicking(null)} />
+        <ItemPicker orderId={order.id} version={order.version} item={picking} seat={seat} onDone={() => setPicking(null)} />
       ) : shown.length === 0 ? (
         <EmptyState icon={Search} title={`Nothing matches “${query.trim()}”`}>
           Try another name, or clear the search to browse by category.
@@ -516,6 +540,7 @@ function DraftLine({ order, item, canEdit }: { order: OrderDetail; item: OrderDe
         </span>
         <span className="tabular">{formatMoney(item.lineTotal)}</span>
       </p>
+      <SeatControl order={order} item={item} canEdit={canEdit} />
       <ModifierLines item={item} />
       <ItemAllergenNote order={order} itemId={item.id} />
       <p className="text-xs font-medium tracking-wide text-warning-900 uppercase">
@@ -724,6 +749,7 @@ function SentLine({
         </span>
         <span className={cn("tabular", (voided || split) && "line-through")}>{formatMoney(item.lineTotal)}</span>
       </p>
+      <SeatControl order={order} item={item} canEdit={order.status === "OPEN" && abilities.edit} />
       <ModifierLines item={item} />
       {!voided && <ItemAllergenNote order={order} itemId={item.id} />}
       <p className="text-xs tracking-wide uppercase">
@@ -1223,6 +1249,234 @@ function HeldCourses({ order, courses, canFire }: { order: OrderDetail; courses:
   );
 }
 
+/** Phase 29 (policy 4): seats are used on checks at a table, never on takeout. */
+function usesSeats(order: OrderDetail): boolean {
+  return order.tableSessionId !== null && order.orderType !== "TAKEOUT";
+}
+
+/** Phase 29 (policies 3, 11): seats 1 to the party size, or the highest seat in use, plus any added. */
+function seatChoices(order: OrderDetail, extra = 0): number[] {
+  const highest = Math.max(0, ...order.items.map((item) => item.seatNumber ?? 0));
+  const count = Math.min(MAX_SEAT, Math.max(order.partySize ?? 1, highest, 1) + extra);
+
+  return Array.from({ length: count }, (_, index) => index + 1);
+}
+
+/** Phase 29: the plan for "Split by seat", or null when the check doesn't have two seats. */
+function splitPlanFor(order: OrderDetail): SplitBySeatPlan | null {
+  try {
+    return planSplitBySeat(order.items);
+  } catch {
+    return null;
+  }
+}
+
+/** Phase 29 (policy 11): the seat new items go to. */
+function SeatSelector({
+  order,
+  seat,
+  onChange,
+}: {
+  order: OrderDetail;
+  seat: number | null;
+  onChange: (seat: number | null) => void;
+}) {
+  const [extra, setExtra] = useState(0);
+  const seats = seatChoices(order, extra);
+
+  return (
+    <div role="group" aria-label="Seat for new items" className="mb-3 flex flex-wrap items-center gap-2">
+      <span className="text-sm font-semibold">Seat</span>
+      {[null, ...seats].map((entry) => (
+        <Button
+          key={entry ?? "table"}
+          variant={seat === entry ? "primary" : "secondary"}
+          aria-pressed={seat === entry}
+          className="min-w-11 px-3"
+          onClick={() => onChange(entry)}
+        >
+          {entry === null ? "Table" : entry}
+        </Button>
+      ))}
+      {seats.length < MAX_SEAT && (
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setExtra((current) => current + 1);
+            onChange(seats.length + 1);
+          }}
+        >
+          + seat
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Phase 29 (policy 5): an item's seat, changeable while the check is OPEN, draft or sent. */
+function SeatControl({ order, item, canEdit }: { order: OrderDetail; item: OrderDetail["items"][number]; canEdit: boolean }) {
+  const { run, pending, error } = useAction();
+
+  if (!usesSeats(order)) {
+    return null;
+  }
+
+  if (!canEdit || item.status === "VOIDED") {
+    return (
+      <p className="mt-1">
+        <Badge tone="neutral">{seatLabel(item.seatNumber)}</Badge>
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2">
+      <Select
+        aria-label={`Seat for ${item.name}`}
+        value={item.seatNumber ?? ""}
+        disabled={pending}
+        className="min-h-9 w-28 py-1 text-sm"
+        onChange={(event) =>
+          run("PATCH", `/api/orders/${order.id}/items/${item.id}/seat`, {
+            expectedVersion: order.version,
+            seatNumber: event.target.value === "" ? null : Number(event.target.value),
+          })
+        }
+      >
+        <option value="">Table</option>
+        {seatChoices(order).map((seat) => (
+          <option key={seat} value={seat}>
+            Seat {seat}
+          </option>
+        ))}
+      </Select>
+      <ErrorText error={error} />
+    </div>
+  );
+}
+
+/** Phase 29 (policy 11): the check's lines grouped by seat, with a subtotal per seat. */
+function BySeatSummary({ order }: { order: OrderDetail }) {
+  const lines = order.items
+    .filter((item) => item.status !== "VOIDED")
+    .map((item) => ({
+      item,
+      seatNumber: item.seatNumber,
+      // A shared item's money is in its shares; only the ones on this check count here.
+      amount:
+        item.status === "SPLIT"
+          ? sumDecimals(
+              order.shares
+                .filter(
+                  (share) => share.orderItemId === item.id && share.elsewhereOrderNumber === null && share.status === "ACTIVE",
+                )
+                .map((share) => share.amount),
+              2,
+            )
+          : item.lineTotal,
+    }));
+  const groups = seatSubtotals(lines);
+
+  return (
+    <section aria-label="By seat" className="grid gap-3 rounded-md border border-neutral-200 p-3">
+      <p className="text-xs text-neutral-600">Line totals before check discounts and tax; unsent items included.</p>
+      {groups.map((group) => (
+        <div key={group.seat ?? "table"} aria-label={group.seat === null ? "Table items" : `Seat ${group.seat}`}>
+          <p className="flex justify-between font-semibold">
+            <span>{group.seat === null ? "Table" : `Seat ${group.seat}`}</span>
+            <span className="tabular" aria-label={`Subtotal ${seatLabel(group.seat)}`}>
+              {formatMoney(group.amount)}
+            </span>
+          </p>
+          <ul className="grid gap-0.5 text-sm text-neutral-700">
+            {lines
+              .filter((line) => line.seatNumber === group.seat)
+              .map((line) => (
+                <li key={line.item.id} className="flex justify-between">
+                  <span>
+                    {line.item.quantity} × {line.item.name}
+                    {line.item.status === "DRAFT" ? " · unsent" : ""}
+                  </span>
+                  <span className="tabular">{formatMoney(line.amount)}</span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** Phase 29 (policies 9, 10): one check per seat in one step; Table items stay here. */
+function SplitBySeatForm({ order, plan, onDone }: { order: OrderDetail; plan: SplitBySeatPlan; onDone: () => void }) {
+  const { run, pending, error } = useAction();
+  const toast = useToast();
+  const key = useRef<string | null>(null);
+  const tableItems = order.items.filter((item) => item.status !== "VOIDED" && item.seatNumber === null);
+  const sharedOnSeats = order.items.filter((item) => item.status === "SPLIT" && item.seatNumber !== null);
+  const hasOrderDiscount = order.discounts.some((entry) => entry.status === "APPLIED");
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    key.current ??= `split-seat-${crypto.randomUUID()}`;
+
+    const result = await run(
+      "POST",
+      `/api/orders/${order.id}/split-by-seat`,
+      { expectedVersion: order.version },
+      { "Idempotency-Key": key.current },
+    );
+
+    if (result.ok || (result.status >= 400 && result.status < 500)) {
+      key.current = null;
+    }
+
+    if (result.ok) {
+      const split = result.data as { checks: { seat: number; orderNumber: number }[] };
+
+      toast.success(
+        `Split by seat: ${split.checks.map((check) => `seat ${check.seat} on check #${check.orderNumber}`).join(", ")}.`,
+      );
+      onDone();
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} aria-label="Split by seat" className="grid gap-3">
+      <ul className="grid gap-1 text-sm">
+        <li>
+          Seat {plan.stayingSeat}
+          {tableItems.length > 0 ? " and the Table items stay" : " stays"} on this check (#{order.orderNumber}).
+        </li>
+        {plan.moves.map((move) => (
+          <li key={move.seat}>
+            Seat {move.seat} ({move.itemIds.length} {move.itemIds.length === 1 ? "item" : "items"}) goes to a new check.
+          </li>
+        ))}
+      </ul>
+      {tableItems.length > 0 && (
+        <p className="text-sm text-neutral-700">
+          Table items aren&apos;t shared automatically. After the split, use &ldquo;Share between checks&rdquo; on any you want
+          to divide.
+        </p>
+      )}
+      {sharedOnSeats.length > 0 && (
+        <p className="text-sm text-neutral-700">
+          Shared items stay on this check; their shares are already on their own checks.
+        </p>
+      )}
+      {hasOrderDiscount && <p className="text-sm text-warning-900">Check discounts stay on this check.</p>}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button onClick={onDone}>Cancel</Button>
+        <Button type="submit" variant="primary" pending={pending}>
+          Split into {plan.moves.length + 1} checks
+        </Button>
+      </div>
+      <ErrorText error={error} />
+    </form>
+  );
+}
+
 function MoveItemsForm({
   order,
   otherChecks,
@@ -1372,6 +1626,8 @@ const FULFILLMENT_EVENTS = [
   "order.items-moved",
   // Phase 21: a party's or check's allergies changed.
   "guest.allergies-changed",
+  // Phase 29: a seat changed (here or on another screen).
+  "order.item-seat-changed",
 ];
 
 export function OrderWorkspace({
@@ -1385,6 +1641,10 @@ export function OrderWorkspace({
   allergens,
 }: Props) {
   useRealtimeRefresh(FULFILLMENT_EVENTS, 60_000);
+  const [seat, setSeat] = useState<number | null>(1);
+  const [bySeat, setBySeat] = useState(false);
+  const seated = usesSeats(order);
+  const splitPlan = splitPlanFor(order);
   const open = order.status === "OPEN";
   const drafts = order.items.filter((item) => item.status === "DRAFT");
   const sent = order.items.filter((item) => item.status !== "DRAFT");
@@ -1395,7 +1655,10 @@ export function OrderWorkspace({
     <div className="grid gap-6 lg:grid-cols-[1fr_26rem]">
       <div className="order-2 lg:order-1">
         {open && abilities.edit ? (
-          <MenuBrowser order={order} categories={categories} />
+          <>
+            {seated && <SeatSelector order={order} seat={seat} onChange={setSeat} />}
+            <MenuBrowser order={order} categories={categories} seat={seated ? seat : undefined} />
+          </>
         ) : (
           !open && (
             <p role="status" className="rounded-md border border-neutral-200 bg-neutral-100 p-3">
@@ -1421,6 +1684,15 @@ export function OrderWorkspace({
             {order.customerName ? ` · ${order.customerName}` : ""}
           </p>
         </div>
+
+        {seated && order.items.length > 0 && (
+          <div className="grid gap-2">
+            <Button aria-pressed={bySeat} onClick={() => setBySeat((current) => !current)} className="justify-self-start">
+              {bySeat ? "Hide by seat" : "By seat"}
+            </Button>
+            {bySeat && <BySeatSummary order={order} />}
+          </div>
+        )}
 
         <AllergyPanel
           order={order}
@@ -1539,6 +1811,18 @@ export function OrderWorkspace({
               {(close) => (
                 <MoveItemsForm order={order} otherChecks={otherChecks} canOpenNew={abilities.newCheck} onDone={close} />
               )}
+            </DialogAction>
+          </div>
+        )}
+
+        {open && seated && abilities.newCheck && splitPlan && (
+          <div className="border-t border-neutral-200 pt-2">
+            <DialogAction
+              label="Split by seat"
+              title="Split the check by seat"
+              description="Each seat gets its own check at this table. Prices, item discounts and kitchen work go with the items."
+            >
+              {(close) => <SplitBySeatForm order={order} plan={splitPlan} onDone={close} />}
             </DialogAction>
           </div>
         )}

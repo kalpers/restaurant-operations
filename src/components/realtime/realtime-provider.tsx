@@ -98,6 +98,8 @@ const EVENT_TYPES = [
   "reservation.checked-in",
   "reservation.no-show",
   "reservation.seated",
+  // Phase 29: an item's seat changed after SEND.
+  "order.item-seat-changed",
   // Phase 27: the floor and the waitlist.
   ...FLOOR_EVENT_TYPES,
   ...WAITLIST_EVENT_TYPES,

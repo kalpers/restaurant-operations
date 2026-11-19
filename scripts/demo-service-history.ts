@@ -1195,7 +1195,7 @@ async function serveCheck(
     : await createOrder(database, owner, { orderType: "TAKEOUT", customerName: `Takeout ${check.key.split("#")[1]}` });
   let version = order.version;
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     version = (
       await addDraftItem(database, owner, order.id, {
         expectedVersion: version,
@@ -1203,6 +1203,8 @@ async function serveCheck(
         quantity: line.quantity,
         selections: line.modifierCodes.map((code) => need(context.picks, code, "modifier")),
         specialInstructions: null,
+        // Phase 29 (policy 12): dining room lines are rung by seat, in turn around the table.
+        seatNumber: check.kind === "DINE_IN" ? (index % Math.max(1, check.partySize)) + 1 : null,
       })
     ).orderVersion;
   }

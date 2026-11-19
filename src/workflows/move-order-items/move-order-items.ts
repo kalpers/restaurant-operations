@@ -37,7 +37,7 @@ export type MoveItemsResult = {
   transferGroupId: string;
 };
 
-type Locked = Awaited<ReturnType<typeof lockOrder>>;
+export type Locked = Awaited<ReturnType<typeof lockOrder>>;
 
 /** Both orders are locked in UUID order, so two opposite moves can't deadlock. */
 async function lockBoth(
@@ -123,93 +123,108 @@ export async function moveOrderItems(
           );
         }
 
-        assertOrderOpen(source.status);
-        assertOrderOpen(target.status);
-
-        if (source.tableSessionId === null || source.orderType === "TAKEOUT" || target.orderType === "TAKEOUT") {
-          throw new BusinessRuleError("TAKEOUT_CANNOT_SPLIT", "Takeout orders can't be split into checks.");
-        }
-
-        if (target.tableSessionId !== source.tableSessionId) {
-          throw new BusinessRuleError("DIFFERENT_SESSION", "Items can only move between checks at the same table.");
-        }
-
-        await assertNoOpenSettlement(transaction, source.id);
-        await assertNoOpenSettlement(transaction, target.id);
-
-        const rows = await transaction
-          .select({ id: orderItems.id, status: orderItems.status })
-          .from(orderItems)
-          .where(and(eq(orderItems.orderId, source.id), inArray(orderItems.id, itemIds)))
-          .for("update");
-
-        if (rows.length !== itemIds.length) {
-          throw new NotFoundError("order item");
-        }
-
-        if (rows.some((row) => row.status === "VOIDED")) {
-          throw new BusinessRuleError("ITEM_VOIDED", "A voided item can't be moved.");
-        }
-
-        const transferGroupId = randomUUID();
-
-        // The transfer rows first: the database lets a sent item change order only alongside one.
-        await transaction.insert(orderItemTransfers).values(
-          itemIds.map((orderItemId) => ({
-            organizationId: actor.organizationId,
-            orderItemId,
-            fromOrderId: source.id,
-            toOrderId: target.id,
-            transferGroupId,
-            movedByUserId: actor.userId,
-          })),
-        );
-        await transaction
-          .update(orderItems)
-          .set({ orderId: target.id, updatedAt: new Date() })
-          .where(inArray(orderItems.id, itemIds));
-
-        const updatedSource = await recomputeAndBumpOrder(transaction, source.id);
-        const updatedTarget = await recomputeAndBumpOrder(transaction, target.id);
-        const at = new Date();
-
-        await writeOutboxEvents(
-          transaction,
-          [source.id, target.id].map((orderId) => ({
-            organizationId: actor.organizationId,
-            locationId: actor.locationId,
-            eventType: "order.items-moved",
-            aggregateType: "order",
-            aggregateId: orderId,
-            payload: { fromOrderId: source.id, toOrderId: target.id, orderItemIds: itemIds },
-            occurredAt: at,
-          })),
-        );
-        await recordAudit(transaction, actor, {
-          action: "orders.items-moved",
-          entityId: source.id,
-          occurredAt: at,
-          after: {
-            fromOrderNumber: source.orderNumber,
-            toOrderId: target.id,
-            toOrderNumber: target.orderNumber,
-            orderItemIds: itemIds,
-            itemCount: itemIds.length,
-          },
-        });
-
-        return {
-          sourceOrderId: source.id,
-          sourceVersion: updatedSource.version,
-          targetOrderId: target.id,
-          targetOrderNumber: target.orderNumber,
-          targetVersion: updatedTarget.version,
-          movedItemIds: itemIds,
-          transferGroupId,
-        };
+        return moveItemsInTransaction(transaction, actor, source, target, itemIds);
       },
     ),
   );
 
   return { ...outcome.response, replayed: outcome.replayed };
+}
+
+/**
+ * The move itself, inside the caller's transaction, with both orders already locked: checks,
+ * transfer rows, the order change, recompute, outbox and audit. Phase 29's split by seat runs
+ * it once per seat, so every split is made of ordinary moves.
+ */
+export async function moveItemsInTransaction(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  source: Locked,
+  target: Locked,
+  itemIds: string[],
+): Promise<MoveItemsResult> {
+  assertOrderOpen(source.status);
+  assertOrderOpen(target.status);
+
+  if (source.tableSessionId === null || source.orderType === "TAKEOUT" || target.orderType === "TAKEOUT") {
+    throw new BusinessRuleError("TAKEOUT_CANNOT_SPLIT", "Takeout orders can't be split into checks.");
+  }
+
+  if (target.tableSessionId !== source.tableSessionId) {
+    throw new BusinessRuleError("DIFFERENT_SESSION", "Items can only move between checks at the same table.");
+  }
+
+  await assertNoOpenSettlement(transaction, source.id);
+  await assertNoOpenSettlement(transaction, target.id);
+
+  const rows = await transaction
+    .select({ id: orderItems.id, status: orderItems.status })
+    .from(orderItems)
+    .where(and(eq(orderItems.orderId, source.id), inArray(orderItems.id, itemIds)))
+    .for("update");
+
+  if (rows.length !== itemIds.length) {
+    throw new NotFoundError("order item");
+  }
+
+  if (rows.some((row) => row.status === "VOIDED")) {
+    throw new BusinessRuleError("ITEM_VOIDED", "A voided item can't be moved.");
+  }
+
+  const transferGroupId = randomUUID();
+
+  // The transfer rows first: the database lets a sent item change order only alongside one.
+  await transaction.insert(orderItemTransfers).values(
+    itemIds.map((orderItemId) => ({
+      organizationId: actor.organizationId,
+      orderItemId,
+      fromOrderId: source.id,
+      toOrderId: target.id,
+      transferGroupId,
+      movedByUserId: actor.userId,
+    })),
+  );
+  await transaction
+    .update(orderItems)
+    .set({ orderId: target.id, updatedAt: new Date() })
+    .where(inArray(orderItems.id, itemIds));
+
+  const updatedSource = await recomputeAndBumpOrder(transaction, source.id);
+  const updatedTarget = await recomputeAndBumpOrder(transaction, target.id);
+  const at = new Date();
+
+  await writeOutboxEvents(
+    transaction,
+    [source.id, target.id].map((orderId) => ({
+      organizationId: actor.organizationId,
+      locationId: actor.locationId,
+      eventType: "order.items-moved",
+      aggregateType: "order",
+      aggregateId: orderId,
+      payload: { fromOrderId: source.id, toOrderId: target.id, orderItemIds: itemIds },
+      occurredAt: at,
+    })),
+  );
+  await recordAudit(transaction, actor, {
+    action: "orders.items-moved",
+    entityId: source.id,
+    occurredAt: at,
+    after: {
+      fromOrderNumber: source.orderNumber,
+      toOrderId: target.id,
+      toOrderNumber: target.orderNumber,
+      orderItemIds: itemIds,
+      itemCount: itemIds.length,
+    },
+  });
+
+  return {
+    sourceOrderId: source.id,
+    sourceVersion: updatedSource.version,
+    targetOrderId: target.id,
+    targetOrderNumber: target.orderNumber,
+    targetVersion: updatedTarget.version,
+    movedItemIds: itemIds,
+    transferGroupId,
+  };
 }
