@@ -304,3 +304,5 @@ Risks
 Remaining issues
 Next-phase readiness
 ```
+
+Phase 30 Guest Loyalty (approved by the owner on 2026-11-19) supersedes this plan's ban on loyalty: guest profiles may now earn and redeem points (see `docs/Phase-30-Guest-Loyalty.md`). The bans on marketing consent, marketing messages and guest list export still stand.

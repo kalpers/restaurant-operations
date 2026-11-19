@@ -67,6 +67,8 @@ const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "bar.view",
   // Phase 21: look up the guest at the table.
   "guests.view",
+  // Phase 30: redeem the guest's loyalty reward on the check.
+  "loyalty.redeem",
 ];
 
 /** The starting role-permission matrix. Later changes use a new versioned seed. */
@@ -140,6 +142,10 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "guests.manage",
       "guests.merge",
       "recipes.allergens.manage",
+      // Phase 30: guest loyalty.
+      "loyalty.redeem",
+      "loyalty.adjust",
+      "loyalty.manage",
       // Phase 22: online booking and guest messages.
       "reservations.online.manage",
       "messages.view",

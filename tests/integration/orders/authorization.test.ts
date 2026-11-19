@@ -317,4 +317,17 @@ describe("order module boundaries", () => {
       }
     }
   });
+
+  // Phase 30 (policy 3): loyalty belongs to Reservations; redemption and posting at close run
+  // in workflows, and Orders only applies the discount it is handed. (Orders reads the
+  // party's allergies from Reservations since Phase 21; that stays allowed.)
+  it("never reaches into loyalty data or services", () => {
+    for (const file of files.filter((entry) => entry.includes(path.join("src", "modules", "orders")))) {
+      const text = readFileSync(file, "utf8");
+
+      for (const forbidden of ["guestLoyalty", "guest_loyalty", "loyalty-service", "loyalty-ledger"]) {
+        expect(`${file}: ${text.includes(forbidden)}`).toBe(`${file}: false`);
+      }
+    }
+  });
 });

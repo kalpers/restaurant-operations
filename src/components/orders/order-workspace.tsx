@@ -28,6 +28,7 @@ import {
 import { sumDecimals } from "@/shared/decimal/decimal";
 
 import { AllergyPanel, ItemAllergenNote, type AllergenChoice } from "./allergy-panel";
+import { LoyaltyRewardsPanel, type LoyaltyPanelData } from "./loyalty-rewards-panel";
 import { callOrderApi, formatMoney, newIdempotencyKey, ORDER_TYPE_LABELS } from "./order-api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/components/forms/page-location";
@@ -89,6 +90,8 @@ type Props = {
   otherChecks: OtherCheck[];
   /** Phase 21: the allergen list, for recording allergies. */
   allergens: AllergenChoice[];
+  /** Phase 30: the linked guest's points and rewards, when the program is on. */
+  loyalty?: LoyaltyPanelData | null;
 };
 
 type ActionError = { code: string; message: string; requestId?: string };
@@ -1639,6 +1642,7 @@ export function OrderWorkspace({
   heldCourses,
   otherChecks,
   allergens,
+  loyalty = null,
 }: Props) {
   useRealtimeRefresh(FULFILLMENT_EVENTS, 60_000);
   const [seat, setSeat] = useState<number | null>(1);
@@ -1700,6 +1704,8 @@ export function OrderWorkspace({
           canEdit={open && abilities.edit}
           canSaveToProfile={abilities.saveAllergyToProfile}
         />
+
+        {loyalty && <LoyaltyRewardsPanel order={order} loyalty={loyalty} />}
 
         <section aria-label="Unsent items" className="grid gap-2">
           <h2 className="flex items-center gap-2 font-semibold">

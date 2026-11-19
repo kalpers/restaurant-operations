@@ -8,6 +8,7 @@ import { requirePageActor } from "@/modules/auth/guards";
 import { getOrderSettlementView } from "@/modules/settlements/queries/settlement-queries";
 import { actorHolds } from "@/modules/settlements/services/access";
 import { getDrawerSetting, listOpenSessionsForCash } from "@/modules/settlements/services/drawer-service";
+import { getVisitEarningForOrder } from "@/modules/reservations/services/loyalty-service";
 import { listRefundsForOrder } from "@/modules/settlements/services/refund-service";
 import { TENDER_PERMISSIONS, TENDER_TYPES } from "@/modules/settlements/types";
 import { NotFoundError } from "@/shared/errors/app-error";
@@ -50,6 +51,8 @@ export default async function SettlementPage({ params }: { params: Promise<{ ord
     : [];
   const drawerRequired = canSeeDrawers ? (await getDrawerSetting(database, actor)).required : false;
   const refunds = view.order.status === "CLOSED" ? await listRefundsForOrder(database, actor, view.order.id) : [];
+  // Phase 30 (amendment 7): a refund changes no points; show what the visit earned.
+  const visitEarning = view.order.status === "CLOSED" ? await getVisitEarningForOrder(database, actor, view.order.id) : null;
 
   return (
     <>
@@ -66,6 +69,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ ord
         drawers={drawers}
         drawerRequired={drawerRequired}
         refunds={refunds}
+        visitEarning={visitEarning}
       />
     </>
   );

@@ -35,6 +35,7 @@ import {
   securityGuestProfilesPermissionsSeed,
 } from "./guest-profiles-permissions";
 import { securityGuestMessagingPermissionsSeed } from "./guest-messaging-permissions";
+import { securityLoyaltyPermissionsSeed } from "./loyalty-permissions";
 import { securityLocationsLotsPermissionsSeed } from "./locations-lots-permissions";
 
 /** Seeds run in this order. Later phases register their seeds here. */
@@ -66,4 +67,5 @@ export const seeds: readonly Seed[] = [
   recipesAllergenFoundationSeed,
   securityGuestMessagingPermissionsSeed,
   securityLocationsLotsPermissionsSeed,
+  securityLoyaltyPermissionsSeed,
 ];

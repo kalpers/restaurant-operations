@@ -16,6 +16,7 @@ import { inventorySections } from "../queries/inventory-report";
 import { laborSections } from "../queries/labor-report";
 import { menuSections } from "../queries/menu-report";
 import { orderSections } from "../queries/order-report";
+import { loyaltySections } from "../queries/loyalty-report";
 import { pricePeriodsSection } from "../queries/price-period-report";
 import { salesForecastAccuracySection, salesForecastSections } from "../queries/sales-forecast-report";
 import { loadLocationClock, loadReportContext, type ReportContext } from "../queries/report-context";
@@ -52,6 +53,8 @@ export const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<Re
     await pricePeriodsSection(context),
     ...(await salesForecastSections(context)),
     await salesForecastAccuracySection(context),
+    // Phase 30 (policy 16, amendment 1): loyalty points and rewards.
+    ...(await loyaltySections(context)),
   ],
   menu: async (context) => [...(await menuSections(context)), ...(await itemMixSections(context))],
   settlements: settlementSections,

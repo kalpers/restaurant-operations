@@ -44,6 +44,8 @@ import {
   tipPoolRules,
 } from "@/db/schema";
 
+import { clearLoyaltyData } from "./loyalty-cleanup";
+
 const APPEND_ONLY = [
   "order_status_history",
   "order_item_status_history",
@@ -95,6 +97,9 @@ export async function clearOrderData(database: Database): Promise<void> {
   }
 
   await database.transaction(async (transaction) => {
+    // Phase 30: loyalty rows point at orders and discounts.
+    await clearLoyaltyData(transaction);
+
     for (const table of APPEND_ONLY) {
       await transaction.execute(`ALTER TABLE ${table} DISABLE TRIGGER ${table}_append_only_trigger` as never);
     }

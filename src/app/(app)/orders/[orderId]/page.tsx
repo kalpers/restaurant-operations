@@ -18,6 +18,7 @@ import { getOrderDetail, listOrders } from "@/modules/orders/queries/order-queri
 import { actorHolds } from "@/modules/orders/services/access";
 import { listDiscountDefinitions } from "@/modules/orders/services/discount-service";
 import { listAllergens } from "@/modules/recipes/queries/allergen-facts";
+import { getProfileLoyalty, listLoyaltyRewards } from "@/modules/reservations/services/loyalty-service";
 import { NotFoundError } from "@/shared/errors/app-error";
 
 export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
@@ -90,6 +91,29 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     categories.push(...byCategory.values());
   }
 
+  // Phase 30 (policy 15): the linked guest's points and the rewards, when the program is on.
+  const profile = order.allergy.profile;
+  const profileLoyalty = profile ? await getProfileLoyalty(database, actor, profile.id) : null;
+  const loyalty =
+    profile && profileLoyalty?.enabled
+      ? {
+          profileName: profile.displayName,
+          balance: profileLoyalty.balance,
+          available: profileLoyalty.available,
+          canRedeem: actor.permissions.has("loyalty.redeem"),
+          rewards: actor.permissions.has("loyalty.redeem")
+            ? (await listLoyaltyRewards(database, actor)).map((reward) => ({
+                id: reward.id,
+                name: reward.name,
+                pointsCost: reward.pointsCost,
+                scope: reward.scope,
+                discountType: reward.discountType,
+                value: reward.value,
+              }))
+            : [],
+        }
+      : null;
+
   const discounts: DiscountChoice[] = abilities.discount
     ? (await listDiscountDefinitions(database, actor)).map((entry) => ({
         id: entry.id,
@@ -119,6 +143,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
         heldCourses={heldCourses}
         otherChecks={otherChecks}
         allergens={allergens}
+        loyalty={loyalty}
       />
     </>
   );

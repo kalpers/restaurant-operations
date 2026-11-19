@@ -4,6 +4,7 @@ export * from "./auditing";
 export * from "./auth";
 export * from "./drawers";
 export * from "./employees";
+export * from "./guest-loyalty";
 export * from "./guest-messaging";
 export * from "./guest-parties";
 export * from "./infrastructure";

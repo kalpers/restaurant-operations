@@ -1908,3 +1908,5 @@ The owner approved Phase 21 Guest Profiles and Allergens on 2026-11-12. It super
 ## Amendment (Phase 22, 2026-11-12)
 
 The owner approved Phase 22 Online Reservations and Guest Messaging on 2026-11-12. It supersedes "Do not implement external SMS/email notification in Phase 6" and "Do not add third-party messaging ... packages" for guest service messages (confirmations, changes, cancellations, reminders and table-ready texts), sent only with the visit's consent through the provider-neutral messaging port, and adds a public online booking page. The rule against sending messages or calling outside systems inside seating or reservation transactions still stands: messages are queued in the transaction and sent by the dispatcher after commit. External reservation networks and marketing remain out. See `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md`.
+
+Phase 30 Guest Loyalty (approved by the owner on 2026-11-19) supersedes this plan's ban on loyalty: guest profiles may now earn and redeem points (see `docs/Phase-30-Guest-Loyalty.md`). The bans on marketing consent, marketing messages and guest list export still stand.

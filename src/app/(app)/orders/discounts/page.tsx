@@ -68,7 +68,19 @@ export default async function DiscountsPage() {
                 {definition.discountType === "PERCENTAGE" ? `${definition.value}%` : formatMoney(definition.value)}
                 {definition.active ? "" : " · inactive"}
               </p>
-              <p className="mb-2 text-sm text-neutral-600">{definition.code}</p>
+              <p className="mb-2 text-sm text-neutral-600">
+                {definition.code}
+                {definition.rewardOnly ? " · loyalty reward" : ""}
+              </p>
+              {definition.rewardOnly ? (
+                <p className="text-sm">
+                  Used only by a loyalty reward. Change it on the{" "}
+                  <Link href="/host/guests/loyalty" className="underline">
+                    Loyalty page
+                  </Link>
+                  .
+                </p>
+              ) : (
               <details>
                 <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium">Edit</summary>
                 <EntityForm
@@ -83,6 +95,7 @@ export default async function DiscountsPage() {
                   ]}
                 />
               </details>
+              )}
             </li>
           ))}
         </ul>

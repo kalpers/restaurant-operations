@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { IDEMPOTENCY_KEY_PATTERN } from "@/infrastructure/idempotency/idempotency-service";
+import { DISCOUNT_SCOPES, DISCOUNT_TYPES } from "@/modules/orders/types";
+
 import {
   CREATABLE_RESERVATION_STATUSES,
   RESERVATION_SOURCES,
@@ -277,3 +280,49 @@ export const onlineBookingSchema = z
     idempotencyKey: z.uuid(),
   })
   .strict();
+
+// Phase 30 guest loyalty (policies 5, 7, 8, 12). Shape only.
+const rate = z.int().min(0).max(100);
+const points = z.int().min(-1_000_000).max(1_000_000);
+const decimalValue = z.string().trim().regex(/^\d+(\.\d+)?$/);
+
+export const loyaltyProgramSchema = z.object({
+  enabled: z.boolean(),
+  pointsPerDollar: rate,
+  pointsPerVisit: rate,
+  expectedVersion: z.int().min(0),
+});
+
+export const loyaltyRewardIdParamsSchema = z.object({ rewardId: z.uuid() });
+
+export const createLoyaltyRewardSchema = z.object({
+  name: requiredText(80),
+  pointsCost: z.int().min(1).max(1_000_000),
+  scope: z.enum(DISCOUNT_SCOPES),
+  discountType: z.enum(DISCOUNT_TYPES),
+  value: decimalValue,
+});
+
+export const updateLoyaltyRewardSchema = z.object({
+  expectedVersion,
+  name: requiredText(80),
+  pointsCost: z.int().min(1).max(1_000_000),
+  value: decimalValue,
+  active: z.boolean(),
+});
+
+export const listLoyaltyRewardsQuerySchema = z.object({
+  includeInactive: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
+});
+
+export const adjustLoyaltyPointsSchema = z.object({ points, reason: requiredText(200) });
+
+export const redeemLoyaltyRewardSchema = z.object({
+  rewardId: z.uuid(),
+  orderItemId: z.uuid().optional(),
+  expectedVersion,
+  idempotencyKey: z.string().regex(IDEMPOTENCY_KEY_PATTERN),
+});

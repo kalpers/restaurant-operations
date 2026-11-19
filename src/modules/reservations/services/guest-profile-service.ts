@@ -20,6 +20,8 @@ import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import { assertNoCardNumbers, normalizeGuestEmail, normalizePhone, searchAsPhone } from "../rules/guest-contact";
+import { partyHasRedemption } from "./loyalty-ledger";
+import { clearLoyaltyBalanceOnErase, moveLoyaltyBalanceOnMerge } from "./loyalty-service";
 import { actorHolds, assertPermission } from "./guest-access";
 import { eraseVisitMessaging } from "./guest-message-service";
 
@@ -555,6 +557,16 @@ export async function getGuestProfile(executor: DatabaseExecutor, actor: Actor, 
 
 // ------------------------------------------------------------------ linking (policy 2)
 
+/** Phase 30 (policy 10): a visit with a loyalty reward keeps its guest. */
+async function assertNoRewardOnParty(transaction: DatabaseTransaction, partyId: string) {
+  if (await partyHasRedemption(transaction, partyId)) {
+    throw new BusinessRuleError(
+      "REWARD_APPLIED",
+      "A loyalty reward was used on this visit, so its guest can't change.",
+    );
+  }
+}
+
 async function lockOpenParty(transaction: DatabaseTransaction, actor: Actor, partyId: string, expectedVersion?: number) {
   const [party] = await transaction
     .select()
@@ -594,6 +606,10 @@ export async function attachProfileToParty(
 
   if (party.guestProfileId === profile.id) {
     return { guestPartyId: party.id, version: party.version };
+  }
+
+  if (party.guestProfileId) {
+    await assertNoRewardOnParty(transaction, party.id);
   }
 
   await transaction
@@ -641,6 +657,8 @@ export async function unlinkPartyProfile(
     if (!party.guestProfileId) {
       return { guestPartyId: party.id, version: party.version };
     }
+
+    await assertNoRewardOnParty(transaction, party.id);
 
     const [profile] = await transaction
       .select({ id: guestProfiles.id, profileNumber: guestProfiles.profileNumber })
@@ -713,6 +731,8 @@ export async function mergeGuestProfiles(
       throw new ConcurrencyError("guest profile", kept.id);
     }
 
+    // Phase 30 (policy 10): the duplicate's points move to the profile kept.
+    const pointsMoved = await moveLoyaltyBalanceOnMerge(transaction, actor, duplicate.id, kept.id, now);
     const keptAllergies = new Map((await profileAllergyRows(transaction, kept.id)).map((row) => [row.allergenId, row]));
     const duplicateAllergies = await profileAllergyRows(transaction, duplicate.id);
     let allergiesAdded = 0;
@@ -768,6 +788,7 @@ export async function mergeGuestProfiles(
         keptProfileNumber: kept.profileNumber,
         partiesMoved: moved.length,
         allergiesAdded,
+        pointsMoved,
         reason,
       },
     });
@@ -800,6 +821,8 @@ export async function eraseGuestProfile(
   return withTransaction(database, async (transaction) => {
     const now = new Date();
     const profile = await lockActiveProfile(transaction, actor, input.profileId, input.expectedVersion);
+    // Phase 30 (policy 10): the balance goes to zero with an ERASED entry; the entries stay.
+    const pointsCleared = await clearLoyaltyBalanceOnErase(transaction, actor, profile.id, now);
     // Profiles merged into this one, directly or through a chain, hold the same guest's data.
     // Their parties moved at merge, so the parties to clear are this profile's.
     const mergedRows = await transaction.execute<{ id: string }>(sql`
@@ -884,6 +907,7 @@ export async function eraseGuestProfile(
         profileNumber: profile.profileNumber,
         partiesCleared: partyIds.length,
         mergedProfilesCleared: mergedIds.length,
+        pointsCleared,
         reason,
       },
     });

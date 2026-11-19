@@ -52,6 +52,7 @@ export type NavigationIcon =
   | "suggested-orders"
   | "prep-list"
   | "guests"
+  | "loyalty"
   | "allergens"
   | "happy-hour"
   | "exports";
@@ -91,6 +92,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/host/reservations", label: "Reservations", permission: "reservations.view", group: "service", icon: "reservations" },
   { href: "/host/waitlist", label: "Waitlist", permission: "waitlist.view", group: "service", icon: "waitlist" },
   { href: "/host/guests", label: "Guests", permission: "guests.view", group: "service", icon: "guests" },
+  { href: "/host/guests/loyalty", label: "Loyalty", permission: "loyalty.manage", group: "service", icon: "loyalty" },
   { href: "/orders", label: "Orders", permission: "orders.view", group: "service", icon: "orders" },
   { href: "/kitchen", label: "Kitchen", permission: "kitchen.view", group: "service", icon: "kitchen" },
   { href: "/bar", label: "Bar", permission: "bar.view", group: "service", icon: "bar" },

@@ -16,6 +16,7 @@ import {
 import {
   employees,
   guestParties,
+  inventoryItems,
   kitchenTicketItems,
   locations,
   menuItems,
@@ -32,10 +33,13 @@ import {
   shiftAssignments,
   shifts,
   tableSessions,
+  tableSessionTables,
 } from "../src/db/schema";
 import type { Actor } from "../src/modules/auth/types";
 import { changeCompensation } from "../src/modules/employees/services/compensation-service";
 import { createEmployee } from "../src/modules/employees/services/employee-service";
+import { recordAdjustment } from "../src/modules/inventory/services/stock-operations";
+import type { StockShortage } from "../src/modules/inventory/services/order-consumption";
 import { transitionTicketItem } from "../src/modules/kitchen/services/fulfillment-service";
 import { addDraftItem } from "../src/modules/orders/services/draft-item-service";
 import { createOrder } from "../src/modules/orders/services/order-service";
@@ -55,6 +59,7 @@ import {
   openDrawerSession,
 } from "../src/modules/settlements/services/drawer-service";
 import { openSettlement, recordTender } from "../src/modules/settlements/services/settlement-service";
+import { AppError } from "../src/shared/errors/app-error";
 import { addDays, localDateOf, localTimeOf } from "../src/shared/time/zoned-time";
 import { completeSettlement } from "../src/workflows/close-order/complete-settlement";
 import { completeTableSession } from "../src/workflows/end-table-session/end-table-session";
@@ -193,7 +198,7 @@ export async function seedValidationFixture(database: Database, actor: Actor): P
   // ---- A completed dine-in visit: reservation, check-in, seating, the canonical burger,
   // kitchen, cash settlement, the guests leave, the table is cleaned.
   const [diner] = await database
-    .select({ id: reservations.id, status: reservations.status })
+    .select({ id: reservations.id, status: reservations.status, guestPartyId: reservations.guestPartyId })
     .from(reservations)
     .innerJoin(guestParties, eq(guestParties.id, reservations.guestPartyId))
     .where(and(eq(reservations.locationId, actor.locationId), eq(guestParties.guestName, VALIDATION_DINER)));
@@ -237,6 +242,10 @@ export async function seedValidationFixture(database: Database, actor: Actor): P
     const dirty = (await getFloorStatus(database, actor)).find((candidate) => candidate.id === table.id)!;
 
     await cleanTable(database, actor, table.id, { expectedVersion: dirty.version });
+    dineIn = true;
+  } else if (diner.status === "SEATED" && (await finishSeatedVisit(database, actor, diner.guestPartyId))) {
+    // An earlier run stopped after seating (for example, refused for stock at SEND) and the
+    // check was settled since: the visit is finished the way the fixture would have.
     dineIn = true;
   } else if (diner.status !== "COMPLETED") {
     throw new Error(
@@ -430,15 +439,8 @@ async function sellAndSettle(database: Database, actor: Actor, order: { id: stri
     specialInstructions: null,
   });
 
-  await sendOrderItems(database, actor, order.id, { expectedVersion: drafted.orderVersion, idempotencyKey: key() });
-
-  for (const action of ["start", "ready", "complete"] as const) {
-    const items = await database.select().from(kitchenTicketItems).where(eq(kitchenTicketItems.orderId, order.id));
-
-    for (const item of items) {
-      await transitionTicketItem(database, actor, item.id, action, { expectedVersion: item.version });
-    }
-  }
+  await sendWithStock(database, actor, order.id, drafted.orderVersion);
+  await completeKitchenWork(database, actor, order.id);
 
   const opened = await openSettlement(database, actor, order.id);
   const recorded = await recordTender(database, actor, opened.settlementId, {
@@ -464,4 +466,108 @@ async function sellAndSettle(database: Database, actor: Actor, order: { id: stri
     expectedVersion: settlement?.version ?? recorded.settlementVersion,
     idempotencyKey: key(),
   });
+}
+
+/**
+ * Sends the order. On a dev database whose demo service history has used up the demo kitchen's
+ * stock, SEND refuses with the shortages and writes nothing; the fixture then records the
+ * missing stock as found (an audited Inventory adjustment, as the lots fixture does) and sends
+ * again. A lot-tracked item's found stock gets a use-by date a week out.
+ */
+async function sendWithStock(database: Database, actor: Actor, orderId: string, expectedVersion: number) {
+  try {
+    await sendOrderItems(database, actor, orderId, { expectedVersion, idempotencyKey: key() });
+
+    return;
+  } catch (error) {
+    if (!(error instanceof AppError) || error.code !== "INSUFFICIENT_STOCK") {
+      throw error;
+    }
+
+    const { shortages } = error.details as { shortages: StockShortage[] };
+    const expires = new Date();
+
+    expires.setUTCDate(expires.getUTCDate() + 7);
+
+    for (const shortage of shortages) {
+      const [item] = await database
+        .select({ lotTracked: inventoryItems.lotTracked })
+        .from(inventoryItems)
+        .where(eq(inventoryItems.id, shortage.inventoryItemId));
+
+      await recordAdjustment(database, actor, {
+        inventoryItemId: shortage.inventoryItemId,
+        quantity: shortage.shortage,
+        unitOfMeasureId: shortage.baseUnitId,
+        direction: "INCREASE",
+        reasonCode: "FOUND_STOCK",
+        expiresOn: item?.lotTracked ? expires.toISOString().slice(0, 10) : null,
+        notes: "Phase 13 validation fixture: stock for the canonical burger",
+      });
+    }
+  }
+
+  await sendOrderItems(database, actor, orderId, { expectedVersion, idempotencyKey: key() });
+}
+
+/** Moves the order's kitchen work on to COMPLETED from wherever it is. */
+async function completeKitchenWork(database: Database, actor: Actor, orderId: string) {
+  const steps = { NEW: ["start", "ready", "complete"], PREPARING: ["ready", "complete"], READY: ["complete"] } as const;
+  const items = await database.select().from(kitchenTicketItems).where(eq(kitchenTicketItems.orderId, orderId));
+
+  for (const item of items) {
+    let version = item.version;
+
+    for (const action of steps[item.status as keyof typeof steps] ?? []) {
+      version = (await transitionTicketItem(database, actor, item.id, action, { expectedVersion: version })).version;
+    }
+  }
+}
+
+/**
+ * Finishes a SEATED validation visit whose checks are all closed: its kitchen work completes,
+ * the guests leave (the session ends, which completes the party and reservation) and the table
+ * is cleaned. Returns false, changing nothing, while any check is still open.
+ */
+async function finishSeatedVisit(database: Database, actor: Actor, guestPartyId: string): Promise<boolean> {
+  const [session] = await database
+    .select({ id: tableSessions.id, version: tableSessions.version })
+    .from(tableSessions)
+    .where(and(eq(tableSessions.guestPartyId, guestPartyId), eq(tableSessions.status, "ACTIVE")));
+
+  if (!session) {
+    return false;
+  }
+
+  const checks = await database
+    .select({ id: orders.id, status: orders.status })
+    .from(orders)
+    .where(eq(orders.tableSessionId, session.id));
+
+  if (checks.some((check) => check.status === "OPEN")) {
+    return false;
+  }
+
+  for (const check of checks) {
+    await completeKitchenWork(database, actor, check.id);
+  }
+
+  const tables = await database
+    .select({ id: tableSessionTables.restaurantTableId })
+    .from(tableSessionTables)
+    .where(eq(tableSessionTables.tableSessionId, session.id));
+
+  await completeTableSession(database, actor, session.id, { expectedVersion: session.version });
+
+  const floor = await getFloorStatus(database, actor);
+
+  for (const table of tables) {
+    const dirty = floor.find((candidate) => candidate.id === table.id);
+
+    if (dirty?.condition === "DIRTY") {
+      await cleanTable(database, actor, table.id, { expectedVersion: dirty.version });
+    }
+  }
+
+  return true;
 }

@@ -176,6 +176,17 @@ Open **Guests** (under **Service**, or the tab at the host stand) to find a gues
 - **Merge:** a manager opens the duplicate, finds the profile to keep, gives a reason and confirms. Visits and allergies move over (the more severe allergy wins), and the duplicate closes. A merge can't be undone.
 - **Erase:** when a guest asks to be forgotten, an owner or general manager chooses **Erase personal data**. The name becomes "Erased guest" and contact details, notes, preferences and allergies are removed from the profile, any profile merged into it and its past visits. Orders and reports are kept. Don't put the guest's name in the reason.
 
+### Loyalty points
+
+When the program is on, a guest earns points on each visit that is linked to their profile. **Link the profile at the host stand before the guests leave**: points are worked out when the table session ends, from the closed checks' subtotals (after discounts, before tax and tips), and a visit can't be linked afterwards. Takeout and tabs with no guest party don't earn.
+
+- **Set up:** a manager opens **Loyalty** (under **Service**), ticks **Guests earn and redeem points**, sets the points per $1 and per visit, and adds rewards. A reward costs points and takes an amount or percentage off one item or the whole check (100% makes the item free). Changing the rates affects visits that finish afterwards only.
+- **Redeem:** on the order screen, the **Loyalty** box shows the linked guest's available points. Choose a reward they can afford (and the item, for an item reward) and **Redeem**. It appears on the check as a discount named "Loyalty: …". The points stay on the guest's balance, shown as not available, until the check closes; if a manager removes the discount first, nothing is taken.
+- **Profile:** the guest's profile shows the balance, what's available, rewards on open checks and every change with its business date. A manager can **Adjust points** with a reason (for example a goodwill gift or a mistake).
+- **Merge and erase:** merging moves the duplicate's points to the profile kept; erasing clears the balance. Both wait until no reward is on an open check. A visit that used a reward keeps its guest (it can't be unlinked).
+- **Refunds** don't change points. The refund screen shows what the visit earned, with a link to adjust if needed.
+- Reports: **Sales** shows points earned, redeemed and adjusted per day, rewards used and their discount, and the points guests hold now.
+
 ### Allergens
 
 Managers and inventory managers set allergens up. On each inventory item, under **Allergens**, tick what the ingredient contains and choose **Save and mark reviewed**, even when it contains none. On a menu item, the **Allergens** section shows the label worked out from its recipe; declare **Contains** for what the recipe doesn't show (an item with no recipe) and **May contain** for cross-contact, then save. **Allergens** under **Back of house** lists ingredients in current recipes that nobody has reviewed, and manages the allergen list. Until every ingredient of an item is reviewed, the item shows **Allergens incomplete**, which servers treat as a possible match. Labels are only as good as this data.
@@ -274,7 +285,7 @@ The bell shows in-app notices for you: food and drinks ready, low stock, a publi
 ## Current Scope Notes
 
 - The application records settlement details but does not process payments.
-- Guest profiles have no loyalty points or marketing. Messages to guests are about their own booking only: no newsletters or offers, and guests can't reply except STOP. Staff notifications stay in the app; staff get no texts or emails. Allergies apply to the whole party or check, not to one seat. Nutrition facts aren't shown.
+- Loyalty is points only: no tiers, no points expiring, no birthday rewards, and guests can't see their balance online. There is no marketing. Messages to guests are about their own booking only: no newsletters or offers, and guests can't reply except STOP. Staff notifications stay in the app; staff get no texts or emails. Allergies apply to the whole party or check, not to one seat. Nutrition facts aren't shown.
 - Online booking takes no deposits or card details, and isn't connected to OpenTable, Resy or similar services. Guests change a booking by cancelling and booking again, or by calling.
 - Compound or stacked taxes, service charges and splitting a check evenly by amount aren't supported.
 - A closed check can't be reopened; corrections after closing are refund records.

@@ -718,13 +718,44 @@ export const AUDIT_ACTIONS = {
     category: "GUESTS",
     entityType: "guest_profile",
     scope: "ORGANIZATION",
-    fields: ["profileNumber", "keptProfileNumber", "partiesMoved", "allergiesAdded", "reason"],
+    fields: ["profileNumber", "keptProfileNumber", "partiesMoved", "allergiesAdded", "pointsMoved", "reason"],
   },
   "guests.profile-erased": {
     category: "GUESTS",
     entityType: "guest_profile",
     scope: "ORGANIZATION",
-    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "reason"],
+    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "pointsCleared", "reason"],
+  },
+  // Phase 30 guest loyalty (policy 14). Earning and posting at close are recorded by the ledger.
+  "loyalty.program-changed": {
+    category: "GUESTS",
+    entityType: "loyalty_program",
+    scope: "ORGANIZATION",
+    fields: ["enabled", "pointsPerDollar", "pointsPerVisit"],
+  },
+  "loyalty.reward-created": {
+    category: "GUESTS",
+    entityType: "loyalty_reward",
+    scope: "ORGANIZATION",
+    fields: ["rewardNumber", "name", "pointsCost", "scope", "discountType", "value", "active"],
+  },
+  "loyalty.reward-updated": {
+    category: "GUESTS",
+    entityType: "loyalty_reward",
+    scope: "ORGANIZATION",
+    fields: ["rewardNumber", "name", "pointsCost", "scope", "discountType", "value", "active"],
+  },
+  "loyalty.reward-redeemed": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "LOCATION",
+    fields: ["profileNumber", "rewardNumber", "pointsCost", "orderId", "orderItemId", "discountId"],
+  },
+  "loyalty.points-adjusted": {
+    category: "GUESTS",
+    entityType: "guest_profile",
+    scope: "ORGANIZATION",
+    fields: ["profileNumber", "points", "balanceAfter", "reason"],
   },
   // Phase 22 (policy 17): one unlinked visit's personal data erased.
   "guests.visit-erased": {

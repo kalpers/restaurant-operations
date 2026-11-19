@@ -58,6 +58,8 @@ import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
 import { createEmployee } from "@/modules/employees/services/employee-service";
 
+import { clearLoyaltyData } from "./loyalty-cleanup";
+
 import {
   actorAt,
   createOrganizationFixture,
@@ -179,6 +181,8 @@ export function createEmployeeFixture(
  */
 export async function clearGuestProfileData(database: Database): Promise<void> {
   await database.transaction(async (transaction) => {
+    // Phase 30: loyalty rows point at parties and profiles.
+    await clearLoyaltyData(transaction);
     await transaction.execute(sql`ALTER TABLE guest_profiles DISABLE TRIGGER guest_profiles_guard`);
     await transaction.execute(sql`ALTER TABLE guest_profile_merges DISABLE TRIGGER guest_profile_merges_guard`);
     await transaction.delete(guestPartyAllergies);

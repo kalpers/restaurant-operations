@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import { isUniqueViolation } from "@/db/helpers/database-errors";
@@ -69,6 +69,7 @@ export async function listDiscountDefinitions(
       scope: discountDefinitions.scope,
       discountType: discountDefinitions.discountType,
       value: discountDefinitions.value,
+      rewardOnly: discountDefinitions.rewardOnly,
       active: discountDefinitions.active,
       version: discountDefinitions.version,
     })
@@ -76,7 +77,11 @@ export async function listDiscountDefinitions(
     .where(
       and(
         eq(discountDefinitions.organizationId, actor.organizationId),
-        includeInactive ? undefined : eq(discountDefinitions.active, true),
+        // Phase 30 (policy 7): reward-only discounts are never offered in the picker; the
+        // Discounts page lists them read-only.
+        includeInactive
+          ? undefined
+          : and(eq(discountDefinitions.active, true), eq(discountDefinitions.rewardOnly, false)),
       ),
     )
     .orderBy(asc(discountDefinitions.name));
@@ -123,7 +128,7 @@ export async function updateDiscountDefinition(
   assertPermission(actor, "orders.discount.manage");
 
   const [existing] = await database
-    .select({ discountType: discountDefinitions.discountType })
+    .select({ discountType: discountDefinitions.discountType, rewardOnly: discountDefinitions.rewardOnly })
     .from(discountDefinitions)
     .where(
       and(eq(discountDefinitions.id, definitionId), eq(discountDefinitions.organizationId, actor.organizationId)),
@@ -131,6 +136,10 @@ export async function updateDiscountDefinition(
 
   if (!existing) {
     throw new NotFoundError("discount");
+  }
+
+  if (existing.rewardOnly) {
+    throw rewardOnlyError();
   }
 
   assertValidValue(existing.discountType as DiscountType, input.value);
@@ -146,11 +155,77 @@ export async function updateDiscountDefinition(
   return { id: row.id, version: row.version };
 }
 
+function rewardOnlyError() {
+  return new BusinessRuleError(
+    "REWARD_ONLY_DISCOUNT",
+    "That discount belongs to a loyalty reward. Redeem the reward, or change it on the Loyalty page.",
+  );
+}
+
+/**
+ * Phase 30 (policy 7, amendment 4): a reward's own discount definition, created with the
+ * reward in the caller's transaction. The Loyalty service checks `loyalty.manage`.
+ */
+export async function createRewardDiscountDefinition(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  input: DiscountDefinitionInput,
+): Promise<string> {
+  assertValidValue(input.discountType, input.value);
+
+  const [row] = await transaction
+    .insert(discountDefinitions)
+    .values({
+      organizationId: actor.organizationId,
+      code: input.code,
+      name: input.name.trim(),
+      scope: input.scope,
+      discountType: input.discountType,
+      value: toScale(input.value, 2),
+      rewardOnly: true,
+    })
+    .returning({ id: discountDefinitions.id });
+
+  return row!.id;
+}
+
+/** Changes a reward's discount for later redemptions; applied snapshots never change. */
+export async function updateRewardDiscountDefinition(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  definitionId: string,
+  input: { name: string; value: string; active: boolean },
+): Promise<void> {
+  const [existing] = await transaction
+    .select({ discountType: discountDefinitions.discountType, rewardOnly: discountDefinitions.rewardOnly })
+    .from(discountDefinitions)
+    .where(and(eq(discountDefinitions.id, definitionId), eq(discountDefinitions.organizationId, actor.organizationId)))
+    .for("update");
+
+  if (!existing?.rewardOnly) {
+    throw new NotFoundError("discount");
+  }
+
+  assertValidValue(existing.discountType as DiscountType, input.value);
+
+  await transaction
+    .update(discountDefinitions)
+    .set({
+      name: input.name.trim(),
+      value: toScale(input.value, 2),
+      active: input.active,
+      version: sql`${discountDefinitions.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(discountDefinitions.id, definitionId));
+}
+
 async function requireActiveDefinition(
   transaction: DatabaseTransaction,
   actor: Actor,
   definitionId: string,
   scope: DiscountScope,
+  allowRewardOnly = false,
 ) {
   const [definition] = await transaction
     .select()
@@ -165,6 +240,10 @@ async function requireActiveDefinition(
 
   if (!definition.active) {
     throw new BusinessRuleError("DISCOUNT_INACTIVE", "That discount isn't active.");
+  }
+
+  if (definition.rewardOnly && !allowRewardOnly) {
+    throw rewardOnlyError();
   }
 
   if (definition.scope !== scope) {
@@ -198,19 +277,32 @@ function snapshot(definition: typeof discountDefinitions.$inferSelect, actor: Ac
   };
 }
 
-export async function applyOrderDiscount(
-  database: Database,
+export type DiscountApplication = {
+  discountDefinitionId: string;
+  reason: string;
+  expectedVersion: number;
+  /** An ITEM-scope discount names the SUBMITTED item. */
+  orderItemId?: string;
+};
+
+/**
+ * Applies a discount inside the caller's transaction, with every discount rule except the
+ * permission check, which each caller makes: the routes below need `orders.discount.apply`,
+ * and Phase 30 reward redemption needs `loyalty.redeem` (amendment 3). A reward-only
+ * definition applies only when `allowRewardOnly` is set.
+ */
+export async function applyDiscountInTransaction(
+  transaction: DatabaseTransaction,
   actor: Actor,
   orderId: string,
-  input: { discountDefinitionId: string; reason: string; expectedVersion: number },
+  input: DiscountApplication,
+  options: { allowRewardOnly?: boolean } = {},
 ) {
-  assertPermission(actor, "orders.discount.apply");
+  const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
 
-  return withTransaction(database, async (transaction) => {
-    const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
+  assertOrderOpen(order.status);
 
-    assertOrderOpen(order.status);
-
+  if (input.orderItemId === undefined) {
     if (compareDecimals(order.itemSubtotal, "0") <= 0) {
       throw new BusinessRuleError(
         "NOTHING_TO_DISCOUNT",
@@ -218,7 +310,13 @@ export async function applyOrderDiscount(
       );
     }
 
-    const definition = await requireActiveDefinition(transaction, actor, input.discountDefinitionId, "ORDER");
+    const definition = await requireActiveDefinition(
+      transaction,
+      actor,
+      input.discountDefinitionId,
+      "ORDER",
+      options.allowRewardOnly,
+    );
     const [row] = await transaction
       .insert(orderDiscounts)
       .values({ orderId, ...snapshot(definition, actor, input.reason) })
@@ -235,7 +333,67 @@ export async function applyOrderDiscount(
       after: { discountId: row!.id, definitionCode: definition.code, ...applied },
     });
 
-    return { discountId: row!.id, orderVersion: updated.version };
+    return { discountId: row!.id, orderVersion: updated.version, scope: "ORDER" as const, amount: applied!.amount };
+  }
+
+  const [item] = await transaction
+    .select({ status: orderItems.status })
+    .from(orderItems)
+    .where(and(eq(orderItems.id, input.orderItemId), eq(orderItems.orderId, orderId)));
+
+  if (!item) {
+    throw new NotFoundError("order item");
+  }
+
+  if (item.status !== "SUBMITTED") {
+    throw new BusinessRuleError(
+      "ITEM_NOT_DISCOUNTABLE",
+      item.status === "DRAFT" ? "Send the item before discounting it." : "A voided item can't be discounted.",
+    );
+  }
+
+  const definition = await requireActiveDefinition(
+    transaction,
+    actor,
+    input.discountDefinitionId,
+    "ITEM",
+    options.allowRewardOnly,
+  );
+  const [row] = await transaction
+    .insert(orderItemDiscounts)
+    .values({ orderItemId: input.orderItemId, ...snapshot(definition, actor, input.reason) })
+    .returning({ id: orderItemDiscounts.id });
+  const updated = await recomputeAndBumpOrder(transaction, orderId);
+  const [applied] = await transaction
+    .select({
+      amount: orderItemDiscounts.appliedAmount,
+      isComp: orderItemDiscounts.isComp,
+      reason: orderItemDiscounts.reason,
+    })
+    .from(orderItemDiscounts)
+    .where(eq(orderItemDiscounts.id, row!.id));
+
+  await recordAudit(transaction, actor, {
+    action: "orders.discount-applied",
+    entityId: orderId,
+    after: { discountId: row!.id, orderItemId: input.orderItemId, definitionCode: definition.code, ...applied },
+  });
+
+  return { discountId: row!.id, orderVersion: updated.version, scope: "ITEM" as const, amount: applied!.amount };
+}
+
+export async function applyOrderDiscount(
+  database: Database,
+  actor: Actor,
+  orderId: string,
+  input: { discountDefinitionId: string; reason: string; expectedVersion: number },
+) {
+  assertPermission(actor, "orders.discount.apply");
+
+  return withTransaction(database, async (transaction) => {
+    const applied = await applyDiscountInTransaction(transaction, actor, orderId, input);
+
+    return { discountId: applied.discountId, orderVersion: applied.orderVersion };
   });
 }
 
@@ -249,48 +407,9 @@ export async function applyItemDiscount(
   assertPermission(actor, "orders.discount.apply");
 
   return withTransaction(database, async (transaction) => {
-    const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
+    const applied = await applyDiscountInTransaction(transaction, actor, orderId, { ...input, orderItemId: itemId });
 
-    assertOrderOpen(order.status);
-
-    const [item] = await transaction
-      .select({ status: orderItems.status })
-      .from(orderItems)
-      .where(and(eq(orderItems.id, itemId), eq(orderItems.orderId, orderId)));
-
-    if (!item) {
-      throw new NotFoundError("order item");
-    }
-
-    if (item.status !== "SUBMITTED") {
-      throw new BusinessRuleError(
-        "ITEM_NOT_DISCOUNTABLE",
-        item.status === "DRAFT" ? "Send the item before discounting it." : "A voided item can't be discounted.",
-      );
-    }
-
-    const definition = await requireActiveDefinition(transaction, actor, input.discountDefinitionId, "ITEM");
-    const [row] = await transaction
-      .insert(orderItemDiscounts)
-      .values({ orderItemId: itemId, ...snapshot(definition, actor, input.reason) })
-      .returning({ id: orderItemDiscounts.id });
-    const updated = await recomputeAndBumpOrder(transaction, orderId);
-    const [applied] = await transaction
-      .select({
-        amount: orderItemDiscounts.appliedAmount,
-        isComp: orderItemDiscounts.isComp,
-        reason: orderItemDiscounts.reason,
-      })
-      .from(orderItemDiscounts)
-      .where(eq(orderItemDiscounts.id, row!.id));
-
-    await recordAudit(transaction, actor, {
-      action: "orders.discount-applied",
-      entityId: orderId,
-      after: { discountId: row!.id, orderItemId: itemId, definitionCode: definition.code, ...applied },
-    });
-
-    return { discountId: row!.id, orderVersion: updated.version };
+    return { discountId: applied.discountId, orderVersion: applied.orderVersion };
   });
 }
 

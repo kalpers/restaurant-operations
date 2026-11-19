@@ -90,6 +90,10 @@ export const PERMISSION_CATALOG = [
   { code: "guests.manage", name: "Create and edit guest profiles and link them to parties", category: "Guests" },
   { code: "guests.merge", name: "Merge duplicate guest profiles", category: "Guests" },
   { code: "guests.erase", name: "Erase a guest profile's personal data", category: "Guests" },
+  // Phase 30 guest loyalty (policy 13, D13).
+  { code: "loyalty.redeem", name: "Redeem a guest's loyalty reward on a check", category: "Guests" },
+  { code: "loyalty.adjust", name: "Add or remove a guest's loyalty points with a reason", category: "Guests" },
+  { code: "loyalty.manage", name: "Manage the loyalty program and rewards", category: "Guests" },
 
   { code: "menu.view", name: "View menu", category: "Menu" },
   { code: "menu.edit", name: "Edit menu", category: "Menu" },

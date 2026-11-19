@@ -16,6 +16,7 @@ import {
   refreshSettlementTotals,
 } from "@/modules/settlements/repositories/settlement-repository";
 import { assertCanComplete, assertSettlementOpen } from "@/modules/settlements/rules/settlement-math";
+import { postRedemptionsForClosedOrder } from "@/modules/reservations/services/loyalty-service";
 import { assertPermission } from "@/modules/settlements/services/access";
 import { lockSettlementWithOrder, settlementEvent } from "@/modules/settlements/services/settlement-service";
 import { COMPLETE_SCOPE } from "@/modules/settlements/types";
@@ -114,6 +115,9 @@ export async function completeSettlement(
           userId: actor.userId,
           at: now,
         });
+
+        // Phase 30 (policy 9): rewards still applied on the check now leave the guest's points.
+        await postRedemptionsForClosedOrder(transaction, actor, order.id, now);
 
         await writeOutboxEvents(transaction, [
           settlementEvent(actor, "settlement.completed", settlement, now),

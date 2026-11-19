@@ -768,12 +768,22 @@ export function SettlementWorkspace({
   drawers,
   drawerRequired,
   refunds,
+  visitEarning = null,
 }: {
   view: OrderSettlementView;
   abilities: SettlementAbilities;
   drawers: DrawerChoice[];
   drawerRequired: boolean;
   refunds: RefundLine[];
+  /** Phase 30 (amendment 7): what this check's visit earned in loyalty points. */
+  visitEarning?: {
+    profileId: string;
+    profileNumber: number;
+    points: number;
+    eligibleSubtotal: string | null;
+    pointsPerDollar: number | null;
+    pointsPerVisit: number | null;
+  } | null;
 }) {
   useRealtimeRefresh(EVENTS, 60_000);
   const open = useAction();
@@ -868,6 +878,17 @@ export function SettlementWorkspace({
               </ul>
             ) : (
               <p className="text-sm text-neutral-600">No refunds on this check.</p>
+            )}
+            {visitEarning && (
+              <p className="text-sm" data-testid="refund-loyalty-note">
+                This visit earned {visitEarning.points} loyalty points (on ${visitEarning.eligibleSubtotal},{" "}
+                {visitEarning.pointsPerDollar} per $1 and {visitEarning.pointsPerVisit} per visit). A refund doesn&apos;t
+                change points;{" "}
+                <a href={`/host/guests/${visitEarning.profileId}`} className="underline">
+                  adjust them on profile #{visitEarning.profileNumber}
+                </a>{" "}
+                if needed.
+              </p>
             )}
             {abilities.refund && <RefundForm view={view} drawers={drawers} drawerRequired={drawerRequired} />}
           </section>

@@ -14,6 +14,7 @@ import { listAllergens } from "@/modules/recipes/queries/allergen-facts";
 import { getGuestVisits } from "@/modules/reservations/queries/guest-visits";
 import { actorHolds } from "@/modules/reservations/services/guest-access";
 import { getGuestProfile } from "@/modules/reservations/services/guest-profile-service";
+import { getProfileLoyalty } from "@/modules/reservations/services/loyalty-service";
 import { NotFoundError } from "@/shared/errors/app-error";
 import { formatInstant } from "@/shared/time/format-instant";
 
@@ -27,7 +28,37 @@ const STATUS_LABELS: Record<string, string> = {
   NO_SHOW: "No-show",
 };
 
-/** Phase 21 (policies 1-5, 16): one guest's profile, allergies and visits. */
+const ENTRY_LABELS: Record<string, string> = {
+  EARNED: "Earned",
+  REDEEMED: "Reward used",
+  ADJUSTED: "Adjusted",
+  MERGED_OUT: "Moved to another profile (merge)",
+  MERGED_IN: "Moved in from a merged profile",
+  ERASED: "Cleared (erased)",
+};
+
+function loyaltyEntryLabel(entry: {
+  kind: string;
+  orderNumber: number | null;
+  eligibleSubtotal: string | null;
+  pointsPerDollar: number | null;
+  pointsPerVisit: number | null;
+  reason: string | null;
+}): string {
+  const label = ENTRY_LABELS[entry.kind] ?? entry.kind;
+
+  if (entry.kind === "EARNED") {
+    return `${label} on $${entry.eligibleSubtotal} (${entry.pointsPerDollar} per $1, ${entry.pointsPerVisit} per visit)`;
+  }
+
+  if (entry.kind === "REDEEMED" && entry.orderNumber !== null) {
+    return `${label} on check #${entry.orderNumber}`;
+  }
+
+  return entry.reason ? `${label}: ${entry.reason}` : label;
+}
+
+/** Phase 21 (policies 1-5, 16): one guest's profile, allergies and visits; Phase 30 points. */
 export default async function GuestProfilePage({ params }: { params: Promise<{ profileId: string }> }) {
   const { actor } = await requirePageActor("guests.view");
   const parsed = z.uuid().safeParse((await params).profileId);
@@ -44,9 +75,10 @@ export default async function GuestProfilePage({ params }: { params: Promise<{ p
 
     throw error;
   });
-  const [{ summary, visits }, allergens] = await Promise.all([
+  const [{ summary, visits }, allergens, loyalty] = await Promise.all([
     getGuestVisits(database, actor, profile.id),
     listAllergens(database, actor.organizationId),
+    getProfileLoyalty(database, actor, profile.id),
   ]);
   const active = profile.status === "ACTIVE";
   const canManage = active && actorHolds(actor, "guests.manage");
@@ -97,6 +129,80 @@ export default async function GuestProfilePage({ params }: { params: Promise<{ p
           <span className="text-xl font-semibold">{summary.averageSpend ? `$${summary.averageSpend}` : "—"}</span>
         </p>
       </section>
+
+      {(loyalty.enabled || loyalty.entries.length > 0) && (
+        <section aria-label="Loyalty points" className="mb-8 rounded-lg border border-neutral-200 bg-surface p-4 shadow-sm">
+          <h2 className="mb-1 text-xl font-semibold">Loyalty points</h2>
+          <p className="mb-3 text-sm text-neutral-600">
+            Earned when a linked visit&apos;s table session ends. A reward&apos;s points leave when its check closes.
+          </p>
+          <div className="mb-3 flex flex-wrap gap-6">
+            <p>
+              <span className="block text-sm text-neutral-600">Balance</span>
+              <span className="text-xl font-semibold" data-testid="loyalty-balance">
+                {loyalty.balance}
+              </span>
+            </p>
+            <p>
+              <span className="block text-sm text-neutral-600">Available</span>
+              <span className="text-xl font-semibold" data-testid="loyalty-available">
+                {loyalty.available}
+              </span>
+            </p>
+          </div>
+          {loyalty.pending.length > 0 && (
+            <p className="mb-3 text-sm">
+              On open checks: {loyalty.pending.map((entry) => `${entry.rewardName} (${entry.pointsCost})`).join(", ")}
+            </p>
+          )}
+          {loyalty.entries.length === 0 ? (
+            <p className="text-sm">No points yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-neutral-600">
+                    <th className="py-1 pr-3 font-medium">Business date</th>
+                    <th className="py-1 pr-3 font-medium">What</th>
+                    <th className="py-1 pr-3 text-right font-medium">Points</th>
+                    <th className="py-1 pr-3 text-right font-medium">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loyalty.entries.map((entry) => (
+                    <tr key={entry.id} className="border-t border-neutral-200">
+                      <td className="py-1 pr-3">{entry.businessDate ?? "—"}</td>
+                      <td className="py-1 pr-3">{loyaltyEntryLabel(entry)}</td>
+                      <td className="py-1 pr-3 text-right tabular-nums">
+                        {entry.points > 0 ? `+${entry.points}` : entry.points}
+                      </td>
+                      <td className="py-1 pr-3 text-right tabular-nums">{entry.balanceAfter}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {active && actorHolds(actor, "loyalty.adjust") && (
+            <details className="mt-3">
+              <summary className="cursor-pointer text-sm font-medium">Adjust points</summary>
+              <div className="mt-2">
+                <EntityForm
+                  method="POST"
+                  url={`/api/guests/${profile.id}/loyalty/adjustments`}
+                  submitLabel="Adjust points"
+                  successMessage="Points adjusted."
+                  resetOnSuccess
+                  fields={[
+                    { name: "points", label: "Points (negative to remove)", type: "number", required: true },
+                    { name: "reason", label: "Reason", required: true },
+                  ]}
+                />
+              </div>
+            </details>
+          )}
+        </section>
+      )}
 
       <section aria-label="Allergies" className="mb-8 rounded-lg border border-neutral-200 bg-surface p-4 shadow-sm">
         <h2 className="mb-1 text-xl font-semibold">Allergies</h2>

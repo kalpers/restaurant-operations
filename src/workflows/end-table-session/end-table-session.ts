@@ -6,6 +6,7 @@ import {
   markPartyCompleted,
   revertPartySeating,
 } from "@/modules/reservations/services/party-state";
+import { earnPointsForFinishedParty } from "@/modules/reservations/services/loyalty-service";
 import {
   cancelSessionInTransaction,
   completeSessionInTransaction,
@@ -50,8 +51,9 @@ async function mapOpenOrders<Result>(work: () => Promise<Result>): Promise<Resul
 
 /**
  * Completes a session and, in the same transaction, finishes the visit of the Guest Party
- * and reservation seated in it. The Restaurant domain still owns the session; this
- * workflow only orchestrates, so there is no trigger between the two domains.
+ * and reservation seated in it, and posts the linked guest's loyalty points (Phase 30). The
+ * Restaurant domain still owns the session; this workflow only orchestrates, so there is no
+ * trigger between the domains.
  */
 export async function completeTableSession(
   database: Database,
@@ -70,13 +72,18 @@ export async function completeTableSession(
     await assertNoOpenOrders(transaction, sessionId);
 
     if (ended.guestPartyId) {
+      const now = new Date();
+
       await markPartyCompleted(
         transaction,
         actor,
         actor.locationId,
         ended.guestPartyId,
-        new Date(),
+        now,
       );
+      // Phase 30 (policy 4): the visit is finished and its guest link can no longer change, so
+      // a linked guest earns now, once, from the party's CLOSED checks.
+      await earnPointsForFinishedParty(transaction, actor, ended.guestPartyId, now);
     }
 
     return { id: ended.id, version: ended.version };

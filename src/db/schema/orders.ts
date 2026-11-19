@@ -557,6 +557,8 @@ export const discountDefinitions = pgTable(
     discountType: text("discount_type").notNull(),
     /** FIXED_AMOUNT: dollars. PERCENTAGE: percent, above 0 and at most 100. */
     value: money("value").notNull(),
+    /** Phase 30 (policy 7): applied only by redeeming a loyalty reward, never from the picker. */
+    rewardOnly: boolean("reward_only").notNull().default(false),
     active: activeColumn(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

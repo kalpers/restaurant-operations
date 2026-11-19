@@ -24,6 +24,7 @@ import { seedDemoPrepHistory } from "./demo-prep-history";
 import { seedDemoServiceHistory } from "./demo-service-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
+import { seedDemoLoyalty } from "./demo-loyalty";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
 async function versionOf(employeeId: string): Promise<number> {
@@ -279,6 +280,17 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo pricing and nutrition: ${extras.periods} happy hour added (weekdays 16:00-18:00, bar), ${extras.facts} ingredients given nutrition facts; existing ones were left alone.`,
+    );
+
+    // Phase 30 (policy 16): the loyalty program, two rewards and starting points for the demo guests.
+    const loyalty = await seedDemoLoyalty(
+      database,
+      await mainOwnerActor("loyalty.manage"),
+      await mainOwnerActor("loyalty.adjust"),
+    );
+
+    console.log(
+      `Demo loyalty: program ${loyalty.programEnabled ? "turned on (1 point per $1, 5 per visit)" : "left as it was"}, ${loyalty.rewards} rewards added, ${loyalty.profiles} demo guests given starting points.`,
     );
   } finally {
     await closeDatabase();

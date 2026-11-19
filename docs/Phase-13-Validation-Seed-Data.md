@@ -26,7 +26,9 @@ The services commit their own transactions, so the fixture is not one transactio
 - the schedule, by period name, then its shifts and assignments;
 - the visits, by guest or customer name.
 
-An interrupted run therefore resumes without duplicates. If an earlier run stopped partway through a visit, the script stops and says which record to finish or cancel in the app. A completed run is recorded as `phase13.validation-fixtures` in `seed_runs` and skipped from then on.
+An interrupted run therefore resumes without duplicates. If an earlier run stopped partway through a visit, the script stops and says which record to finish or cancel in the app. One case is finished for you (added 2026-11-19): when the validation diner is still SEATED but every check at its table is closed, the script completes the check's kitchen work, ends the table session (which completes the party and reservation) and cleans the table, as the run would have.
+
+**Stock on a dev database with demo history.** Six weeks of `db:seed:demo` service history can use up the demo kitchen's beef and buns at MAIN, so SEND refuses the canonical burger with `INSUFFICIENT_STOCK`. The refusal writes nothing. The script then records exactly the reported shortage as found stock (an `ADJUST_INCREASE`, reason `FOUND_STOCK`, note "Phase 13 validation fixture: stock for the canonical burger", through the Inventory service; a lot-tracked item gets a use-by date a week out) and sends again. Ledger and balance stay equal. A completed run is recorded as `phase13.validation-fixtures` in `seed_runs` and skipped from then on.
 
 The records are dated when the script runs, because the services use the real clock. The schedule week has its own explicit dates.
 

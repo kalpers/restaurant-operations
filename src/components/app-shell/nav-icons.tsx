@@ -1,6 +1,7 @@
 import {
   Activity,
   BookUser,
+  Gift,
   Wheat,
   Ban,
   Beer,
@@ -100,6 +101,7 @@ export const NAV_ICONS: Record<NavigationIcon, LucideIcon> = {
   "eighty-six": Ban,
   "suggested-orders": PackagePlus,
   guests: BookUser,
+  loyalty: Gift,
   allergens: Wheat,
   "happy-hour": Beer,
   exports: FileSpreadsheet,

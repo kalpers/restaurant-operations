@@ -475,13 +475,16 @@ describe("reporting", () => {
         "serverPerformance",
         "adjustmentsByEmployee",
       ]);
-      // Phase 28 sections follow sales by hour.
-      expect((await report("sales")).sections.map((entry) => entry.key).slice(-5)).toEqual([
+      // Phase 28 sections follow sales by hour; Phase 30 loyalty sections come last.
+      expect((await report("sales")).sections.map((entry) => entry.key).slice(-8)).toEqual([
         "salesByHour",
         "pricePeriods",
         "salesForecast",
         "salesForecastHours",
         "salesForecastAccuracy",
+        "loyaltyPoints",
+        "loyaltyRewards",
+        "loyaltyOutstanding",
       ]);
     });
 

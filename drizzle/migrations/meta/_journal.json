@@ -491,6 +491,20 @@
       "when": 1795093825066,
       "tag": "0069_seat_numbers_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1795103478427,
+      "tag": "0070_guest_loyalty",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1795103482117,
+      "tag": "0071_guest_loyalty_guards",
+      "breakpoints": true
     }
   ]
 }

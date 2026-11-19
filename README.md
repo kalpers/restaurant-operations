@@ -598,6 +598,12 @@ guest_profile_number_counters
 guest_profile_allergies
 guest_profile_merges
 guest_party_allergies
+guest_loyalty_programs
+guest_loyalty_entries
+guest_loyalty_balances
+guest_loyalty_rewards
+guest_loyalty_reward_number_counters
+guest_loyalty_redemptions
 ```
 
 `waitlist_table_assignments` keeps the host's planned table selection as replaceable history, and `reservation_hold_overrides` is the append-only record of a manager seating an unrelated party under a hold. Neither is an audit log, and the Guest Party link is a nullable `table_sessions.guest_party_id`.
@@ -658,7 +664,9 @@ These are distinct calculations. A `NO_SHOW` is a manual transition allowed only
 
 Takeout must not be represented by a fake table.
 
-Phase 21 adds guest profiles, owned by this domain: a guest known across visits, organization-wide, with optional phone and email (normalized for lookup, not unique), a VIP flag, preferences, notes and allergies. A Guest Party links to a profile by hand (`guest_parties.guest_profile_id`); suggestions match phone, email or name, but nothing links itself. Linking copies the profile's allergies onto the visit (`guest_party_allergies`, source `PROFILE`); staff may add allergies for the visit only (`RECORDED`). Duplicates are merged by a manager (the duplicate becomes `MERGED`, never undone, with a `guest_profile_merges` row). Erasing a profile clears its personal data, that of profiles merged into it and the contact details of its visits, and keeps orders and history. Visit history is worked out on read from linked parties and order snapshots. Contact details need `guests.contact.view`; audit rows name fields and allergen codes only. Loyalty and marketing consent are not built. See section 33.
+Phase 21 adds guest profiles, owned by this domain: a guest known across visits, organization-wide, with optional phone and email (normalized for lookup, not unique), a VIP flag, preferences, notes and allergies. A Guest Party links to a profile by hand (`guest_parties.guest_profile_id`); suggestions match phone, email or name, but nothing links itself. Linking copies the profile's allergies onto the visit (`guest_party_allergies`, source `PROFILE`); staff may add allergies for the visit only (`RECORDED`). Duplicates are merged by a manager (the duplicate becomes `MERGED`, never undone, with a `guest_profile_merges` row). Erasing a profile clears its personal data, that of profiles merged into it and the contact details of its visits, and keeps orders and history. Visit history is worked out on read from linked parties and order snapshots. Contact details need `guests.contact.view`; audit rows name fields and allergen codes only. Marketing consent is not built. See section 33.
+
+Phase 30 adds guest loyalty to this domain (tables `guest_loyalty_programs`, `guest_loyalty_entries`, `guest_loyalty_balances`, `guest_loyalty_rewards`, `guest_loyalty_reward_number_counters`, `guest_loyalty_redemptions`). One program per organization, off until a manager enables it. A party linked to an ACTIVE profile earns once, when its table session ends: floor(sum of its CLOSED checks' `subtotal` × points per dollar) plus points per visit when at least one check is CLOSED; both rates are stored on the `EARNED` entry and nothing is recalculated. The entries are append-only (`EARNED`, `REDEEMED`, `ADJUSTED`, `MERGED_OUT`, `MERGED_IN`, `ERASED`), each with its `balance_after`, and the profile's balance row changes with them in one transaction. Rewards are reward-only discount definitions: the `redeem-loyalty-reward` workflow applies one to an OPEN check of the linked party (`loyalty.redeem`, idempotent), the points stay pending until `close-order` posts `REDEEMED` for a discount still applied with an amount above zero. Merge moves the balance, erase brings it to zero, both refused while a reward is pending; unlinking is refused once the party has a reward. Refunds change no points; managers adjust under `loyalty.adjust`. Marketing consent, marketing messages and guest-facing balances are not built. See section 33.
 
 Phase 22 adds online booking and guest messaging to this domain. A location may take bookings on a public, signed-out page (`/book/{location code}`): off until a manager turns it on, times offered from booking hours (`online_booking_periods`) every 15, 30 or 60 minutes, limited by lead time, a booking window, a party size limit and pacing (covers starting per slot), checked again under a location lock when the booking is made. Online bookings are `source = 'ONLINE'` with no creating user (a `GUEST` actor in audit), `CONFIRMED` or, when the location requires approval, `PENDING`; tables are still planned by the host, and a booking is never linked to a profile automatically. Guests view or cancel through a private link whose token is stored only as a SHA-256 hash (`reservation_manage_links`). Service messages (confirmed, received, changed, cancelled, reminder, table ready) go by email or SMS only with the visit's consent per channel (`guest_party_message_consents`) and never to an address on the opt-out list (`message_suppressions`, a keyed hash). Erase also clears consents, message addresses and bodies, and manage links. See sections 22 and 33.
 
@@ -916,6 +924,8 @@ Inventory reversal depends upon physical disposition:
 
 Discounts and comps do not automatically restore inventory.
 
+Phase 30: a discount definition may be `reward_only`. It belongs to one loyalty reward, is never offered in the discount picker, and the ordinary apply and edit refuse it (`REWARD_ONLY_DISCOUNT`). The `redeem-loyalty-reward` workflow applies it through the same discount rules (snapshot, reason, recompute, `orders.discount-applied` audit), needing `loyalty.redeem` rather than `orders.discount.apply`. Removing it is an ordinary discount removal. Tax, totals and settlement are unchanged.
+
 ## 18. Domain 11: Kitchen and Bar
 
 Tables:
@@ -1088,6 +1098,8 @@ Reporting areas include:
 - Reservations and waitlist metrics
 - Table turnover and utilization
 - Kitchen and bar performance
+
+Phase 30 adds loyalty to the Sales area (`reports.sales`): points earned, redeemed, adjusted and other (merges and erasures) by business date at the location, rewards redeemed with their points and the discount frozen on the check, and outstanding points across the organization. No guest names or contact details, in the page or the CSV.
 
 Phase 19 adds, inside the existing areas and permissions: sales by hour (Sales), item mix and menu engineering (Menu), server performance and voids, comps and discounts by employee (Orders), and 86 history (Inventory). Phase 20 adds a sales-by-hour chart, item mix and menu engineering by category, tax included in prices and tax-exempt checks (Sales), tip refunds and declared cash tips (Tips), and daily overtime in actual labor. See section 33.
 
@@ -1977,6 +1989,21 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 30 Guest Loyalty
+
+Phase 30 builds guest loyalty, lifting the contract's "no loyalty" rule only; marketing consent, marketing messages and guest list export stay banned (plan approved 2026-11-19, D1–D16 as recommended, with nine amendments). Plan: `docs/Phase-30-Guest-Loyalty.md`. Report: `docs/Phase-30-Completion-Report.md`.
+
+- **Program** (section 13): `guest_loyalty_programs`, one per organization, off until enabled; whole points per $1 of subtotal and per visit (0 to 100); `enabled_at` is set on the first enable. Managed on `/host/guests/loyalty` (`loyalty.manage`).
+- **Earning:** in `end-table-session`, when the party becomes `COMPLETED` and is linked to an ACTIVE profile: floor(sum of its CLOSED checks' `subtotal` × points per dollar) + points per visit when at least one check is CLOSED, once per party (partial unique index), rates stored on the entry. Takeout and tabs with no party never earn.
+- **Ledger:** `guest_loyalty_entries` (`EARNED`, `REDEEMED`, `ADJUSTED`, `MERGED_OUT`, `MERGED_IN`, `ERASED`), signed whole points with `balance_after`, location and business date; `guest_loyalty_balances` changes with each entry under a row lock. Migration `0071` refuses UPDATE and DELETE, a broken running balance and a balance row out of step with its latest entry.
+- **Rewards:** `guest_loyalty_rewards` (number, name, cost) each with its own reward-only discount definition `LOYALTY-<n>` (section 17); deactivated, never deleted.
+- **Redemption:** `POST /api/orders/{id}/loyalty-rewards` (`loyalty.redeem`, idempotency scope `loyalty.redeem`, the order's `expectedVersion`): OPEN check, no OPEN settlement, party linked to an ACTIVE profile, available points (balance less pending rewards) cover the cost. Writes `guest_loyalty_redemptions`. Locks the order, then the balance. `close-order` posts `REDEEMED` for each reward still applied with an amount above zero.
+- **Unlink, merge, erase:** unlinking or relinking a visit with a reward is refused (`REWARD_APPLIED`); merge moves the duplicate's points (`MERGED_OUT` / `MERGED_IN`) and erase brings the balance to zero (`ERASED`), both refused while a reward is pending (`REWARD_PENDING`). Refunds change no points; the refund screen shows what the visit earned.
+- **Adjustments:** `POST /api/guests/{id}/loyalty/adjustments` (`loyalty.adjust`, reason required, never below zero available points). Profile page: balance, available, pending rewards and history.
+- **Permissions** (152 in all): `loyalty.redeem` (Server, Bartender, Manager), `loyalty.adjust` and `loyalty.manage` (Manager), plus Owner and General Manager; seeded by `security.loyalty-permissions`. Audit actions `loyalty.program-changed`, `loyalty.reward-created`, `loyalty.reward-updated`, `loyalty.reward-redeemed`, `loyalty.points-adjusted` (category GUESTS); merge and erase audit rows gain `pointsMoved` and `pointsCleared`. No outbox event.
+- **Demo data:** `db:seed:demo` turns the program on (1 per $1, 5 per visit), adds two rewards and gives the demo guests starting points.
+- **Migrations:** `0070` (tables and `discount_definitions.reward_only`) and `0071` (custom: the ledger, balance, redemption, reward and reward-only guards).
+
 ### Phase 29 Seat Numbers and Split by Seat
 
 Phase 29 lets servers ring items by seat and split a check into one check per seat (plan approved 2026-11-18, D1–D12 as recommended, with five amendments). Plan: `docs/Phase-29-Seat-Numbers-and-Split-by-Seat.md`. Report: `docs/Phase-29-Completion-Report.md`.
@@ -2332,6 +2359,12 @@ A seat number on order items (1 to 30, or Table), editable after SEND while the 
 
 Requested and approved by the owner on 2026-11-18, with decisions D1–D12 as recommended in the plan.
 
+### Phase 30: Guest Loyalty
+
+One points program per organization: a linked visit earns when its session ends, from its closed checks' subtotals; rewards are reward-only discounts redeemed on a check and posted when it closes; an append-only points ledger with merge and erase rules, adjustments and a loyalty report in Sales. Marketing stays banned. Three new permissions (152). Plan: `docs/Phase-30-Guest-Loyalty.md`.
+
+Requested and approved by the owner on 2026-11-19, with decisions D1–D16 as recommended in the plan.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2429,7 +2462,7 @@ The same idempotency key sent twice for step 9 must produce only one set of oper
 
 Architect for, but do not implement unless specifically requested:
 - Multiple active restaurant locations (built in Phase 23: opening and closing locations, reports across them, transfers as records)
-- Customer loyalty (guest profiles were built in Phase 21)
+- Customer loyalty (built in Phase 30: a points program with rewards redeemed as discounts; tiers, expiry, guest-facing balances and marketing remain future or banned)
 - Delivery integrations
 - DoorDash/Uber Eats integrations
 - External reservation integrations (OpenTable, Resy and the like; the restaurant's own online booking page was built in Phase 22)
