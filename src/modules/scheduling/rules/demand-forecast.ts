@@ -1,5 +1,5 @@
 import { compareDecimals, wholeQuotientCeiling } from "@/shared/decimal/decimal";
-import { weightedAverage } from "@/shared/forecasting/history-dates";
+import { weightedAverage, weightedAverageDecimal } from "@/shared/forecasting/history-dates";
 import { businessDateOf, type BusinessDateSettings } from "@/shared/time/business-date-service";
 import { localMinutesOf } from "@/shared/time/zoned-time";
 
@@ -22,6 +22,18 @@ export const DEMAND_MEASURES = [
 ] as const;
 
 export type DemandMeasure = (typeof DEMAND_MEASURES)[number];
+
+/**
+ * Phase 28 (policy 6): the one money measure, stored beside the counts but never a staffing
+ * measure and never shown on schedule screens. Only `reports.sales` holders see it.
+ */
+export const NET_SALES_MEASURE = "NET_SALES" as const;
+
+export type SalesHourForecast = {
+  hour: number;
+  /** Weighted same-weekday average net sales, two places; null when there is not enough history. */
+  historyValue: string | null;
+};
 
 export const MEASURE_LABELS: Record<DemandMeasure, { name: string; unit: string }> = {
   DINING_COVERS: { name: "Dining covers", unit: "covers" },
@@ -56,6 +68,8 @@ export type DateForecast = {
   /** The history dates used, newest first. */
   sampleDates: string[];
   hours: HourForecast[];
+  /** Phase 28: expected net sales per hour, by the same samples; no booked floor. */
+  netSales: SalesHourForecast[];
 };
 
 function maxDecimal(value: string, floor: number): string {
@@ -74,6 +88,8 @@ export function forecastDate(input: {
   settings: ForecastSettings;
   history: ReadonlyMap<string, ReadonlyMap<number, HistoryCounts>>;
   booked: ReadonlyMap<number, number>;
+  /** Phase 28: net sales per history date and hour, decimal strings. */
+  salesHistory?: ReadonlyMap<string, ReadonlyMap<number, string>>;
 }): DateForecast {
   const enough = input.sampleDates.length >= input.settings.minimumSamples;
   const anyBooked = [...input.booked.values()].some((covers) => covers > 0);
@@ -102,7 +118,21 @@ export function forecastDate(input: {
     }
   }
 
-  return { businessDate: input.targetDate, status, sampleDates: [...input.sampleDates], hours };
+  const netSales: SalesHourForecast[] = [];
+
+  for (let hour = 0; hour < 24; hour += 1) {
+    netSales.push({
+      hour,
+      historyValue: enough
+        ? weightedAverageDecimal(
+            input.sampleDates.map((date) => input.salesHistory?.get(date)?.get(hour) ?? "0"),
+            2,
+          )
+        : null,
+    });
+  }
+
+  return { businessDate: input.targetDate, status, sampleDates: [...input.sampleDates], hours, netSales };
 }
 
 /** A business date and local hour a shift window touches. */

@@ -475,7 +475,14 @@ describe("reporting", () => {
         "serverPerformance",
         "adjustmentsByEmployee",
       ]);
-      expect((await report("sales")).sections.at(-1)!.key).toBe("salesByHour");
+      // Phase 28 sections follow sales by hour.
+      expect((await report("sales")).sections.map((entry) => entry.key).slice(-5)).toEqual([
+        "salesByHour",
+        "pricePeriods",
+        "salesForecast",
+        "salesForecastHours",
+        "salesForecastAccuracy",
+      ]);
     });
 
     it("shows 86 history in the inventory area", async () => {

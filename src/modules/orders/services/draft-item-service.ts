@@ -111,6 +111,7 @@ export async function addDraftItem(
       menuItemId: entry.menuItemId,
       selections: entry.selections,
       at: new Date(),
+      orderType: order.orderType,
     });
     const [item] = await transaction
       .insert(orderItems)
@@ -155,6 +156,7 @@ export async function updateDraftItem(
       menuItemId: item.menuItemId,
       selections: entry.selections,
       at: new Date(),
+      orderType: order.orderType,
     });
 
     await transaction.delete(orderItemModifiers).where(eq(orderItemModifiers.orderItemId, itemId));

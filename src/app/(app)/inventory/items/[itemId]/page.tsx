@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { listAllergens, getIngredientAllergens } from "@/modules/recipes/queries/allergen-facts";
 import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
 import { formatInstant } from "@/shared/time/format-instant";
+import { NutritionForm } from "@/components/nutrition/nutrition-form";
+import { getIngredientNutrition } from "@/modules/recipes/queries/nutrition-facts";
 
 export default async function InventoryItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   const { location, actor } = await requirePageActor("inventory.configure");
@@ -52,6 +54,10 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
     getIngredientAllergens(database, actor.organizationId, item.id),
     getLocationTimeZone(database, location.locationId),
   ]);
+  // Phase 28 (policy 11): nutrition per an amount of the base unit, edited under recipes.edit.
+  const nutrition = await getIngredientNutrition(database, actor.organizationId, item.id);
+  const canEditNutrition = location.permissions.includes("recipes.edit");
+  const defaultBasis = base === "EACH" || base === "" ? "1" : "100";
   const taggedNames = allergenChoices
     .filter((entry) => ingredientAllergens.allergenIds.includes(entry.id))
     .map((entry) => entry.name);
@@ -122,6 +128,23 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
         ) : (
           <p className="text-sm">{taggedNames.length > 0 ? taggedNames.join(", ") : "None tagged."}</p>
         )}
+      </section>
+
+      <section aria-label="Nutrition facts" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Nutrition</h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          Per an amount of {base || "the base unit"}. Menu items made with it add these up per portion; a blank figure is
+          &quot;no data&quot;, which marks their labels incomplete.
+          {nutrition ? null : <> <Badge tone="warning">No data yet</Badge></>}
+        </p>
+        {canEditNutrition ? (
+          <NutritionForm
+            url={`/api/inventory/items/${item.id}/nutrition`}
+            version={nutrition?.version ?? null}
+            values={nutrition?.values ?? null}
+            basis={{ quantity: nutrition?.basisQuantity ?? defaultBasis, unit: base }}
+          />
+        ) : null}
       </section>
 
       <section aria-label="Stock levels here" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">

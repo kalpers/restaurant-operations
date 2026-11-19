@@ -170,6 +170,43 @@ describe("forecastDate", () => {
   });
 });
 
+describe("forecastDate net sales (Phase 28)", () => {
+  const dates = fridaysBefore(3);
+  const salesHistory = new Map(dates.map((date, index) => [date, new Map([[19, ["300.00", "200.00", "100.50"][index]!]])]));
+
+  it("averages net sales per hour with the same weights, in decimal strings", () => {
+    const forecast = forecastDate({
+      targetDate: TARGET,
+      sampleDates: dates,
+      settings: { lookbackWeeks: 6, minimumSamples: 3 },
+      history: new Map(),
+      booked: new Map([[19, 40]]),
+      salesHistory,
+    });
+
+    // (3 x 300.00 + 2 x 200.00 + 1 x 100.50) / 6 = 233.416... -> 233.42; no booked floor.
+    expect(forecast.netSales.find((hour) => hour.hour === 19)).toEqual({ hour: 19, historyValue: "233.42" });
+    expect(forecast.netSales.find((hour) => hour.hour === 12)).toEqual({ hour: 12, historyValue: "0.00" });
+    expect(forecast.netSales).toHaveLength(24);
+    // The count measures are unchanged: still four.
+    expect(forecast.hours).toHaveLength(24 * 4);
+  });
+
+  it("has no net sales figures with too little history, even with bookings", () => {
+    const thin = forecastDate({
+      targetDate: TARGET,
+      sampleDates: [],
+      settings: { lookbackWeeks: 6, minimumSamples: 3 },
+      history: new Map(),
+      booked: new Map([[19, 8]]),
+      salesHistory,
+    });
+
+    expect(thin.status).toBe("BOOKINGS_ONLY");
+    expect(thin.netSales.every((hour) => hour.historyValue === null)).toBe(true);
+  });
+});
+
 describe("hoursTouched", () => {
   const at = (date: string, time: string) => localToInstant(date, time, TZ)!;
 
@@ -220,6 +257,7 @@ describe("suggestShiftCount", () => {
       bookedValue: booked[Number(hour)] ?? 0,
       forecastValue: value,
     })),
+    netSales: [],
   });
   const servers: StaffingRatio = {
     measure: "DINING_COVERS",

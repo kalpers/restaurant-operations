@@ -158,18 +158,26 @@ export const staffingTemplateRequirements = pgTable(
 );
 
 /** Phase 24 demand measures (policy 1). Constrained strings, not a native enum. */
-const DEMAND_MEASURE_SQL = sql.raw(
+const STAFFING_MEASURE_SQL = sql.raw(
   "('DINING_COVERS', 'BAR_CHECKS', 'TAKEOUT_CHECKS', 'ALL_CHECKS')",
 );
 
-/** Forecast values: two decimal places of guests or checks per hour. */
+/**
+ * Phase 28 (policy 6, amendment 5): stored forecasts also hold `NET_SALES`, money per hour,
+ * shown only to `reports.sales` holders. Staffing ratios keep the four count measures.
+ */
+const DEMAND_MEASURE_SQL = sql.raw(
+  "('DINING_COVERS', 'BAR_CHECKS', 'TAKEOUT_CHECKS', 'ALL_CHECKS', 'NET_SALES')",
+);
+
+/** Forecast values: two decimal places of guests or checks (or dollars, for NET_SALES) per hour. */
 function demandValue(name: string) {
   return numeric(name, { precision: 10, scale: 2, mode: "string" });
 }
 
 /**
  * Phase 24 (policy 11, D6): a forecast as it was when a manager used it. Append-only
- * (migration guard); later forecasts are new rows. Counts only, never money.
+ * (migration guard); later forecasts are new rows. Counts, plus NET_SALES since Phase 28.
  */
 export const demandForecasts = pgTable(
   "demand_forecasts",
@@ -794,7 +802,7 @@ export const staffingRatios = pgTable(
     uniqueIndex("staffing_ratios_location_position_active_unique")
       .on(table.locationId, table.positionId)
       .where(sql`${table.active}`),
-    check("staffing_ratios_measure_valid", sql`${table.measure} IN ${DEMAND_MEASURE_SQL}`),
+    check("staffing_ratios_measure_valid", sql`${table.measure} IN ${STAFFING_MEASURE_SQL}`),
     check("staffing_ratios_units_positive", sql`${table.unitsPerEmployeeHour} > 0`),
     check(
       "staffing_ratios_headcount_valid",

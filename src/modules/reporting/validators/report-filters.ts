@@ -44,3 +44,12 @@ export function searchParamsToObject(searchParams: URLSearchParams): Record<stri
 
   return result;
 }
+
+/** Phase 28 (policy 10): an export file for one location or "All my locations". */
+export const exportFileQuerySchema = z.object({
+  locationId: z.union([z.uuid(), z.literal("ALL")]),
+  from: date,
+  to: date,
+});
+
+export const exportKindParamsSchema = z.object({ kind: z.enum(["journal", "payroll"]) });

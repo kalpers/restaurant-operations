@@ -119,6 +119,9 @@ export async function validateModifierSelection(
 export type ProspectiveItemPrice = {
   basePrice: string;
   priceScope: "LOCATION" | "ORGANIZATION";
+  /** Phase 28: the regular price and the price period in effect, if any. */
+  regularPrice: string;
+  pricePeriod: { id: string; name: string; endsAt: string } | null;
   modifiers: { modifierId: string; priceAdjustment: string }[];
   amount: string;
 };
@@ -136,6 +139,7 @@ export async function priceProspectiveItem(
     selections: readonly ProposedSelection[];
     locationId?: string;
     at?: Date;
+    orderType?: string | null;
   },
 ): Promise<ProspectiveItemPrice> {
   assertPermission(actor, "menu.view");
@@ -152,6 +156,7 @@ export async function priceProspectiveItem(
     input.menuItemId,
     input.locationId ?? actor.locationId,
     input.at ?? new Date(),
+    input.orderType ?? null,
   );
 
   if (!price) {
@@ -174,6 +179,8 @@ export async function priceProspectiveItem(
   return {
     basePrice: price.price,
     priceScope: price.scope,
+    regularPrice: price.regularPrice,
+    pricePeriod: price.pricePeriod,
     modifiers: chosen,
     amount: calculateItemAmount(
       price.price,

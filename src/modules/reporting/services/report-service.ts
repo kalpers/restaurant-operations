@@ -16,6 +16,8 @@ import { inventorySections } from "../queries/inventory-report";
 import { laborSections } from "../queries/labor-report";
 import { menuSections } from "../queries/menu-report";
 import { orderSections } from "../queries/order-report";
+import { pricePeriodsSection } from "../queries/price-period-report";
+import { salesForecastAccuracySection, salesForecastSections } from "../queries/sales-forecast-report";
 import { loadLocationClock, loadReportContext, type ReportContext } from "../queries/report-context";
 import { salesSections } from "../queries/sales-report";
 import { seatingSections } from "../queries/seating-report";
@@ -43,7 +45,14 @@ import {
 
 // Phase 19 sections follow each area's existing ones, which stay exactly as they were.
 export const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<ReportSection[]>> = {
-  sales: async (context) => [...(await salesSections(context)), await salesByHourSection(context)],
+  sales: async (context) => [
+    ...(await salesSections(context)),
+    await salesByHourSection(context),
+    // Phase 28 (policy 5): happy hour sales, then the sales forecast sections.
+    await pricePeriodsSection(context),
+    ...(await salesForecastSections(context)),
+    await salesForecastAccuracySection(context),
+  ],
   menu: async (context) => [...(await menuSections(context)), ...(await itemMixSections(context))],
   settlements: settlementSections,
   orders: async (context) => [
@@ -252,6 +261,8 @@ function tilesFor(area: ReportArea, sections: ReportSection[], context: ReportCo
         { key: "averageCheck", label: "Average check", value: all?.averageCheck ?? null, kind: "money" },
         { key: "openChecks", label: "Open checks", value: all?.openChecks ?? 0, kind: "count" },
         { key: "openAmount", label: "Open check amount", value: all?.openAmount ?? "0.00", kind: "money" },
+        // Phase 28 (policy 6): expected net sales today, shown only on today's overview.
+        ...forecastTile(sections, context),
       ];
     }
     case "settlements": {
@@ -336,6 +347,12 @@ function tilesFor(area: ReportArea, sections: ReportSection[], context: ReportCo
     default:
       return [];
   }
+}
+
+function forecastTile(sections: ReportSection[], context: ReportContext): DashboardTile[] {
+  const today = rowWhere(sectionOf(sections, "salesForecast"), "businessDate", context.filters.from);
+
+  return today ? [{ key: "forecastNetSales", label: "Forecast net sales today", value: today.forecast ?? null, kind: "money" }] : [];
 }
 
 /** Today's business date at a Location, from BusinessDateService: the default report date. */

@@ -41,7 +41,7 @@ describe("menu item pricing", () => {
 
     await priceFixture(database(), scenario.admin, item.id, "12.99");
 
-    expect(await resolve(item.id, at("2026-01-01T00:00:00Z"))).toEqual({
+    expect(await resolve(item.id, at("2026-01-01T00:00:00Z"))).toMatchObject({
       price: "12.99",
       scope: "ORGANIZATION",
     });
@@ -117,12 +117,12 @@ describe("menu item pricing", () => {
       locationId: scenario.locationA,
     });
 
-    expect(await resolve(item.id, at("2026-01-01T00:00:00Z"))).toEqual({
+    expect(await resolve(item.id, at("2026-01-01T00:00:00Z"))).toMatchObject({
       price: "12.50",
       scope: "LOCATION",
     });
     // Another location still sees the default.
-    expect(await resolve(item.id, at("2026-01-01T00:00:00Z"), scenario.locationB)).toEqual({
+    expect(await resolve(item.id, at("2026-01-01T00:00:00Z"), scenario.locationB)).toMatchObject({
       price: "10.00",
       scope: "ORGANIZATION",
     });

@@ -3,6 +3,8 @@ import {
   BookUser,
   Wheat,
   Ban,
+  Beer,
+  FileSpreadsheet,
   PackagePlus,
   Percent,
   Wallet,
@@ -99,6 +101,8 @@ export const NAV_ICONS: Record<NavigationIcon, LucideIcon> = {
   "suggested-orders": PackagePlus,
   guests: BookUser,
   allergens: Wheat,
+  "happy-hour": Beer,
+  exports: FileSpreadsheet,
   tables: LayoutGrid,
   sections: Square,
 };

@@ -23,6 +23,7 @@ import { seedDemoKitchen } from "./demo-kitchen";
 import { seedDemoPrepHistory } from "./demo-prep-history";
 import { seedDemoServiceHistory } from "./demo-service-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
+import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
 async function versionOf(employeeId: string): Promise<number> {
@@ -267,6 +268,17 @@ async function main(): Promise<void> {
 
     console.log(
       `Demo service history: ${service.menuItems} menu items, ${service.periods} schedule weeks, ${service.purchaseOrders} weekly purchase orders, ${service.checks} closed checks, ${service.punches} shifts punched, ${service.tipDays} tip days finalized, ${service.upcomingReservations} upcoming reservations, ${service.waitlist} waitlist parties added.`,
+    );
+
+    // Phase 28 (D17): a weekday bar happy hour at MAIN and nutrition for a few dishes' ingredients.
+    const extras = await seedDemoPricingAndNutrition(
+      database,
+      await mainOwnerActor("menu.pricing.edit"),
+      await mainOwnerActor("recipes.edit"),
+    );
+
+    console.log(
+      `Demo pricing and nutrition: ${extras.periods} happy hour added (weekdays 16:00-18:00, bar), ${extras.facts} ingredients given nutrition facts; existing ones were left alone.`,
     );
   } finally {
     await closeDatabase();

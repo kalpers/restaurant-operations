@@ -12,6 +12,11 @@ export type DemandHistoryHour = {
   barChecks: number;
   takeoutChecks: number;
   allChecks: number;
+  /**
+   * Phase 28 (policy 6): net sales (`orders.subtotal`) of those closed checks, a two-place
+   * decimal string, so a date equals the sales-by-hour report's net sales.
+   */
+  netSales: string;
 };
 
 export type DemandHistory = {
@@ -23,7 +28,7 @@ export type DemandHistory = {
 /**
  * Phase 24 policy 1 (D1, D9): closed-check demand by business date and the local hour each
  * check was opened. The same rule as the Phase 19 sales-by-hour report, so a date's numbers
- * here equal that report's for the date. Counts only; no money. Read-only.
+ * here equal that report's for the date. Read-only. Phase 28 adds the hour's net sales beside the counts.
  */
 export async function getDemandHistory(
   executor: DatabaseExecutor,
@@ -35,7 +40,7 @@ export async function getDemandHistory(
 
   const rows = (await executor.execute(sql`
     WITH closed AS (
-      SELECT o.id, o.order_type, o.business_date, o.table_session_id, o.opened_at,
+      SELECT o.id, o.order_type, o.business_date, o.table_session_id, o.opened_at, o.subtotal,
              EXTRACT(HOUR FROM o.opened_at AT TIME ZONE ${input.timeZone})::int AS hour
       FROM orders o
       WHERE o.location_id = ${input.locationId}
@@ -52,7 +57,8 @@ export async function getDemandHistory(
            COALESCE(SUM(cv.covers), 0)::int AS dining_covers,
            (COUNT(*) FILTER (WHERE c.order_type = 'BAR'))::int AS bar_checks,
            (COUNT(*) FILTER (WHERE c.order_type = 'TAKEOUT'))::int AS takeout_checks,
-           COUNT(*)::int AS all_checks
+           COUNT(*)::int AS all_checks,
+           COALESCE(SUM(c.subtotal), 0)::numeric(14,2)::text AS net_sales
     FROM closed c LEFT JOIN covers cv ON cv.id = c.id
     GROUP BY c.business_date, c.hour
     ORDER BY c.business_date, c.hour
@@ -63,6 +69,7 @@ export async function getDemandHistory(
     bar_checks: number;
     takeout_checks: number;
     all_checks: number;
+    net_sales: string;
   }[];
 
   const hours = [...rows].map((row) => ({
@@ -72,6 +79,7 @@ export async function getDemandHistory(
     barChecks: row.bar_checks,
     takeoutChecks: row.takeout_checks,
     allChecks: row.all_checks,
+    netSales: row.net_sales,
   }));
 
   return { hours, openDates: [...new Set(hours.map((row) => row.businessDate))] };

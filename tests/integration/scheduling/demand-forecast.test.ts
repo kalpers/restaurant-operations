@@ -149,9 +149,18 @@ describe("demand forecast (Phase 24)", () => {
       const seven = byHour.rows.find((row) => row.hour === "19:00–19:59")!;
 
       expect(history.hours).toEqual([
-        { businessDate: "2030-03-01", hour: 19, diningCovers: 10, barChecks: 0, takeoutChecks: 1, allChecks: 3 },
+        {
+          businessDate: "2030-03-01",
+          hour: 19,
+          diningCovers: 10,
+          barChecks: 0,
+          takeoutChecks: 1,
+          allChecks: 3,
+          netSales: "30.00",
+        },
       ]);
-      expect(seven).toMatchObject({ closedOrders: 3, covers: 10 });
+      // Phase 28: the hour's net sales equal the report's too.
+      expect(seven).toMatchObject({ closedOrders: 3, covers: 10, netSales: "30.00" });
       expect(history.openDates).toEqual(["2030-03-01"]);
     });
 
@@ -185,6 +194,14 @@ describe("demand forecast (Phase 24)", () => {
         TAKEOUT_CHECKS: { forecast: "0.40" },
         BAR_CHECKS: { forecast: "0.00" },
       });
+      // Phase 28 (policy 6): the schedule preview never carries money.
+      expect(Object.keys(hourValues(forecast, FRIDAY, 19)).sort()).toEqual([
+        "ALL_CHECKS",
+        "BAR_CHECKS",
+        "DINING_COVERS",
+        "TAKEOUT_CHECKS",
+      ]);
+      expect(JSON.stringify(forecast)).not.toContain("NET_SALES");
       // Hours are laid out from the 04:00 cutoff.
       expect(friday.hours[0]!.hour).toBe(4);
       // No Monday history at all.
@@ -354,8 +371,11 @@ describe("demand forecast (Phase 24)", () => {
       expect(hours.map((row) => `${row.businessDate} ${row.hour} ${row.measure} ${row.forecastValue}`).sort()).toEqual([
         `${FRIDAY} 19 ALL_CHECKS 1.80`,
         `${FRIDAY} 19 DINING_COVERS 7.80`,
+        // Phase 28 (policy 7): (4*30 + 3*10 + 2*10 + 1*10) / 10 net sales, stored with it.
+        `${FRIDAY} 19 NET_SALES 18.00`,
         `${FRIDAY} 19 TAKEOUT_CHECKS 0.40`,
       ]);
+      expect((stored!.method as { netSales?: boolean }).netSales).toBe(true);
 
       const [audit] = await database().select().from(auditEvents).where(eq(auditEvents.entityId, result.forecastId!));
 
@@ -581,6 +601,32 @@ describe("demand forecast (Phase 24)", () => {
     });
   });
 
+  describe("sales forecast (Phase 28)", () => {
+    it("shows expected net sales for the next 14 days only to reports.sales holders", async () => {
+      const sales = await runReport(database(), owner, "sales", { locationId: scenario.locationA, from: TODAY, to: TODAY });
+      const daily = sales.sections.find((entry) => entry.key === "salesForecast")!;
+
+      expect(daily.rows).toHaveLength(14);
+      expect(daily.rows[0]).toMatchObject({ businessDate: TODAY, status: "Not enough history", forecast: null });
+      expect(daily.rows.find((row) => row.businessDate === FRIDAY)).toEqual({
+        businessDate: FRIDAY,
+        status: "Forecast",
+        samples: 4,
+        forecast: "18.00",
+        busiest: "19:00–19:59",
+      });
+      expect(sales.sections.find((entry) => entry.key === "salesForecastHours")!.rows).toEqual(
+        expect.arrayContaining([{ businessDate: FRIDAY, hour: "19:00–19:59", forecast: "18.00" }]),
+      );
+
+      const labor = await actorWith(database(), scenario, ["reports.view", "reports.labor"]);
+
+      await expect(
+        runReport(database(), labor, "sales", { locationId: scenario.locationA, from: TODAY, to: TODAY }),
+      ).rejects.toBeInstanceOf(AuthorizationError);
+    });
+  });
+
   describe("forecast vs actual", () => {
     it("compares the stored forecast with the closed checks once the date has passed", async () => {
       // Friday turns out busier: a table of 9 at 20:10.
@@ -610,6 +656,21 @@ describe("demand forecast (Phase 24)", () => {
         differencePercent: null,
         forecastBusiest: null,
       });
+
+      // Phase 28 (policy 7): the net sales stored with that forecast, against the closed checks.
+      const sales = await runReport(database(), owner, "sales", { locationId: scenario.locationA, from: FRIDAY, to: FRIDAY });
+
+      expect(sales.sections.find((entry) => entry.key === "salesForecastAccuracy")!.rows).toEqual([
+        {
+          businessDate: FRIDAY,
+          forecast: "18.00",
+          actual: "10.00",
+          difference: "-8.00",
+          differencePercent: "-44.4",
+          forecastBusiest: "19:00–19:59",
+          actualBusiest: "20:00–20:59",
+        },
+      ]);
 
       // A date with no stored forecast has no rows, and today's date isn't compared yet.
       const before = await runReport(database(), owner, "labor", {

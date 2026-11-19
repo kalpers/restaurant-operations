@@ -10,12 +10,12 @@ import { isPositiveDecimal, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
+import { loadPeriodPriceFacts, sellingPrice, type SellingPrice } from "../queries/price-period-prices";
 import {
   planPriceChange,
   priceAppliesAt,
   resolvePrice,
   type PriceRow,
-  type ResolvedPrice,
 } from "../rules/price-resolution";
 import { assertPermission, requireMenuItem } from "./access";
 
@@ -42,6 +42,8 @@ async function readPriceRows(
  * The one authoritative price lookup: the location price in force at `at`, else the
  * organization default, else null. Orders ask this, never the raw price rows. The
  * organization is checked, so an item ID from another tenant resolves to nothing.
+ * Phase 28 (policy 3): inside a price period for the order type, the period price, with the
+ * regular price beside it; no regular price still means null.
  */
 export async function resolveMenuItemPrice(
   executor: DatabaseExecutor,
@@ -49,7 +51,8 @@ export async function resolveMenuItemPrice(
   menuItemId: string,
   locationId: string,
   at: Date,
-): Promise<ResolvedPrice | null> {
+  orderType: string | null = null,
+): Promise<SellingPrice | null> {
   const [item] = await executor
     .select({ id: menuItems.id })
     .from(menuItems)
@@ -60,8 +63,9 @@ export async function resolveMenuItemPrice(
   }
 
   const rows = await readPriceRows(executor, menuItemId, locationId);
+  const facts = await loadPeriodPriceFacts(executor, { organizationId, locationId, menuItemIds: [menuItemId] });
 
-  return resolvePrice(rows, locationId, at);
+  return sellingPrice(facts, menuItemId, resolvePrice(rows, locationId, at), at, orderType);
 }
 
 /** Price history for an item, newest first within each scope. Needs pricing view. */

@@ -48,6 +48,7 @@ import {
 import {
   DEMAND_MEASURES,
   MAXIMUM_HISTORY_WEEKS,
+  NET_SALES_MEASURE,
   forecastDate,
   hoursTouched,
   selectHistoryDates,
@@ -91,7 +92,7 @@ async function loadClock(executor: DatabaseExecutor, locationId: string): Promis
  */
 export async function buildForecastContext(
   executor: DatabaseExecutor,
-  actor: Actor,
+  actor: Pick<Actor, "locationId">,
   period: Pick<PeriodRow, "startDate" | "endDate">,
   now = new Date(),
 ): Promise<ForecastContext> {
@@ -140,8 +141,14 @@ export async function buildForecastContext(
     }),
   ]);
   const historyByDate = new Map<string, Map<number, HistoryCounts>>();
+  const salesByDate = new Map<string, Map<number, string>>();
 
   for (const row of history.hours) {
+    const sales = salesByDate.get(row.businessDate) ?? new Map<number, string>();
+
+    sales.set(row.hour, row.netSales);
+    salesByDate.set(row.businessDate, sales);
+
     const byHour = historyByDate.get(row.businessDate) ?? new Map<number, HistoryCounts>();
 
     byHour.set(row.hour, {
@@ -182,6 +189,7 @@ export async function buildForecastContext(
         settings,
         history: historyByDate,
         booked: bookedByDate.get(date) ?? new Map(),
+        salesHistory: salesByDate,
       }),
     );
   }
@@ -259,6 +267,24 @@ export async function storeForecast(
         sampleCount: forecast.sampleDates.length,
       });
     }
+
+    // Phase 28 (policy 7): expected net sales are stored with the forecast that was used, so
+    // "Sales forecast vs actual" reads what was forecast then. Zero hours read as zero.
+    for (const sales of forecast.netSales) {
+      if (sales.historyValue === null || compareDecimals(sales.historyValue, "0") === 0) {
+        continue;
+      }
+
+      hours.push({
+        businessDate: forecast.businessDate,
+        hour: sales.hour,
+        measure: NET_SALES_MEASURE,
+        historyValue: sales.historyValue,
+        bookedValue: 0,
+        forecastValue: sales.historyValue,
+        sampleCount: forecast.sampleDates.length,
+      });
+    }
   }
 
   return insertStoredForecast(transaction, {
@@ -273,6 +299,8 @@ export async function storeForecast(
         timeZone: context.clock.timeZone,
         businessDayCutoff: context.clock.businessDayCutoff,
         weights: "linear, newest highest",
+        // Phase 28 (policy 7): this forecast also stored expected net sales (NET_SALES rows).
+        netSales: true,
         ratios: context.ratios.map((ratio) => ({
           ratioId: ratio.id,
           positionId: ratio.positionId,

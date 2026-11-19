@@ -118,3 +118,28 @@ export const setMenuItemAllergensSchema = z.object({
     .max(50),
   expectedReviewVersion: reviewVersion,
 });
+
+// Phase 28 nutrition (policies 11 and 12). Shape only; the service checks the numbers.
+const figure = z.string().max(20).nullable().optional();
+const nutritionValues = z.object({
+  calories: figure,
+  fatG: figure,
+  saturatedFatG: figure,
+  carbohydrateG: figure,
+  sugarsG: figure,
+  fibreG: figure,
+  proteinG: figure,
+  sodiumMg: figure,
+});
+
+export const setIngredientNutritionSchema = z.object({
+  basisQuantity: z.string().max(20),
+  values: nutritionValues,
+  expectedVersion: z.number().int().positive().nullable(),
+});
+
+export const setMenuItemNutritionSchema = z.object({
+  values: nutritionValues.default({}),
+  remove: z.boolean().optional(),
+  expectedVersion: z.number().int().positive().nullable(),
+});

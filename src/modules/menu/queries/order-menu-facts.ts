@@ -46,11 +46,13 @@ export async function resolveSellableItem(
     menuItemId: string;
     selections: readonly ProposedSelection[];
     at: Date;
+    /** Phase 28: the order type the price is for (price periods may be limited to some). */
+    orderType?: string | null;
     /** The operational menu at `at`, when the caller resolves several items at once. */
     menu?: OperationalMenu;
   },
 ): Promise<SellableItem> {
-  const menu = input.menu ?? (await getOperationalMenu(executor, actor, input.at));
+  const menu = input.menu ?? (await getOperationalMenu(executor, actor, input.at, { orderType: input.orderType ?? null }));
   let item: OperationalMenuItem | undefined;
   let category: { id: string; name: string } | undefined;
 

@@ -163,6 +163,7 @@ export const validateSelectionSchema = z.object({
     .max(100)
     .default([]),
   locationId: z.uuid().optional(),
+  orderType: z.enum(["DINE_IN", "BAR", "TAKEOUT"]).optional(),
 });
 
 const stationCode = code;
@@ -265,3 +266,29 @@ export const auto86SettingSchema = z.object({
 
 export const outageIdParamsSchema = z.object({ outageId: z.uuid() });
 export const overrideIdParamsSchema = z.object({ overrideId: z.uuid() });
+
+// Phase 28 price periods (policies 2 and 3). Shape only; the service checks the rules.
+const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+export const pricePeriodSchema = z.object({
+  name: z.string().min(1).max(60),
+  daysOfWeek: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+  startTime: localTime,
+  endTime: localTime,
+  orderTypes: z.array(z.enum(["DINE_IN", "BAR", "TAKEOUT"])).max(3).nullable().default(null),
+  firstDate: localDate.nullable().default(null),
+  lastDate: localDate.nullable().default(null),
+  items: z
+    .array(z.object({ menuItemId: z.uuid(), price: z.string().max(20) }))
+    .min(1)
+    .max(200),
+});
+
+export const updatePricePeriodSchema = pricePeriodSchema.extend({
+  expectedVersion: z.number().int().positive(),
+});
+
+export const pricePeriodParamsSchema = z.object({ periodId: z.uuid() });
+
+export const deactivatePricePeriodSchema = z.object({ expectedVersion: z.number().int().positive() });

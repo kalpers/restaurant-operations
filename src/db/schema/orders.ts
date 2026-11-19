@@ -27,6 +27,7 @@ import { idempotencyRecords } from "./infrastructure";
 import { inventoryItems, inventoryTransactions } from "./inventory";
 import { menuCategories, menuItems, modifierGroups, modifiers } from "./menu";
 import { locations, organizations } from "./organization";
+import { pricePeriods } from "./price-periods";
 import { recipes, recipeVersions, unitsOfMeasure } from "./recipes";
 import { tableSessions } from "./restaurant";
 import { taxCategories, taxRate } from "./tax";
@@ -305,6 +306,14 @@ export const orderItems = pgTable(
     }),
     allergyAcknowledgedAt: timestamptz("allergy_acknowledged_at"),
     allergyConflictSnapshot: text("allergy_conflict_snapshot"),
+    /**
+     * Phase 28 (policy 4): the price period ("happy hour") the base price came from at SEND, its
+     * name, and the regular price at that instant. All null for drafts, items sent outside a
+     * period and items sent before Phase 28. Frozen with the other snapshots.
+     */
+    pricePeriodId: uuid("price_period_id").references(() => pricePeriods.id, { onDelete: "restrict" }),
+    pricePeriodNameSnapshot: text("price_period_name_snapshot"),
+    regularPriceSnapshot: money("regular_price_snapshot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -369,6 +378,13 @@ export const orderItems = pgTable(
         AND (${table.allergyAcknowledgedAt} IS NULL) = (${table.allergyConflictSnapshot} IS NULL)
         AND (${table.allergyAcknowledgedAt} IS NULL OR ${table.allergenLabelIncompleteSnapshot} IS NOT NULL)
         AND (${table.status} <> 'DRAFT' OR (${table.allergenLabelIncompleteSnapshot} IS NULL AND ${table.allergyAcknowledgedAt} IS NULL))`,
+    ),
+    check(
+      "order_items_price_period_snapshot_fields",
+      sql`(${table.pricePeriodId} IS NULL) = (${table.pricePeriodNameSnapshot} IS NULL)
+        AND (${table.pricePeriodId} IS NULL) = (${table.regularPriceSnapshot} IS NULL)
+        AND (${table.status} <> 'DRAFT' OR ${table.pricePeriodId} IS NULL)
+        AND (${table.regularPriceSnapshot} IS NULL OR ${table.regularPriceSnapshot} >= 0)`,
     ),
     index("order_items_order_status_idx").on(table.orderId, table.status),
     index("order_items_send_batch_idx").on(table.sendBatchId),

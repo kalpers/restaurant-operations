@@ -456,6 +456,27 @@
       "when": 1794843011240,
       "tag": "0064_purchasing_forecast_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795034476253,
+      "tag": "0065_pricing_forecast_nutrition",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1795034494835,
+      "tag": "0066_pricing_forecast_nutrition_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795036495507,
+      "tag": "0067_price_period_items_restrict",
+      "breakpoints": true
     }
   ]
 }

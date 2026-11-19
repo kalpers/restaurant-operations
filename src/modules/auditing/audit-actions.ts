@@ -286,6 +286,25 @@ export const AUDIT_ACTIONS = {
     scope: "LOCATION",
     fields: ["priceId", "price", "effectiveFrom"],
   },
+  // Phase 28 price periods (policy 5): the period's settings and how many items it prices.
+  "menu.price-period-created": {
+    category: "MENU",
+    entityType: "price_period",
+    scope: "LOCATION",
+    fields: ["name", "daysOfWeek", "startTime", "endTime", "orderTypes", "firstDate", "lastDate", "itemCount"],
+  },
+  "menu.price-period-updated": {
+    category: "MENU",
+    entityType: "price_period",
+    scope: "LOCATION",
+    fields: ["name", "daysOfWeek", "startTime", "endTime", "orderTypes", "firstDate", "lastDate", "itemCount"],
+  },
+  "menu.price-period-deactivated": {
+    category: "MENU",
+    entityType: "price_period",
+    scope: "LOCATION",
+    fields: ["name"],
+  },
   "menu.item-created": {
     category: "MENU",
     entityType: "menu_item",
@@ -442,6 +461,20 @@ export const AUDIT_ACTIONS = {
     entityType: "menu_item",
     scope: "ORGANIZATION",
     fields: ["itemCode", "declared"],
+  },
+
+  // Phase 28 nutrition (policy 11): field names only, never values.
+  "recipes.ingredient-nutrition-changed": {
+    category: "MENU",
+    entityType: "inventory_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "changedFields"],
+  },
+  "recipes.menu-item-nutrition-changed": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "changedFields", "removed"],
   },
 
   // Inventory

@@ -121,7 +121,8 @@ export async function sendOrderItems(
 
         const sentAt = new Date();
         const location = await readOrderLocation(transaction, actor.locationId, sentAt);
-        const menu = await getOperationalMenu(transaction, actor, sentAt);
+        // Phase 28 (policy 3): priced for this order type at the SEND instant.
+        const menu = await getOperationalMenu(transaction, actor, sentAt, { orderType: order.orderType });
         const selectionRows = await transaction
           .select()
           .from(orderItemModifiers)
@@ -293,6 +294,10 @@ export async function sendOrderItems(
               taxIncludedSnapshot: taxes.get(draft.menuItemId)?.priceIncludesTax ?? false,
               menuCategoryId: sellable.category.id,
               menuCategoryNameSnapshot: sellable.category.name,
+              // Phase 28 (policy 4): the period the price came from, and the regular price then.
+              pricePeriodId: sellable.item.pricePeriod?.id ?? null,
+              pricePeriodNameSnapshot: sellable.item.pricePeriod?.name ?? null,
+              regularPriceSnapshot: sellable.item.pricePeriod ? sellable.item.regularPrice : null,
               allergenLabelIncompleteSnapshot: labels.get(draft.id)!.incomplete,
               ...(conflicts.has(draft.id)
                 ? {

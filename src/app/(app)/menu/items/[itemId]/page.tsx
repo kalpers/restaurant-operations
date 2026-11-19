@@ -34,6 +34,15 @@ import {
   listAllergens,
   loadBaseAllergenLabels,
 } from "@/modules/recipes/queries/allergen-facts";
+import { NutritionFacts } from "@/components/nutrition/nutrition-facts";
+import { NutritionForm } from "@/components/nutrition/nutrition-form";
+import { findInventoryItemNames } from "@/modules/inventory/queries/item-facts";
+import { resolveCurrentRequirementsForMenuItems } from "@/modules/recipes/queries/menu-item-requirements";
+import {
+  getDeclaredNutrition,
+  ingredientsWithoutNutrition,
+  loadBaseNutritionLabels,
+} from "@/modules/recipes/queries/nutrition-facts";
 
 export default async function MenuItemEditorPage({
   params,
@@ -91,6 +100,17 @@ export default async function MenuItemEditorPage({
     loadBaseAllergenLabels(database, actor.organizationId, [itemId], new Date()),
   ]);
   const baseLabel = baseLabels.get(itemId)!;
+  // Phase 28 (policies 12 and 16): nutrition as sold with no modifiers, and which ingredients
+  // of the current recipe have no data.
+  const now = new Date();
+  const [nutritionLabels, declaredNutrition, requirements] = await Promise.all([
+    loadBaseNutritionLabels(database, actor.organizationId, [itemId], now),
+    getDeclaredNutrition(database, actor.organizationId, itemId),
+    resolveCurrentRequirementsForMenuItems(database, actor.organizationId, [itemId], now),
+  ]);
+  const nutritionLabel = nutritionLabels.get(itemId)!;
+  const missingIds = await ingredientsWithoutNutrition(database, actor.organizationId, requirements.get(itemId) ?? []);
+  const missingNames = missingIds.length === 0 ? [] : [...(await findInventoryItemNames(database, actor.organizationId, missingIds)).values()];
 
   return (
     <>
@@ -343,6 +363,32 @@ export default async function MenuItemEditorPage({
               reviewVersion={declared.review?.version ?? null}
             />
           </>
+        ) : null}
+      </section>
+
+      <section aria-label="Nutrition" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Nutrition</h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          Per portion as sold with no modifiers, from the recipe in effect now and its ingredients&apos; figures. The order
+          screen shows it for the choices made. Rounded as on a US nutrition label.
+        </p>
+        <NutritionFacts label={nutritionLabel} />
+        {nutritionLabel.source === "CALCULATED" && missingNames.length > 0 ? (
+          <p className="mt-2 text-sm text-neutral-700">Ingredients without nutrition data: {missingNames.sort().join(", ")}.</p>
+        ) : null}
+        {actorHolds(actor, "recipes.edit") ? (
+          <div className="mt-4">
+            <h3 className="mb-2 font-semibold">Declared nutrition</h3>
+            <p className="mb-3 text-sm text-neutral-600">
+              For bought-in items with no recipe, or figures from a supplier. Declared figures replace the calculation.
+            </p>
+            <NutritionForm
+              url={`/api/menu/items/${item.id}/nutrition`}
+              version={declaredNutrition?.version ?? null}
+              values={declaredNutrition?.values ?? null}
+              removable
+            />
+          </div>
         ) : null}
       </section>
 

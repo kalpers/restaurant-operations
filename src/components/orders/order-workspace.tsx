@@ -8,6 +8,7 @@ import { ApiErrorMessage } from "@/components/forms/api-error-message";
 import { StatusBadge } from "@/components/format/status-badge";
 import { useRealtime, useRealtimeRefresh } from "@/components/realtime/realtime-provider";
 import { Badge } from "@/components/ui/badge";
+import { ItemNutrition } from "@/components/orders/item-nutrition";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { cn } from "@/components/ui/cn";
 import { Dialog } from "@/components/ui/dialog";
@@ -49,7 +50,10 @@ export type OtherCheck = { id: string; orderNumber: number; version: number };
 
 const COURSES = [1, 2, 3, 4, 5] as const;
 
-export type MenuCategory = { id: string; name: string; items: OperationalMenuItem[] };
+/** Phase 28: `periodLabel` ("Happy hour until 6:00 PM") is formatted on the server in the location's time zone. */
+export type MenuEntry = OperationalMenuItem & { periodLabel: string | null };
+
+export type MenuCategory = { id: string; name: string; items: MenuEntry[] };
 
 /** Phase 19: "N left" for running-low items, and items off sale here, from the 86 board. */
 export type StockHints = {
@@ -151,7 +155,7 @@ function ItemPicker({
 }: {
   orderId: string;
   version: number;
-  item: OperationalMenuItem;
+  item: MenuEntry;
   onDone: () => void;
 }) {
   const { run, pending, error } = useAction();
@@ -204,6 +208,20 @@ function ItemPicker({
         <span>{item.name}</span>
         <span className="tabular">{formatMoney(item.price)}</span>
       </p>
+      {item.periodLabel ? (
+        <p className="text-sm">
+          <Badge tone="info">{item.periodLabel}</Badge>{" "}
+          <span className="text-neutral-600">
+            Regular {formatMoney(item.regularPrice)}. The price is set when the item is sent.
+          </span>
+        </p>
+      ) : null}
+      <ItemNutrition
+        menuItemId={item.menuItemId}
+        selections={Object.entries(chosen).flatMap(([modifierGroupId, ids]) =>
+          ids.map((modifierId) => ({ modifierGroupId, modifierId })),
+        )}
+      />
       {item.modifierGroups.map((group) => {
         const single = group.maximumSelections === 1;
 
@@ -358,7 +376,7 @@ function useStockHints(orderVersion: number): StockHints | undefined {
 function MenuBrowser({ order, categories }: { order: OrderDetail; categories: MenuCategory[] }) {
   const stock = useStockHints(order.version);
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-  const [picking, setPicking] = useState<OperationalMenuItem | null>(null);
+  const [picking, setPicking] = useState<MenuEntry | null>(null);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
   const category = categories.find((entry) => entry.id === categoryId);
@@ -457,6 +475,11 @@ function MenuBrowser({ order, categories }: { order: OrderDetail; categories: Me
               >
                 <span className="block font-medium">{item.name}</span>
                 <span className="tabular text-sm text-neutral-700">{formatMoney(item.price)}</span>
+                {item.periodLabel ? (
+                  <span className="mt-1 block">
+                    <Badge tone="info">{item.periodLabel}</Badge>
+                  </span>
+                ) : null}
                 {stock?.left[item.menuItemId] !== undefined && (
                   <span className="ml-2 text-xs font-medium text-warning-800">{stock.left[item.menuItemId]} left</span>
                 )}

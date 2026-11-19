@@ -22,6 +22,7 @@ import { effectiveConstraints, type SelectionType } from "../rules/modifier-sele
 import { isSellable, requiredChoicesRemain } from "../rules/stock-signals";
 import { resolvePrice } from "../rules/price-resolution";
 import { assertPermission } from "../services/access";
+import { loadPeriodPriceFacts, sellingPrice } from "./price-period-prices";
 import { loadModifierOutagesInEffect, loadStockSignals } from "./stock-signals";
 
 // The contract Phase 9 order entry reads. It carries what is sold and how it is chosen:
@@ -58,8 +59,13 @@ export type OperationalMenuItem = {
   shortName: string | null;
   description: string | null;
   itemType: string;
+  /** What it sells for now: the period price inside a price period, else the regular price. */
   price: string;
   priceScope: "LOCATION" | "ORGANIZATION";
+  /** Phase 28: the regular effective-dated price, equal to `price` outside a period. */
+  regularPrice: string;
+  /** Phase 28: the price period ("happy hour") in effect for this item, if any. */
+  pricePeriod: { id: string; name: string; endsAt: string } | null;
   prepStationIds: string[];
   modifierGroups: OperationalModifierGroup[];
 };
@@ -84,6 +90,11 @@ export async function getOperationalMenu(
   executor: DatabaseExecutor,
   actor: Actor,
   at: Date = new Date(),
+  /**
+   * Phase 28 (policy 3): the order type the price is for. A period limited to order types
+   * applies only to them; without one, only periods for every order type apply.
+   */
+  options: { orderType?: string | null } = {},
 ): Promise<OperationalMenu> {
   assertPermission(actor, "menu.view");
 
@@ -197,6 +208,11 @@ export async function getOperationalMenu(
         or(isNull(menuItemPrices.locationId), eq(menuItemPrices.locationId, actor.locationId)),
       ),
     );
+  const periodFacts = await loadPeriodPriceFacts(executor, {
+    organizationId: actor.organizationId,
+    locationId: actor.locationId,
+    menuItemIds: itemIds,
+  });
   const routing = await executor
     .select({ menuItemId: menuItemPrepRouting.menuItemId, stationId: prepStations.id })
     .from(menuItemPrepRouting)
@@ -286,10 +302,16 @@ export async function getOperationalMenu(
 
     for (const row of placed.filter((entry) => entry.menuId === menu.id)) {
       // An item with no price in effect can't be sold, so it isn't offered.
-      const price = resolvePrice(
-        priceRows.filter((entry) => entry.menuItemId === row.item.id),
-        actor.locationId,
+      const price = sellingPrice(
+        periodFacts,
+        row.item.id,
+        resolvePrice(
+          priceRows.filter((entry) => entry.menuItemId === row.item.id),
+          actor.locationId,
+          at,
+        ),
         at,
+        options.orderType ?? null,
       );
 
       if (!price) {
@@ -319,6 +341,8 @@ export async function getOperationalMenu(
         itemType: row.item.itemType,
         price: price.price,
         priceScope: price.scope,
+        regularPrice: price.regularPrice,
+        pricePeriod: price.pricePeriod,
         prepStationIds: routing
           .filter((entry) => entry.menuItemId === row.item.id)
           .map((entry) => entry.stationId),

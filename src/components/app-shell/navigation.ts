@@ -52,7 +52,9 @@ export type NavigationIcon =
   | "suggested-orders"
   | "prep-list"
   | "guests"
-  | "allergens";
+  | "allergens"
+  | "happy-hour"
+  | "exports";
 
 export type NavigationItem = {
   href: string;
@@ -82,6 +84,7 @@ const GROUP_ORDER: readonly NavigationGroupId[] = ["insights", "service", "back-
 const NAVIGATION: readonly NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", permission: null, group: "insights", icon: "dashboard" },
   { href: "/reports", label: "Reports", permission: "reports.view", group: "insights", icon: "reports" },
+  { href: "/reports/exports", label: "Exports", permission: "reports.export", group: "insights", icon: "exports" },
   { href: "/audit", label: "Audit", permission: "audit.view", group: "insights", icon: "audit" },
 
   { href: "/restaurant/floor", label: "Floor", permission: "restaurant.view", group: "service", icon: "floor" },
@@ -99,6 +102,7 @@ const NAVIGATION: readonly NavigationItem[] = [
 
   { href: "/menu", label: "Menu", permission: "menu.view", group: "back-of-house", icon: "menu" },
   { href: "/menu/manage", label: "Manage menu", permission: "menu.edit", group: "back-of-house", icon: "menu-manage" },
+  { href: "/menu/happy-hour", label: "Happy hour", permission: "menu.pricing.view", group: "back-of-house", icon: "happy-hour" },
   { href: "/menu/modifiers", label: "Modifiers", permission: "menu.modifiers.manage", group: "back-of-house", icon: "modifiers" },
   { href: "/menu/stations", label: "Prep stations", permission: "prep-stations.manage", group: "back-of-house", icon: "stations" },
   { href: "/recipes", label: "Recipes", permission: "recipes.view", group: "back-of-house", icon: "recipes" },

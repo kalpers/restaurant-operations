@@ -525,6 +525,8 @@ The forecast changes a schedule only on request, on a DRAFT period, under `sched
 
 Phase 25: the same look-back weeks, minimum samples and excluded dates also drive the item forecast behind prep lists and forecast-based suggested orders (section 16).
 
+Phase 28: the forecast also works out expected **net sales** per hour (`NET_SALES`, the sales-by-hour net sales of CLOSED checks, by the same samples and settings, with no booked floor). It is the one money measure: it is never a staffing measure (ratios keep the four count measures), schedule screens and APIs never return it, and only holders of `reports.sales` see it, in the Sales report ("Sales forecast" for the next 14 days, worked out on read) and on the Overview. When a demand forecast is stored, its `NET_SALES` hours are stored with it (`method.netSales = true`), and "Sales forecast vs actual" compares those with the closed checks.
+
 ### Time clock (Phase 18)
 
 Tables:
@@ -678,11 +680,15 @@ modifier_group_modifiers
 menu_item_prices
 prep_stations
 menu_item_prep_routing
+price_periods
+price_period_items
 ```
 
 A menu item definition may appear in multiple menus/categories using `menu_item_placements`.
 
-A placement defines display order and active state. Placement-level price overrides are deferred: a price is resolved only from `menu_item_prices` (a location price first, then the organization default).
+A placement defines display order and active state. Placement-level price overrides are deferred: a price is resolved from `menu_item_prices` (a location price first, then the organization default) and, since Phase 28, a price period.
+
+**Price periods (Phase 28, "happy hour").** `price_periods` per location: a name, the local days it starts on, a local start and end time (an end at or before the start runs past midnight and belongs to the start day), optional order types, optional first and last dates, active and `version`; `price_period_items` give a fixed price per menu item. A period applies by the location's wall clock at the instant priced, and **the SEND instant decides**: drafts preview the price with a badge showing when the period ends, and an item sent after it ends sells at the regular price. Two active periods may not price one item for a shared order type at a shared time (`PRICE_PERIOD_OVERLAP`, checked under the location lock). `resolveMenuItemPrice` and the operational menu stay the only lookups: they take the order type and return the period price, with the regular price beside it, only while a regular price is in effect. Periods are deactivated, never deleted (a trigger refuses deletes), under `menu.pricing.edit` (`menu.pricing.view` to list), audited `menu.price-period-created`, `-updated`, `-deactivated`. Managed at Back of house → Happy hour.
 
 `menu_item_prices` is effective-dated (`[effective_from, effective_to)`) and a price change closes the open row and inserts a new one. `modifier_group_modifiers` lets one modifier belong to several groups. `menu_item_prep_routing` is the location-aware link from an item to its prep stations.
 
@@ -727,6 +733,8 @@ inventory_item_allergens
 ingredient_allergen_reviews
 menu_item_allergens
 menu_item_allergen_reviews
+inventory_item_nutrition
+menu_item_nutrition
 ```
 
 Recipe identity (`recipes`), immutable revisions (`recipe_versions`) and the unit vocabulary arrive in Phase 7. `recipe_version_ingredients` (a revision's requirements) and `modifier_inventory_effects` (how a modifier changes one Menu Item's requirements) reference Inventory Items and arrive in Phase 8. See sections 33 (Phase 7 and Phase 8 policies).
@@ -756,6 +764,8 @@ Add Swiss Cheese
 ```
 
 Phase 21 adds allergen labels. Ingredients are tagged with what they contain from the organization's allergen list (seeded with the nine major US allergens), and each ingredient's tags carry a review mark. A menu item's label is worked out on read from the ingredients left after its current recipe and the chosen modifiers, plus allergens the item declares by hand (`CONTAINS`, or `MAY_CONTAIN` for cross-contact). A label is incomplete while any ingredient is unreviewed, or, for an item with no ingredients, until its declarations are reviewed; an incomplete label is never shown as allergen free. SEND snapshots the label. See section 33.
+
+Phase 28 adds nutrition. An ingredient's figures (calories, total and saturated fat, carbohydrate, sugars, fibre, protein in grams, sodium in mg; `NUMERIC(14,4)`, nullable) are per a basis amount of its base unit (`inventory_item_nutrition`, one current row, `version`, under `recipes.edit`, audited by field name only). A menu item's label is worked out on read from what one portion takes after the chosen modifiers (the SEND rule), or replaced by figures the item declares (`menu_item_nutrition`, for bought-in items). A figure any ingredient has no data for is **incomplete** and shown as "at least N" with how many ingredients lack data, never as zero. Display follows the FDA rounding rules; stored values stay exact. Nothing is snapshotted at SEND. The menu item page shows the label and which ingredients lack data; the order screen's item dialog shows calories for the choices made (`POST /api/menu/nutrition-quote`, `menu.view`).
 
 ## 16. Domain 09: Inventory and Purchasing
 
@@ -888,6 +898,7 @@ Submitted order items store:
 - Consumption snapshot
 - Relevant kitchen instructions
 - Allergen label (Phase 21: `order_item_allergens`, and whether it was incomplete)
+- Price period (Phase 28: `price_period_id`, `price_period_name_snapshot`, `regular_price_snapshot` when the base price came from a happy hour; null otherwise)
 
 Never recalculate historical consumption from the current recipe.
 
@@ -1158,6 +1169,12 @@ Phase 21: the seating report counts seated parties linked to a guest profile and
 Phase 23: **All my locations.** For a user who holds an area's report permission at two or more locations, each area (except menu performance) can show its summary figures per location with a total, each location on its own business dates; costs and wages appear only if visible at every included location. A closed location is included while the user's assignment there is still active and the same permission is held at an open location. The Overview shows today at each location. The Inventory report has an "In transit" section, and a lot trace (`/reports/lot-trace/{lotId}`) follows a lot from its receipt through transfers to the orders that used it.
 
 Phase 24: the Labor area ends with **Forecast vs actual**: for each past business date in the range that has a stored demand forecast (the latest one a manager used), the forecast and actual daily totals per demand measure, the difference and its percentage, and each side's busiest hour. It reads the stored forecast and closed checks only. "All my locations" adds forecast and actual dining covers.
+
+Phase 28: the Sales area adds **Price periods** (per period and business date: items sold at the period price, their regular value and the difference, from the snapshots), **Sales forecast** (the next 14 days, worked out on read) and **Sales forecast vs actual** (stored forecasts only); the Overview shows "Forecast net sales today". A new **Exports** page (`/reports/exports`, `GET /api/reports/exports/{journal|payroll}`) gives two plain CSV files with stable snake_case headers:
+- *Sales and tax journal* (`reports.export` + `reports.sales` + `reports.settlements`): one row per location, business date, line type and code with debit and credit: `SALES` by menu category (and `SALES/TAX_INCLUDED` taking tax inside prices back out), `DISCOUNT`, `COMP`, `TAX` by category, `TENDER` by type, `TIPS_PAYABLE`, and on the day recorded `REFUND`, `TAX/REFUNDED`, `TIP_REFUND` and `CASH_OVER_SHORT` from closed drawers (by the drawer session's business date, as the settlements report). CLOSED orders only. Each date must balance, or the export is refused (`JOURNAL_OUT_OF_BALANCE`). Line codes are fixed; there is no chart of accounts.
+- *Payroll hours* (`reports.export` + `reports.labor`): one row per employee, position and overtime week, with regular, overtime and total hours (two places) from the same overtime split as the actual labor report. Whole weeks only, 1 to 6 (`PAYROLL_RANGE_NOT_WHOLE_WEEKS`); refused while any time entry in the range is open (`TIME_ENTRIES_OPEN`). Finalized tip shares, declared cash tips (on the employee's row with most hours that week) and whether the tips were finalized appear only for holders of `reports.tips` or `tips.manage`. No rates, wages or pay.
+
+Both support "All my locations" (a `location_code` column) and are audited as `reports.exported` (`exports:journal`, `exports:payroll`).
 
 Phase 25: the Inventory area ends with **Item forecast vs actual**: for each past business date covered by a stored purchasing forecast (the latest one that covered it), forecast and sold portions per menu item on closed checks, the difference and its percentage. Counts only. "All my locations" adds forecast and sold portions.
 
@@ -1958,6 +1975,18 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 28 Happy Hour Pricing, Sales Forecast, Accounting Exports and Nutrition
+
+Phase 28 builds four features from the owner's enhancement list (plan approved 2026-11-18, D1–D17 as recommended, with five amendments). FIFO lot costing and guest loyalty were deferred because each would change a rule; the plan's section 11 explains what each would take. Plan: `docs/Phase-28-Pricing-Forecast-Exports-and-Nutrition.md`. Report: `docs/Phase-28-Completion-Report.md`.
+
+- **Happy hour** (section 14): `price_periods`, `price_period_items`, the three `order_items` snapshots, SEND at its own instant, overlaps refused, the Happy hour page and badges on the order screen, and a Price periods section in Sales.
+- **Sales forecast** (sections 11 and 21): the `NET_SALES` measure, stored with demand forecasts, shown only with `reports.sales`.
+- **Exports** (section 21): the sales and tax journal and the payroll hours file.
+- **Nutrition** (section 15): ingredient and declared figures, labels worked out on read, incomplete figures marked.
+- **Permissions:** none new (149). Audit actions `menu.price-period-*`, `recipes.ingredient-nutrition-changed`, `recipes.menu-item-nutrition-changed`.
+- **Demo data:** `db:seed:demo` adds a weekday 16:00–18:00 bar happy hour at MAIN and nutrition for the Fish Tacos, Mac & Cheese and Draft Lager ingredients.
+- **Migrations:** `0065` (tables, columns and the `NET_SALES` measure), `0066` (custom: price periods never deleted; the order item freeze trigger covers the new snapshots) and `0067` (the price period items key made RESTRICT, like every other key).
+
 ### Phase 27 Polish and Leftovers
 
 Phase 27 closes the two leftovers still open after Phase 26, approved by the owner on 2026-11-18 (D1–D9 as recommended). A review found the other candidates already done (reservations board realtime in Phase 24; the allergen move/share test and seed data in Phase 22; sign-in failure and lock audit in Phase 16; the Edge Runtime warning gone in Phase 22). Plan: `docs/Phase-27-Polish-and-Leftovers.md`. Report: `docs/Phase-27-Completion-Report.md`.
@@ -2277,6 +2306,12 @@ Outbox events for table sessions, table condition and the waitlist, so the floor
 
 Requested by the owner on 2026-11-18.
 
+### Phase 28: Happy Hour Pricing, Sales Forecast, Accounting Exports and Nutrition
+
+Happy hour prices by local days and times per location, decided at SEND and snapshotted; expected net sales from the demand forecast for `reports.sales` holders; a balanced daily sales and tax journal and a payroll hours file as CSV; nutrition worked out from recipes and modifiers or declared per item, with missing data marked. FIFO lot costing and guest loyalty deferred. Plan: `docs/Phase-28-Pricing-Forecast-Exports-and-Nutrition.md`.
+
+Approved by the owner on 2026-11-18, with decisions D1–D17 as recommended in the plan.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2379,14 +2414,14 @@ Architect for, but do not implement unless specifically requested:
 - DoorDash/Uber Eats integrations
 - External reservation integrations (OpenTable, Resy and the like; the restaurant's own online booking page was built in Phase 22)
 - Payment processing
-- Payroll processing
-- Accounting integrations
+- Payroll processing (Phase 28 exports hours by employee and position as CSV; no pay is calculated)
+- Accounting integrations (Phase 28 exports a balanced daily sales and tax journal as CSV; nothing is integrated)
 - SMS/email notifications to staff (guest service messages were built in Phase 22)
 - Full offline synchronization
-- Demand forecasting based on historical sales/reservations (built in Phase 24 for staffing: a same-weekday average with a booked-covers floor, sizing shifts on request; extended in Phase 25 to item portions, prep lists and forecast-based suggested orders; forecasting sales money remains future work)
+- Demand forecasting based on historical sales/reservations (built in Phase 24 for staffing: a same-weekday average with a booked-covers floor, sizing shifts on request; extended in Phase 25 to item portions, prep lists and forecast-based suggested orders; expected net sales added in Phase 28 for `reports.sales` holders)
 - Ingredient lots/FIFO/expiration-by-lot (built in Phase 23 for quantity and expiry, first to expire first; cost stays weighted average, so FIFO costing remains future work)
 - Vendor EDI
-- Nutritional analysis (allergen labeling was built in Phase 21)
+- Nutritional analysis (built in Phase 28 for calories and macros from recipes and declared figures; no printed or public nutrition menu)
 - Separate analytics warehouse
 - AI restaurant assistant
 

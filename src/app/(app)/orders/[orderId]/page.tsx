@@ -12,6 +12,8 @@ import { requirePageActor } from "@/modules/auth/guards";
 import { fulfillmentForOrder } from "@/modules/kitchen/queries/kitchen-queries";
 import { heldCoursesForOrder } from "@/modules/kitchen/services/course-fire-service";
 import { getOperationalMenu } from "@/modules/menu/queries/operational-menu";
+import { formatInstant } from "@/shared/time/format-instant";
+import { getLocationTimeZone } from "@/modules/organization/services/organization-service";
 import { getOrderDetail, listOrders } from "@/modules/orders/queries/order-queries";
 import { actorHolds } from "@/modules/orders/services/access";
 import { listDiscountDefinitions } from "@/modules/orders/services/discount-service";
@@ -61,7 +63,9 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
 
   if (abilities.edit && order.status === "OPEN") {
     // Items from every open menu, grouped by category, once each.
-    const menu = await getOperationalMenu(database, actor);
+    // Phase 28 (policy 3): priced for this check's order type, so happy hour shows where it applies.
+    const menu = await getOperationalMenu(database, actor, new Date(), { orderType: order.orderType });
+    const timeZone = await getLocationTimeZone(database, actor.locationId);
     const byCategory = new Map<string, MenuCategory>();
 
     for (const offered of menu.menus) {
@@ -70,7 +74,12 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
 
         for (const item of category.items) {
           if (!entry.items.some((existing) => existing.menuItemId === item.menuItemId)) {
-            entry.items.push(item);
+            entry.items.push({
+              ...item,
+              periodLabel: item.pricePeriod
+                ? `${item.pricePeriod.name} until ${formatInstant(item.pricePeriod.endsAt, timeZone, "time")}`
+                : null,
+            });
           }
         }
 
