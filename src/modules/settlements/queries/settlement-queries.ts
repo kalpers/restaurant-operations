@@ -1,11 +1,12 @@
 import { asc, eq, inArray } from "drizzle-orm";
 
-import { settlements, settlementTenders } from "@/db/schema";
+import { giftCards, settlements, settlementTenders } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 import { readOrderDetail } from "@/modules/orders/queries/order-queries";
 import { compareDecimals } from "@/shared/decimal/decimal";
 
+import { formatGiftCardNumber } from "../rules/gift-card-code";
 import { reconcile } from "../rules/settlement-math";
 import type { SettlementStatus, TenderStatus, TenderType } from "../types";
 import { actorHolds, assertPermission } from "../services/access";
@@ -28,6 +29,8 @@ export type TenderDetail = {
   businessDate: string;
   voidedAt: string | null;
   voidReason: string | null;
+  /** Phase 31: the restaurant's own card this tender spent, by its public number. */
+  giftCard: { id: string; cardNumber: string } | null;
   /** Null when the viewer may not see it, or nothing was recorded. */
   reference: {
     externalReference: string | null;
@@ -99,7 +102,11 @@ export type OrderSettlementView = {
   referencesVisible: boolean;
 };
 
-function toTender(row: typeof settlementTenders.$inferSelect, showReferences: boolean): TenderDetail {
+function toTender(
+  row: typeof settlementTenders.$inferSelect,
+  showReferences: boolean,
+  cardNumbers: ReadonlyMap<string, number>,
+): TenderDetail {
   const reference = {
     externalReference: row.externalReference,
     providerName: row.providerName,
@@ -122,6 +129,9 @@ function toTender(row: typeof settlementTenders.$inferSelect, showReferences: bo
     businessDate: row.businessDate,
     voidedAt: row.voidedAt?.toISOString() ?? null,
     voidReason: row.voidReason,
+    giftCard: row.giftCardId
+      ? { id: row.giftCardId, cardNumber: formatGiftCardNumber(cardNumbers.get(row.giftCardId) ?? 0) }
+      : null,
     reference: showReferences && Object.values(reference).some(Boolean) ? reference : null,
   };
 }
@@ -156,6 +166,17 @@ export async function getOrderSettlementView(
           .from(settlementTenders)
           .where(inArray(settlementTenders.settlementId, rows.map((row) => row.id)))
           .orderBy(asc(settlementTenders.recordedAt), asc(settlementTenders.id));
+  const cardIds = [...new Set(tenders.flatMap((tender) => (tender.giftCardId ? [tender.giftCardId] : [])))];
+  const cardNumbers = new Map(
+    cardIds.length === 0
+      ? []
+      : (
+          await executor
+            .select({ id: giftCards.id, cardNumber: giftCards.cardNumber })
+            .from(giftCards)
+            .where(inArray(giftCards.id, cardIds))
+        ).map((card) => [card.id, card.cardNumber] as const),
+  );
   const history: SettlementDetail[] = rows.map((row) => {
     const own = tenders.filter((tender) => tender.settlementId === row.id);
 
@@ -175,7 +196,7 @@ export async function getOrderSettlementView(
       cancelledAt: row.cancelledAt?.toISOString() ?? null,
       cancelReason: row.cancelReason,
       version: row.version,
-      tenders: own.map((tender) => toTender(tender, showReferences)),
+      tenders: own.map((tender) => toTender(tender, showReferences, cardNumbers)),
     };
   });
   const current =

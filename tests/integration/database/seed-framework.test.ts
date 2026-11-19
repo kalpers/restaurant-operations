@@ -189,6 +189,7 @@ describe("runSeeds", () => {
       "security.guest-messaging-permissions",
       "security.locations-lots-permissions",
       "security.loyalty-permissions",
+      "security.gift-card-permissions",
     ]);
   });
 });

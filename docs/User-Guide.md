@@ -103,7 +103,7 @@ Settlement is record-keeping only. The app does not charge or authorize cards; a
 
 ### Cash drawers
 
-Open **Cash drawers**. A manager opens a drawer with its **Starting float** at the start of a shift and records any **Paid in** or **Paid out** with a reason. At the end, enter **Cash counted** and choose **Close drawer**: the app shows the expected cash (float, plus cash taken with tips and paid in, less paid out and cash refunds) and the variance (counted minus expected). A drawer can't close while a check with cash in it is still being settled. Where the location requires a drawer, cash can't be recorded until one is open.
+Open **Cash drawers**. A manager opens a drawer with its **Starting float** at the start of a shift and records any **Paid in** or **Paid out** with a reason. At the end, enter **Cash counted** and choose **Close drawer**: the app shows the expected cash (float, plus cash taken with tips, paid in and cash taken for gift cards, less paid out, cash refunds and gift card cash-outs) and the variance (counted minus expected). A drawer can't close while a check with cash in it is still being settled. Where the location requires a drawer, cash can't be recorded until one is open.
 
 ### 6. Complete the table session and clean the table
 
@@ -186,6 +186,19 @@ When the program is on, a guest earns points on each visit that is linked to the
 - **Merge and erase:** merging moves the duplicate's points to the profile kept; erasing clears the balance. Both wait until no reward is on an open check. A visit that used a reward keeps its guest (it can't be unlinked).
 - **Refunds** don't change points. The refund screen shows what the visit earned, with a link to adjust if needed.
 - Reports: **Sales** shows points earned, redeemed and adjusted per day, rewards used and their discount, and the points guests hold now.
+
+### Gift cards
+
+The restaurant's own gift cards work at every location. A manager turns them on under **Gift cards** (in **Service**), in **Settings**, and sets the most a card can hold. Once they are on, every **Gift card** tender must be one of these cards; record another company's gift card as **Other**. Selling a card isn't a sale: it carries no tax or tip and doesn't count in sales.
+
+- **Sell:** on **Gift cards**, choose **New card**, enter the amount and how the guest paid (cash into a drawer, a card on the external terminal, or other), and **Sell card**. The card's code appears once, in large type. **Write it on the card now**: the app keeps only a scrambled copy and can never show it again. The receipt number (for example GC-000012) is not the code.
+- **Reload:** choose **Reload a card**, type or scan its code, and add the amount.
+- **Pay with a card:** on the settlement screen choose **Gift card** as the tender, type or scan the code, **Check balance**, then **Use balance** (or type a smaller amount) and record it. The rest of the check goes on another tender. If the tender is voided, the value goes back on the card.
+- **Check a balance:** type the code under **Look up a card**. Managers can also find a card by its receipt number.
+- **Refund onto a card:** on a closed check paid with a gift card, choose **Gift card** under **Refunded as** and pick the card. Only a card that paid the check can take a refund, up to what it paid.
+- **Managers:** on a card's page, **Adjust** adds or takes off value with a reason; **Cash out** pays the whole balance in cash from an open drawer; **Deactivate** stops a lost or stolen card being used (its balance stays); **Replace code** gives the card a new code for a guest who lost it (the new code is shown once). A sale entered by mistake can be voided while none of its value has been spent and, for cash, its drawer is still open.
+- **Drawers** count cash taken for gift cards and cash paid out for them; both show on the drawer.
+- Reports: **Settlements** shows gift card value sold, spent, refunded, adjusted and cashed out per day, and what is owed on all cards. Gift cards can't be turned off while any card holds a balance.
 
 ### Allergens
 

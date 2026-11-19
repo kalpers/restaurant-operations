@@ -10,6 +10,7 @@ import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { lockOrderRow, readOrderLocation, type OrderRow } from "@/modules/orders/repositories/order-repository";
 import { assertOrderOpen } from "@/modules/orders/rules/order-lifecycle";
+import { toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 
 import {
@@ -21,10 +22,22 @@ import {
   refreshSettlementTotals,
   type SettlementRow,
 } from "../repositories/settlement-repository";
+import { formatGiftCardNumber } from "../rules/gift-card-code";
+import { assertCardCovers } from "../rules/gift-card-math";
 import { assertSettlementOpen, planTender, reconcile } from "../rules/settlement-math";
 import { TENDER_PERMISSIONS, TENDER_SCOPE, type TenderType } from "../types";
 import { assertPermission } from "./access";
 import { resolveCashDrawerSession } from "./drawer-service";
+import {
+  assertCardActive,
+  codeFingerprint,
+  giftCardNotFound,
+  lockGiftCard,
+  lockGiftCardByCode,
+  postGiftCardEntry,
+  readGiftCardProgram,
+  type GiftCardRow,
+} from "./gift-card-ledger";
 
 // Settlement commands (README section 19). Record only: nothing here contacts a payment
 // provider. Every command locks the order row first, then the settlement, the same order
@@ -169,6 +182,8 @@ export type RecordTenderInput = {
   failureReason: string | null;
   /** Phase 17: the OPEN drawer session cash goes into. CASH only. */
   cashDrawerSessionId?: string | null;
+  /** Phase 31: the code of the restaurant's own card a GIFT_CARD tender spends. */
+  giftCardCode?: string | null;
 };
 
 export type RecordTenderResult = {
@@ -210,7 +225,13 @@ export async function recordTender(
     throw new BusinessRuleError("DRAWER_CASH_ONLY", "Only cash goes into a drawer.");
   }
 
-  const { idempotencyKey, ...request } = input;
+  if (input.tenderType !== "GIFT_CARD" && input.giftCardCode) {
+    throw new BusinessRuleError("GIFT_CARD_CODE_NOT_ALLOWED", "Only a gift card tender takes a card code.");
+  }
+
+  // Amendment 1: the code itself never reaches the idempotency record, only its hash.
+  const { idempotencyKey, giftCardCode, ...request } = input;
+  const giftCardFingerprint = codeFingerprint(giftCardCode);
   const outcome = await withTransaction(database, (transaction) =>
     runIdempotent<RecordTenderResult>(
       transaction,
@@ -219,7 +240,7 @@ export async function recordTender(
         scope: TENDER_SCOPE,
         key: idempotencyKey,
         actorUserId: actor.userId,
-        request: { settlementId, ...request },
+        request: { settlementId, ...request, giftCardFingerprint },
       },
       async (idempotencyRecordId) => {
         const { order, settlement } = await lockSettlementWithOrder(
@@ -246,6 +267,43 @@ export async function recordTender(
           },
           current.remainingAmount,
         );
+        // Phase 31 (policy 9): with gift cards on, a GIFT_CARD tender spends one of the
+        // restaurant's cards, locked after the order and settlement, and takes the value now.
+        let giftCard: GiftCardRow | null = null;
+
+        if (input.tenderType === "GIFT_CARD") {
+          const program = await readGiftCardProgram(transaction, actor.organizationId);
+
+          if (program.enabled) {
+            if (!giftCardCode) {
+              throw new BusinessRuleError("GIFT_CARD_CODE_REQUIRED", "Enter the gift card's code.");
+            }
+
+            if (input.externalReference) {
+              throw new BusinessRuleError(
+                "REFERENCE_NOT_ALLOWED",
+                "A gift card tender has no reference; the card is the reference.",
+              );
+            }
+
+            if (!giftCardFingerprint) {
+              throw giftCardNotFound();
+            }
+
+            giftCard = await lockGiftCardByCode(transaction, actor, giftCardCode);
+            assertCardActive(giftCard);
+
+            if (planned.status === "RECORDED") {
+              assertCardCovers(planned.amount, giftCard.balance);
+            }
+          } else if (giftCardCode) {
+            throw new BusinessRuleError(
+              "GIFT_CARDS_NOT_ENABLED",
+              "Gift cards aren't turned on. Record the card as it was before.",
+            );
+          }
+        }
+
         const now = new Date();
         const location = await readOrderLocation(transaction, actor.locationId, now);
         // Phase 17: cash goes into an open drawer session, required per the Location setting.
@@ -280,8 +338,20 @@ export async function recordTender(
             businessDate: location.businessDate,
             idempotencyRecordId,
             cashDrawerSessionId,
+            giftCardId: giftCard?.id ?? null,
           })
           .returning();
+
+        if (giftCard && tender!.status === "RECORDED") {
+          await postGiftCardEntry(
+            transaction,
+            actor,
+            giftCard,
+            { kind: "REDEEMED", amount: toScale("-" + tender!.amount, 2), tenderId: tender!.id },
+            now,
+          );
+        }
+
         const updated = await refreshSettlementTotals(transaction, settlement, { updatedAt: now });
         const after = reconcile(updated.orderAmountSnapshot, await listTenders(transaction, settlement.id));
 
@@ -302,6 +372,7 @@ export async function recordTender(
             cashReceived: tender!.receivedAmount,
             changeGiven: tender!.changeAmount,
             description: tender!.otherDescription,
+            giftNumber: giftCard ? formatGiftCardNumber(giftCard.cardNumber) : null,
           },
         });
 
@@ -372,6 +443,19 @@ export async function voidTender(
       .set({ status: "VOIDED", voidedAt: now, voidedByUserId: actor.userId, voidReason: input.reason })
       .where(eq(settlementTenders.id, tender.id));
 
+    // Phase 31 (policy 10): the value goes back onto the card it came from.
+    const giftCard = tender.giftCardId ? await lockGiftCard(transaction, actor, tender.giftCardId) : null;
+
+    if (giftCard) {
+      await postGiftCardEntry(
+        transaction,
+        actor,
+        giftCard,
+        { kind: "REDEMPTION_VOIDED", amount: tender.amount, tenderId: tender.id },
+        now,
+      );
+    }
+
     const updated = await refreshSettlementTotals(transaction, settlement, { updatedAt: now });
 
     await writeOutboxEvents(transaction, [
@@ -382,7 +466,12 @@ export async function voidTender(
       entityId: settlement.id,
       occurredAt: now,
       before: { tenderId: tender.id, tenderType: tender.tenderType, amount: tender.amount, status: tender.status },
-      after: { tenderId: tender.id, status: "VOIDED", reason: input.reason },
+      after: {
+        tenderId: tender.id,
+        status: "VOIDED",
+        reason: input.reason,
+        giftNumber: giftCard ? formatGiftCardNumber(giftCard.cardNumber) : null,
+      },
     });
 
     return {

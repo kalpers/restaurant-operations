@@ -988,6 +988,10 @@ Tables:
 order_settlements
 settlement_tenders
 settlement_status_history
+gift_card_programs        (Phase 31)
+gift_cards                (Phase 31)
+gift_card_sales           (Phase 31)
+gift_card_entries         (Phase 31)
 ```
 
 Recorded settlement types initially:
@@ -1000,7 +1004,7 @@ HOUSE_ACCOUNT
 OTHER
 ```
 
-The application **records settlement only**. It does not authorize or process card payments, gift-card balances, house-account receivables, or external-provider payments. These tender types are financial classifications, not processing integrations. `OTHER` requires a description/reason identifying what was recorded.
+The application **records settlement only**. It does not authorize or process card payments, house-account receivables, or external-provider payments. Since Phase 31 it keeps the balance of the restaurant's own gift cards, record only (see Phase 31 below); other companies' gift cards are recorded as `OTHER`. These tender types are financial classifications, not processing integrations. `OTHER` requires a description/reason identifying what was recorded.
 
 Settlement reconciles against the Order's amount due: since Phase 17, `orders.total_due`, the post-discount subtotal plus tax. Tax comes only from the Tax Category explicitly assigned to a Menu Item and the rate in force at the location, snapshotted at SEND; taxability is never inferred from the item, location, Order type, or food/alcohol category. A location with tax switched off charges none. Since Phase 20 a rate may be included in the menu price (taken out of the subtotal, so total due is still subtotal plus tax), and a check can be tax exempt. Tips are separate from the Order obligation and may be recorded only for CASH and EXTERNAL_CARD. Cash change is calculated after the Order amount applied and cash tip; no cash rounding is performed.
 
@@ -1014,10 +1018,13 @@ Support:
 - Cash drawers (Phase 17): sessions with a float, paid-in/out and a count at close; cash tenders and cash refunds go into an OPEN session where the location requires it
 - Refund records on CLOSED orders (Phase 17), record only
 - Tip pools (Phase 18), record only: one pool per location and business date (`tip_pool_rules`, `tip_pool_rule_positions`, `tip_distributions`, `tip_distribution_lines`), shared by worked hours × position points and finalized as an immutable snapshot
+- The restaurant's own gift cards (Phase 31), record only: an organization-wide balance per card kept by an append-only ledger, sold outside orders and spent as `GIFT_CARD` tenders
 
 Do not represent one Order obligation as multiple partially completed Settlements. A fully reconciled Settlement closes the Order atomically; a CLOSED Order is terminal. Money returned afterwards is a separate refund record (Phase 17): the Order, its Settlement and tenders never change, nothing reopens a check, and a refund counts on the business date it is recorded. Since Phase 20 a refund may return a tip, which leaves that business date's tip pool. Settlement completion does not change Inventory, fulfillment, or Table Session status. Table Sessions still complete only through the explicit physical departure workflow after associated Orders are CLOSED.
 
 Before order closure, valid settlements must cover the amount due, except where legitimate discounts/comps reduce the amount.
+
+Phase 31 adds the restaurant's own gift cards to this domain (tables `gift_card_programs`, `gift_card_number_counters`, `gift_cards`, `gift_card_sales`, `gift_card_entries`; `settlement_tenders.gift_card_id`, `order_refunds.gift_card_id`). Off until a manager turns them on for the organization; while off, a `GIFT_CARD` tender is recorded as before. A card's code (16 Crockford characters, app-generated) is stored only as a SHA-256 hash and its last four characters, shown once at sale or code replacement, and never in audit, logs, outbox payloads or idempotency responses; its public number is `GC-000123`. A sale is its own record, paid by cash (drawer rules as for cash tenders), external card or other, and is never an order or revenue. `gift_card_entries` is append-only with `balance_after`, and `gift_cards.balance` moves with it under the card's row lock. A `GIFT_CARD` tender names a card and takes the value when it is recorded (`REDEEMED`); voiding it writes `REDEMPTION_VOIDED`. A gift card refund goes onto a card that paid the check, up to what it paid. Managers void unspent sales, cash out the whole balance through a drawer, adjust, deactivate and replace lost codes. See section 33.
 
 ## 20. Domain 13: Auditing
 
@@ -1100,6 +1107,8 @@ Reporting areas include:
 - Kitchen and bar performance
 
 Phase 30 adds loyalty to the Sales area (`reports.sales`): points earned, redeemed, adjusted and other (merges and erasures) by business date at the location, rewards redeemed with their points and the discount frozen on the check, and outstanding points across the organization. No guest names or contact details, in the page or the CSV.
+
+Phase 31 adds gift cards to the Settlements area (`reports.settlements`): value sold, reloaded, voided, spent, returned by tender voids and refunds, adjusted and cashed out at the location by business date, the organization's outstanding balance at the end of the range, and each card holding a balance with its last activity, by card number only. The sales journal gains `GIFT_CARD/ISSUED` (credit for a sale, debit for a sale void, against `TENDER/<payment type>`), `GIFT_CARD/CASHED_OUT` (against `TENDER/CASH`) and `GIFT_CARD/ADJUSTED` (against `GIFT_CARD_ADJUSTMENT/ADJUSTED`); spending stays `TENDER/GIFT_CARD`. A card sale is never in sales, tax or tip figures.
 
 Phase 19 adds, inside the existing areas and permissions: sales by hour (Sales), item mix and menu engineering (Menu), server performance and voids, comps and discounts by employee (Orders), and 86 history (Inventory). Phase 20 adds a sales-by-hour chart, item mix and menu engineering by category, tax included in prices and tax-exempt checks (Sales), tip refunds and declared cash tips (Tips), and daily overtime in actual labor. See section 33.
 
@@ -1989,6 +1998,23 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 31 Gift Card Balances
+
+Phase 31 builds the restaurant's own gift cards, lifting the contract's "no gift-card balances" rule for those cards only; settlement stays record only and other companies' cards are recorded as `OTHER` (plan approved 2026-11-19, D1–D17 as recommended, with seven amendments). Plan: `docs/Phase-31-Gift-Card-Balances.md`. Report: `docs/Phase-31-Completion-Report.md`.
+
+- **Program** (section 19): `gift_card_programs`, one per organization, off by default, `max_balance` 1.00 to 10,000.00 (default 500.00). Turning it off is refused while any card holds a balance (`GIFT_CARDS_OUTSTANDING`). Managed on `/gift-cards` (`gift-cards.manage`).
+- **Cards and codes:** `gift_cards` (organization, `card_number`, `code_hash` unique, `code_last_four`, `status` ACTIVE/INACTIVE, `balance`, version). Codes come from 10 random bytes as Crockford base32 in four groups; input ignores case, spaces and dashes and reads O as 0 and I/L as 1. A wrong code always gives `GIFT_CARD_NOT_FOUND`. Lookup by code needs `gift-cards.view`; by number, `gift-cards.manage`. Codes travel in request bodies only, and responses that carry one are `Cache-Control: no-store`.
+- **Selling:** `POST /api/gift-cards` (`gift-cards.sell` plus the payment's tender permission, idempotency scope `gift-cards.sell`) creates a card (`ISSUED`) or reloads one by code (`RELOADED`), from 1.00 up to the maximum balance. The idempotency record keeps the result without the code or last four; a replay says the code was already shown.
+- **Ledger:** `gift_card_entries` (`ISSUED`, `RELOADED`, `SALE_VOIDED`, `REDEEMED`, `REDEMPTION_VOIDED`, `REFUNDED`, `REFUND_VOIDED`, `ADJUSTED`, `CASHED_OUT`), signed money with `balance_after`, location and business date, and the sale, tender or refund it came from. Migration `0073` refuses UPDATE and DELETE, a broken running balance, a card balance out of step with its latest entry, deleting a card, and any change to a sale but its void; card sales and cash-outs use the Phase 17 open-drawer guard.
+- **Paying:** `recordTender` locks the order, the settlement, then the card; amount no more than the balance (`INSUFFICIENT_GIFT_CARD_BALANCE`, with the balance) or what remains; no reference and no tip. `voidTender` puts the value back.
+- **Refunds:** with the program on, a `GIFT_CARD` refund names a card that paid the check (`giftCardId`) and is limited to that card's recorded tenders on it less its earlier refunds (`REFUND_EXCEEDS_GIFT_CARD`); on a check no card paid it is refused (`GIFT_CARD_REFUND_NOT_ALLOWED`). Voiding it takes the value back off, refused if the card no longer holds it.
+- **Manager actions** (`gift-cards.manage`): void a sale while the card holds all of it and its drawer is open (`GIFT_CARD_SALE_SPENT` otherwise); cash out the whole balance from an open drawer (idempotency scope `gift-cards.cash-out`, also `settlements.tender.cash`); adjust within 0 and the maximum; deactivate or reactivate; replace a lost code. Each needs a reason and the card's `version`.
+- **Drawers:** expected cash adds recorded cash card sales and subtracts cash-outs; the drawer page shows both lines.
+- **Screens:** the settlement panel's gift card tender asks for the code, checks the balance and offers "Use balance"; tender lines show the card number; the refund form picks the card. `/gift-cards` (Service group, `gift-cards.view`): sell or reload with the code shown once, look up, history, and for managers the settings, recent cards and actions.
+- **Permissions** (155 in all): `gift-cards.view` (Host, Server, Bartender, Manager), `gift-cards.sell` (Server, Bartender, Manager), `gift-cards.manage` (Manager), plus Owner and General Manager; seeded by `security.gift-card-permissions`. Audit actions (category SETTLEMENTS) `settlements.gift-card-program-changed`, `-sold`, `-sale-voided`, `-cashed-out`, `-adjusted`, `-status-changed`, `-code-replaced`, recording the card as `giftNumber`; tender and refund audit rows gain `giftNumber`. No outbox event.
+- **Demo data:** `db:seed:demo` turns gift cards on, sells three cards on the external terminal, reloads one and spends one on a closed takeout check, printing the demo codes once; it does nothing once the organization has a card.
+- **Migrations:** `0072` (tables and the two `gift_card_id` columns) and `0073` (custom: the ledger, card and sale guards and the drawer guards).
+
 ### Phase 30 Guest Loyalty
 
 Phase 30 builds guest loyalty, lifting the contract's "no loyalty" rule only; marketing consent, marketing messages and guest list export stay banned (plan approved 2026-11-19, D1–D16 as recommended, with nine amendments). Plan: `docs/Phase-30-Guest-Loyalty.md`. Report: `docs/Phase-30-Completion-Report.md`.
@@ -2365,6 +2391,12 @@ One points program per organization: a linked visit earns when its session ends,
 
 Requested and approved by the owner on 2026-11-19, with decisions D1–D16 as recommended in the plan.
 
+### Phase 31: Gift Card Balances
+
+The restaurant's own gift cards, record only: sold outside orders and never revenue, an append-only balance ledger per card, spent as gift card tenders and returned on tender voids and refunds, manager voids, cash-outs, adjustments, deactivation and code replacement, drawer and journal lines, and a gift card report in Settlements. Three new permissions (155). Plan: `docs/Phase-31-Gift-Card-Balances.md`.
+
+Requested and approved by the owner on 2026-11-19, with decisions D1–D17 as recommended in the plan.
+
 ### Cloud Deployment: On Hold
 
 The AWS deployment and acceptance phases (formerly Phases 16 and 17) were removed by owner decision on 2026-11-10. Cloud deployment is on hold; `docs/Cloud-Deployment-Guide.md` describes what a deployment would take on AWS or Azure. If deployment resumes, it is planned as a new phase with the owner's approval, followed by an acceptance run of the major E2E workflow against the deployed URL from desktop, tablet, and phone-sized clients. Earlier documents that mention Phase 14, 15, 16 or 17 for AWS work refer to this deferred work.
@@ -2466,7 +2498,7 @@ Architect for, but do not implement unless specifically requested:
 - Delivery integrations
 - DoorDash/Uber Eats integrations
 - External reservation integrations (OpenTable, Resy and the like; the restaurant's own online booking page was built in Phase 22)
-- Payment processing
+- Payment processing (Phase 31 keeps the balance of the restaurant's own gift cards, record only; nothing is processed)
 - Payroll processing (Phase 28 exports hours by employee and position as CSV; no pay is calculated)
 - Accounting integrations (Phase 28 exports a balanced daily sales and tax journal as CSV; nothing is integrated)
 - SMS/email notifications to staff (guest service messages were built in Phase 22)

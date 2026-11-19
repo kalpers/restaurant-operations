@@ -19,6 +19,7 @@ import { versionColumn } from "../helpers/versioning";
 import { users } from "./auth";
 import { idempotencyRecords } from "./infrastructure";
 import { cashDrawerSessions } from "./drawers";
+import { giftCards } from "./gift-cards";
 import { orderItems, orders } from "./orders";
 import { locations, organizations } from "./organization";
 
@@ -159,9 +160,21 @@ export const settlementTenders = pgTable(
     idempotencyRecordId: uuid("idempotency_record_id").notNull(),
     /** Phase 17: the OPEN drawer session cash went into. CASH only. */
     cashDrawerSessionId: uuid("cash_drawer_session_id"),
+    /** Phase 31: the restaurant's own gift card this tender spent. GIFT_CARD only. */
+    giftCardId: uuid("gift_card_id"),
     createdAt: createdAt(),
   },
   (table) => [
+    foreignKey({
+      name: "settlement_tenders_gift_card_fk",
+      columns: [table.giftCardId],
+      foreignColumns: [giftCards.id],
+    }).onDelete("restrict"),
+    check(
+      "settlement_tenders_gift_card_type",
+      sql`${table.giftCardId} IS NULL OR (${table.tenderType} = 'GIFT_CARD' AND ${table.externalReference} IS NULL)`,
+    ),
+    index("settlement_tenders_gift_card_idx").on(table.giftCardId),
     foreignKey({
       name: "settlement_tenders_drawer_session_fk",
       columns: [table.cashDrawerSessionId],
@@ -294,6 +307,8 @@ export const orderRefunds = pgTable(
     otherDescription: text("other_description"),
     externalReference: text("external_reference"),
     cashDrawerSessionId: uuid("cash_drawer_session_id"),
+    /** Phase 31: the gift card the refund went back onto (one that paid the check). */
+    giftCardId: uuid("gift_card_id"),
     businessDate: businessDate().notNull(),
     recordedByUserId: uuid("recorded_by_user_id")
       .notNull()
@@ -310,6 +325,16 @@ export const orderRefunds = pgTable(
     version: versionColumn(),
   },
   (table) => [
+    foreignKey({
+      name: "order_refunds_gift_card_fk",
+      columns: [table.giftCardId],
+      foreignColumns: [giftCards.id],
+    }).onDelete("restrict"),
+    check(
+      "order_refunds_gift_card_type",
+      sql`${table.giftCardId} IS NULL OR (${table.tenderType} = 'GIFT_CARD' AND ${table.tipAmount} = 0)`,
+    ),
+    index("order_refunds_gift_card_idx").on(table.giftCardId),
     foreignKey({
       name: "order_refunds_drawer_session_fk",
       columns: [table.cashDrawerSessionId],

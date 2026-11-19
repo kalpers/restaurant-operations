@@ -8,14 +8,18 @@ import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { lockOrderRow, readOrderLocation } from "@/modules/orders/repositories/order-repository";
+import { toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import { assertRefundWithinLimits, assertTipRefundWithinLimits } from "../rules/drawer-math";
+import { formatGiftCardNumber } from "../rules/gift-card-code";
+import { assertCardRefundWithinLimits } from "../rules/gift-card-math";
 import { looksLikeCardNumber, parseMoney } from "../rules/settlement-math";
 import type { TenderType } from "../types";
 import { assertPermission } from "./access";
 import { resolveCashDrawerSession } from "./drawer-service";
+import { assertCardActive, lockGiftCard, postGiftCardEntry, readGiftCardProgram, type GiftCardRow } from "./gift-card-ledger";
 
 // Phase 17 refunds (approved policies B9-B13). Record only: money handed back to a guest
 // after the Order CLOSED. The Order, its Settlement, tenders, inventory, fulfillment and the
@@ -35,6 +39,8 @@ export type RecordRefundInput = {
   externalReference: string | null;
   cashDrawerSessionId?: string | null;
   orderItemIds?: string[];
+  /** Phase 31 (policy 10): the card that paid this check, for a GIFT_CARD refund. */
+  giftCardId?: string | null;
 };
 
 export type RefundResult = {
@@ -129,6 +135,10 @@ export async function recordRefund(
     throw new BusinessRuleError("REFERENCE_NOT_ALLOWED", "Cash has no external reference.");
   }
 
+  if (input.tenderType !== "GIFT_CARD" && input.giftCardId) {
+    throw new BusinessRuleError("GIFT_CARD_REFUND_NOT_ALLOWED", "Only a gift card refund goes onto a card.");
+  }
+
   if ([input.reason, input.otherDescription, input.externalReference].some(looksLikeCardNumber)) {
     throw new BusinessRuleError("CARD_DATA_REFUSED", "Don't enter card numbers.");
   }
@@ -143,7 +153,15 @@ export async function recordRefund(
         scope: REFUND_SCOPE,
         key: idempotencyKey,
         actorUserId: actor.userId,
-        request: { orderId, ...request, amount, taxAmount, tipAmount, orderItemIds: [...orderItemIds].sort() },
+        request: {
+          orderId,
+          ...request,
+          giftCardId: input.giftCardId ?? null,
+          amount,
+          taxAmount,
+          tipAmount,
+          orderItemIds: [...orderItemIds].sort(),
+        },
       },
       async (idempotencyRecordId) => {
         // The order lock serializes refunds on one order, so their sum can't race past it.
@@ -185,6 +203,50 @@ export async function recordRefund(
           await assertTipsNotFinalized(transaction, order.locationId, order.businessDate);
         }
 
+        // Phase 31 (policy 10, amendment 4): with gift cards on, a GIFT_CARD refund goes back
+        // onto a card that paid this check, up to what that card paid less its earlier refunds.
+        let giftCard: GiftCardRow | null = null;
+
+        if (input.tenderType === "GIFT_CARD") {
+          const program = await readGiftCardProgram(transaction, actor.organizationId);
+          const cardTenders = await transaction
+            .select({ giftCardId: settlementTenders.giftCardId, status: settlementTenders.status, amount: settlementTenders.amount })
+            .from(settlementTenders)
+            .where(and(eq(settlementTenders.settlementId, settlement.id), eq(settlementTenders.tenderType, "GIFT_CARD")));
+          const ownCardTenders = cardTenders.filter((row) => row.giftCardId !== null);
+
+          if (program.enabled || input.giftCardId) {
+            if (!program.enabled || ownCardTenders.length === 0) {
+              throw new BusinessRuleError(
+                "GIFT_CARD_REFUND_NOT_ALLOWED",
+                "No gift card paid this check, so the refund can't go onto one. Refund it the way the guest paid.",
+              );
+            }
+
+            if (!input.giftCardId) {
+              throw new BusinessRuleError("GIFT_CARD_REQUIRED", "Choose the gift card the refund goes back onto.");
+            }
+
+            const paid = ownCardTenders.filter((row) => row.giftCardId === input.giftCardId);
+
+            if (paid.length === 0) {
+              throw new BusinessRuleError(
+                "GIFT_CARD_REFUND_NOT_ALLOWED",
+                "That card didn't pay this check. Choose a card that did.",
+              );
+            }
+
+            const earlier = await transaction
+              .select({ status: orderRefunds.status, amount: orderRefunds.amount })
+              .from(orderRefunds)
+              .where(and(eq(orderRefunds.orderId, order.id), eq(orderRefunds.giftCardId, input.giftCardId)));
+
+            assertCardRefundWithinLimits(paid, earlier, amount);
+            giftCard = await lockGiftCard(transaction, actor, input.giftCardId);
+            assertCardActive(giftCard);
+          }
+        }
+
         if (orderItemIds.length > 0) {
           const items = await transaction
             .select({ id: orderItems.id, status: orderItems.status })
@@ -222,12 +284,17 @@ export async function recordRefund(
             otherDescription: input.tenderType === "OTHER" ? input.otherDescription!.trim() : null,
             externalReference: input.externalReference?.trim() || null,
             cashDrawerSessionId,
+            giftCardId: giftCard?.id ?? null,
             businessDate: location.businessDate,
             recordedByUserId: actor.userId,
             recordedAt: now,
             idempotencyRecordId,
           })
           .returning();
+
+        if (giftCard) {
+          await postGiftCardEntry(transaction, actor, giftCard, { kind: "REFUNDED", amount, refundId: refund!.id }, now);
+        }
 
         if (orderItemIds.length > 0) {
           await transaction
@@ -250,6 +317,7 @@ export async function recordRefund(
             taxAmount,
             tipAmount,
             businessDate: refund!.businessDate,
+            giftNumber: giftCard ? formatGiftCardNumber(giftCard.cardNumber) : null,
           },
         });
 
@@ -328,6 +396,18 @@ export async function voidRefund(
     }
 
     const now = new Date();
+    // Phase 31 (policy 10): take the value back off the card, if it still holds it.
+    const giftCard = refund!.giftCardId ? await lockGiftCard(transaction, actor, refund!.giftCardId) : null;
+
+    if (giftCard) {
+      await postGiftCardEntry(
+        transaction,
+        actor,
+        giftCard,
+        { kind: "REFUND_VOIDED", amount: toScale("-" + refund!.amount, 2), refundId },
+        now,
+      );
+    }
     const [updated] = await transaction
       .update(orderRefunds)
       .set({
@@ -347,7 +427,11 @@ export async function voidRefund(
       entityId: refundId,
       occurredAt: now,
       before: { status: "RECORDED", amount: refund!.amount, tenderType: refund!.tenderType },
-      after: { status: "VOIDED", reason: input.reason.trim() },
+      after: {
+        status: "VOIDED",
+        reason: input.reason.trim(),
+        giftNumber: giftCard ? formatGiftCardNumber(giftCard.cardNumber) : null,
+      },
     });
 
     return { refundId, status: updated!.status, version: updated!.version };
@@ -382,6 +466,7 @@ export async function listRefundsForOrder(executor: DatabaseExecutor, actor: Act
     reason: row.reason,
     otherDescription: row.otherDescription,
     externalReference: canSeeReference ? row.externalReference : null,
+    giftCardId: row.giftCardId,
     businessDate: row.businessDate,
     recordedAt: row.recordedAt.toISOString(),
     voidedAt: row.voidedAt?.toISOString() ?? null,

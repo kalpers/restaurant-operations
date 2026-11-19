@@ -69,6 +69,9 @@ const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "guests.view",
   // Phase 30: redeem the guest's loyalty reward on the check.
   "loyalty.redeem",
+  // Phase 31: look up, sell and reload gift cards.
+  "gift-cards.view",
+  "gift-cards.sell",
 ];
 
 /** The starting role-permission matrix. Later changes use a new versioned seed. */
@@ -195,6 +198,10 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "orders.fire",
       "settlements.refund",
       "settlements.refund-void",
+      // Phase 31: gift cards.
+      "gift-cards.view",
+      "gift-cards.sell",
+      "gift-cards.manage",
       "drawers.view",
       "drawers.operate",
       "tax.view",
@@ -261,6 +268,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       // Phase 22: guest message history and resend.
       "messages.view",
       "messages.resend",
+      // Phase 31: tell a guest what is left on their gift card.
+      "gift-cards.view",
       ...SCHEDULE_SELF_SERVICE,
     ],
   },

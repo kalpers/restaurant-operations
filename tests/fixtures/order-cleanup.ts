@@ -44,6 +44,7 @@ import {
   tipPoolRules,
 } from "@/db/schema";
 
+import { clearGiftCardData } from "./gift-card-cleanup";
 import { clearLoyaltyData } from "./loyalty-cleanup";
 
 const APPEND_ONLY = [
@@ -124,6 +125,8 @@ export async function clearOrderData(database: Database): Promise<void> {
         .join(", ")}` as never,
     );
 
+    // Phase 31: gift card rows point at tenders, refunds, drawers and idempotency records.
+    await clearGiftCardData(transaction);
     await transaction.delete(orderRefundItems);
     await transaction.delete(orderRefunds);
     await transaction.delete(settlementTenders);

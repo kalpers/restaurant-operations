@@ -27,6 +27,15 @@ const reason = z
   .max(300)
   .refine((value) => !looksLikeCardNumber(value), "Don't enter card numbers.");
 
+/** Phase 31: a gift card code as typed or scanned. Shape only; it is never echoed or logged. */
+const giftCardCode = z
+  .string()
+  .trim()
+  .max(40)
+  .nullable()
+  .optional()
+  .transform((value) => (value ? value : null));
+
 export const settlementIdParamsSchema = z.object({ settlementId: z.uuid() });
 export const tenderParamsSchema = z.object({ settlementId: z.uuid(), tenderId: z.uuid() });
 
@@ -54,6 +63,8 @@ export const recordTenderSchema = z.object({
   failureReason: noCardNumber(200),
   /** Phase 17: the open drawer session for cash. */
   cashDrawerSessionId: z.uuid().nullable().optional(),
+  /** Phase 31: the restaurant's own card a GIFT_CARD tender spends. */
+  giftCardCode,
 });
 
 export const voidTenderSchema = z.object({ expectedVersion, reason });
@@ -110,6 +121,78 @@ export const recordRefundSchema = z.object({
   externalReference: noCardNumber(80),
   cashDrawerSessionId: z.uuid().nullable().optional(),
   orderItemIds: z.array(z.uuid()).max(100).default([]),
+  /** Phase 31: the card that paid the check, for a GIFT_CARD refund. */
+  giftCardId: z.uuid().nullable().optional(),
 });
 
 export const voidRefundSchema = z.object({ expectedVersion, reason });
+
+// ---------------------------------------------------------------- Phase 31 gift cards
+
+export const giftCardIdParamsSchema = z.object({ cardId: z.uuid() });
+export const giftCardSaleParamsSchema = z.object({ saleId: z.uuid() });
+
+export const giftCardProgramSchema = z.object({
+  enabled: z.boolean(),
+  maxBalance: money,
+  expectedVersion: z.int().nonnegative(),
+});
+
+export const sellGiftCardSchema = z.object({
+  idempotencyKey,
+  giftCardCode,
+  amount: money,
+  tenderType: z.enum(["CASH", "EXTERNAL_CARD", "OTHER"]),
+  receivedAmount: money.nullable().optional().transform((value) => value ?? null),
+  externalReference: noCardNumber(80),
+  providerName: noCardNumber(60),
+  cardBrand: noCardNumber(30),
+  cardLastFour: z
+    .string()
+    .trim()
+    .regex(/^\d{4}$/, "Enter exactly the last four digits.")
+    .nullable()
+    .optional()
+    .or(z.literal(""))
+    .transform((value) => (value ? value : null)),
+  authorizationReference: noCardNumber(40),
+  otherDescription: noCardNumber(200),
+  cashDrawerSessionId: z.uuid().nullable().optional(),
+});
+
+export const lookUpGiftCardSchema = z
+  .object({
+    code: giftCardCode,
+    cardNumber: z.string().trim().max(20).nullable().optional(),
+  })
+  .refine((value) => Boolean(value.code) !== Boolean(value.cardNumber), "Enter a code or a card number.");
+
+const giftCardReason = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => !looksLikeCardNumber(value), "Don't enter card numbers.");
+
+export const voidGiftCardSaleSchema = z.object({ expectedVersion, reason: giftCardReason });
+
+export const cashOutGiftCardSchema = z.object({
+  idempotencyKey,
+  expectedVersion,
+  reason: giftCardReason,
+  cashDrawerSessionId: z.uuid().nullable().optional(),
+});
+
+export const adjustGiftCardSchema = z.object({
+  amount: z.string().trim().regex(/^-?\d{1,10}(\.\d{1,2})?$/, "Enter an amount such as 5.00 or -5.00."),
+  reason: giftCardReason,
+  expectedVersion,
+});
+
+export const giftCardStatusSchema = z.object({
+  status: z.enum(["ACTIVE", "INACTIVE"]),
+  reason: giftCardReason,
+  expectedVersion,
+});
+
+export const replaceGiftCardCodeSchema = z.object({ reason: giftCardReason, expectedVersion });

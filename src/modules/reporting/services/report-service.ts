@@ -16,6 +16,7 @@ import { inventorySections } from "../queries/inventory-report";
 import { laborSections } from "../queries/labor-report";
 import { menuSections } from "../queries/menu-report";
 import { orderSections } from "../queries/order-report";
+import { giftCardSections } from "../queries/gift-card-report";
 import { loyaltySections } from "../queries/loyalty-report";
 import { pricePeriodsSection } from "../queries/price-period-report";
 import { salesForecastAccuracySection, salesForecastSections } from "../queries/sales-forecast-report";
@@ -57,7 +58,8 @@ export const BUILDERS: Record<ReportArea, (context: ReportContext) => Promise<Re
     ...(await loyaltySections(context)),
   ],
   menu: async (context) => [...(await menuSections(context)), ...(await itemMixSections(context))],
-  settlements: settlementSections,
+  // Phase 31 (policy 16): gift card movements and outstanding balances.
+  settlements: async (context) => [...(await settlementSections(context)), ...(await giftCardSections(context))],
   orders: async (context) => [
     ...(await orderSections(context)),
     await serverPerformanceSection(context),

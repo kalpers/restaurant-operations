@@ -21,7 +21,7 @@ Derive current state from source, migrations, tests, and committed documentation
 Approved 2026-10-08. These decisions replace conflicting recommendations elsewhere in this plan and are binding for schema, services, UI, tests, and reporting.
 
 1. Tax calculation is deferred. Settle the exact Phase 9 post-discount, pre-tax Order amount. Do not infer taxability or display a calculated tax amount.
-2. Use exactly these recorded tender types: `CASH`, `EXTERNAL_CARD`, `GIFT_CARD`, `HOUSE_ACCOUNT`, and `OTHER`. Do not process cards, gift-card balances, house-account receivables, or external providers. `OTHER` requires an identifying description/reason. Never persist PAN, CVV/CVC, track data, PIN, or sensitive EMV data.
+2. Use exactly these recorded tender types: `CASH`, `EXTERNAL_CARD`, `GIFT_CARD`, `HOUSE_ACCOUNT`, and `OTHER`. Do not process cards, gift-card balances, house-account receivables, or external providers. `OTHER` requires an identifying description/reason. *(Phase 31 supersedes the gift-card balance ban for the restaurant's own cards; see `docs/Phase-31-Gift-Card-Balances.md`. Everything else stays record only.)* Never persist PAN, CVV/CVC, track data, PIN, or sensitive EMV data.
 3. An Order may have multiple historical Settlements but at most one `OPEN` Settlement. Multiple Tenders within that Settlement support partial and split tender. Do not implement multiple partially completed Settlements that cumulatively satisfy one Order. Completion of the exactly reconciled Settlement closes the Order.
 4. Separate checks use multiple Orders on a Table Session. Do not move or reassign submitted Order Items between Orders.
 5. Tips are separate from the Order obligation and allowed only on `CASH` and `EXTERNAL_CARD`. Tips use exact cents, cannot be negative, and do not change prices, discounts, subtotal, or the Order amount snapshot. Do not allocate tips to Employees/payroll.
@@ -387,7 +387,7 @@ HOUSE_ACCOUNT
 OTHER
 ```
 
-All five types are recorded classifications only. Do not process cards, gift-card balances, house-account receivables, or external providers. `OTHER` requires a description/reason sufficient to identify what was recorded.
+All five types are recorded classifications only. Do not process cards, gift-card balances, house-account receivables, or external providers. `OTHER` requires a description/reason sufficient to identify what was recorded. *(Phase 31 supersedes the gift-card balance ban for the restaurant's own cards.)*
 
 Discounts/comps remain Order commercial adjustments, not tenders.
 

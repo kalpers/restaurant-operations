@@ -40,8 +40,28 @@ describe("expected drawer cash", () => {
       paidIn: "20.00",
       paidOut: "12.50",
       cashRefunds: "2.00",
+      giftCardSales: "0.00",
+      giftCardCashOuts: "0.00",
       expected: "132.38",
     });
+  });
+
+  it("adds recorded cash gift card sales and takes off cash-outs (Phase 31)", () => {
+    const totals = expectedCash({
+      openingFloat: "100.00",
+      tenders: [],
+      movements: [],
+      refunds: [],
+      giftCardSales: [
+        { status: "RECORDED", amount: "50.00" },
+        { status: "VOIDED", amount: "25.00" },
+      ],
+      giftCardCashOuts: [{ amount: "4.75" }],
+    });
+
+    expect(totals.giftCardSales).toBe("50.00");
+    expect(totals.giftCardCashOuts).toBe("4.75");
+    expect(totals.expected).toBe("145.25");
   });
 
   it("is just the float for an empty session", () => {

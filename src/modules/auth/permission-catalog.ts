@@ -150,6 +150,14 @@ export const PERMISSION_CATALOG = [
   { code: "settlements.view-card-metadata", name: "View card brand, last four and references", category: "Settlements" },
   { code: "settlements.refund", name: "Record refunds on closed orders", category: "Settlements" },
   { code: "settlements.refund-void", name: "Void recorded refunds", category: "Settlements" },
+  // Phase 31: the restaurant's own gift cards (policy 13).
+  { code: "gift-cards.view", name: "Look up gift cards, their balance and history", category: "Settlements" },
+  { code: "gift-cards.sell", name: "Sell and reload gift cards", category: "Settlements" },
+  {
+    code: "gift-cards.manage",
+    name: "Manage gift cards: settings, sale voids, cash-outs, adjustments, status and codes",
+    category: "Settlements",
+  },
   { code: "drawers.view", name: "View cash drawers", category: "Settlements" },
   { code: "drawers.operate", name: "Open, count and close cash drawers", category: "Settlements" },
   { code: "drawers.manage", name: "Set up cash drawers and the drawer requirement", category: "Settlements" },

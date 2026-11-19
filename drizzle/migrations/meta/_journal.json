@@ -505,6 +505,20 @@
       "when": 1795103482117,
       "tag": "0071_guest_loyalty_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795109092301,
+      "tag": "0072_gift_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795109111002,
+      "tag": "0073_gift_card_guards",
+      "breakpoints": true
     }
   ]
 }

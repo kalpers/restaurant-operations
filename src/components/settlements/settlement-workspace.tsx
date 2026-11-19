@@ -20,6 +20,7 @@ import type {
   TenderDetail,
 } from "@/modules/settlements/queries/settlement-queries";
 import { previewChange } from "@/modules/settlements/rules/settlement-math";
+import { compareDecimals } from "@/shared/decimal/decimal";
 import { formatInstant } from "@/shared/time/format-instant";
 import type { TenderType } from "@/modules/settlements/types";
 
@@ -172,6 +173,7 @@ function TenderLine({
           Received {formatMoney(tender.receivedAmount)} · Change {formatMoney(tender.changeAmount)}
         </p>
       )}
+      {tender.giftCard && <p className="text-sm">Gift card {tender.giftCard.cardNumber}</p>}
       {tender.otherDescription && <p className="text-sm">{tender.otherDescription}</p>}
       {tender.failureReason && <p className="text-sm">Failed: {tender.failureReason}</p>}
       {reference && (
@@ -219,11 +221,13 @@ function TenderForm({
   tenderTypes,
   drawers,
   drawerRequired,
+  giftCardsEnabled,
 }: {
   settlement: SettlementDetail;
   tenderTypes: TenderType[];
   drawers: DrawerChoice[];
   drawerRequired: boolean;
+  giftCardsEnabled: boolean;
 }) {
   const { run, pending, error } = useAction();
   const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
@@ -239,10 +243,15 @@ function TenderForm({
   const [authorizationReference, setAuthorizationReference] = useState("");
   const [externalReference, setExternalReference] = useState("");
   const [otherDescription, setOtherDescription] = useState("");
+  // Phase 31: the restaurant's own gift card, by its code. The code stays in this form only.
+  const [giftCardCode, setGiftCardCode] = useState("");
+  const [giftCardBalance, setGiftCardBalance] = useState<{ cardNumber: string; balance: string } | null>(null);
+  const lookup = useAction();
   // One key per attempt: a retry after a lost response reuses it, so nothing is recorded twice.
   const key = useRef<string | null>(null);
   const isCash = tenderType === "CASH";
   const isCard = tenderType === "EXTERNAL_CARD";
+  const isOwnGiftCard = tenderType === "GIFT_CARD" && giftCardsEnabled;
   const tippable = isCash || isCard;
   const change = isCash && received ? previewChange(amount, tip || "0", received) : null;
 
@@ -263,6 +272,31 @@ function TenderForm({
     };
   }
 
+  async function checkBalance() {
+    setGiftCardBalance(null);
+
+    const result = await lookup.run("/api/gift-cards/lookup", { code: giftCardCode });
+
+    if (result.ok) {
+      const card = result.data as { cardNumber: string; balance: string };
+
+      setGiftCardBalance({ cardNumber: card.cardNumber, balance: card.balance });
+    }
+  }
+
+  function useBalance() {
+    if (!giftCardBalance) {
+      return;
+    }
+
+    key.current = null;
+    setAmount(
+      compareDecimals(giftCardBalance.balance, settlement.remainingAmount) < 0
+        ? giftCardBalance.balance
+        : settlement.remainingAmount,
+    );
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     key.current ??= newKey("tender");
@@ -280,16 +314,19 @@ function TenderForm({
         cardBrand: isCard ? cardBrand : null,
         cardLastFour: isCard ? cardLastFour : null,
         authorizationReference: isCard ? authorizationReference : null,
-        externalReference: isCash ? null : externalReference,
+        externalReference: isCash || isOwnGiftCard ? null : externalReference,
         otherDescription: tenderType === "OTHER" ? otherDescription : null,
         failureReason: isCard && failed ? failureReason : null,
         cashDrawerSessionId: isCash && drawerId ? drawerId : null,
+        giftCardCode: isOwnGiftCard ? giftCardCode : null,
       },
       { "Idempotency-Key": key.current },
     );
 
     if (result.ok) {
       key.current = null;
+      setGiftCardCode("");
+      setGiftCardBalance(null);
       setTip("");
       setReceived("");
       setFailed(false);
@@ -415,7 +452,43 @@ function TenderForm({
           </div>
         </>
       )}
-      {!isCash && (
+      {isOwnGiftCard && (
+        <div className="grid gap-2">
+          <label className={LABEL}>
+            Gift card code
+            <input
+              className={INPUT}
+              value={giftCardCode}
+              onChange={(event) => {
+                setGiftCardBalance(null);
+                edited(setGiftCardCode)(event.target.value);
+              }}
+              required
+              maxLength={40}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={BUTTON} disabled={lookup.pending || !giftCardCode.trim()} onClick={checkBalance}>
+              Check balance
+            </button>
+            {giftCardBalance && (
+              <>
+                <span aria-live="polite" className="text-sm">
+                  {giftCardBalance.cardNumber} holds <span className="tabular font-semibold">{formatMoney(giftCardBalance.balance)}</span>
+                </span>
+                <button type="button" className={BUTTON} onClick={useBalance} disabled={giftCardBalance.balance === "0.00"}>
+                  Use balance
+                </button>
+              </>
+            )}
+          </div>
+          <ErrorText error={lookup.error} />
+        </div>
+      )}
+      {!isCash && !isOwnGiftCard && (
         <label className={LABEL}>
           {tenderType === "HOUSE_ACCOUNT" ? "Account reference" : "Reference (optional)"}
           <input className={INPUT} value={externalReference} onChange={(event) => edited(setExternalReference)(event.target.value)} maxLength={80} />
@@ -441,12 +514,14 @@ function OpenSettlement({
   abilities,
   drawers,
   drawerRequired,
+  giftCardsEnabled,
 }: {
   view: OrderSettlementView;
   settlement: SettlementDetail;
   abilities: SettlementAbilities;
   drawers: DrawerChoice[];
   drawerRequired: boolean;
+  giftCardsEnabled: boolean;
 }) {
   const complete = useAction();
   const cancel = useAction();
@@ -517,6 +592,7 @@ function OpenSettlement({
           tenderTypes={abilities.tenderTypes}
           drawers={drawers}
           drawerRequired={drawerRequired}
+          giftCardsEnabled={giftCardsEnabled}
         />
       )}
 
@@ -571,9 +647,29 @@ function OpenSettlement({
   );
 }
 
-function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementView; drawers: DrawerChoice[]; drawerRequired: boolean }) {
+function RefundForm({
+  view,
+  drawers,
+  drawerRequired,
+  giftCardsEnabled,
+}: {
+  view: OrderSettlementView;
+  drawers: DrawerChoice[];
+  drawerRequired: boolean;
+  giftCardsEnabled: boolean;
+}) {
   const { run, pending, error } = useAction();
   const [tenderType, setTenderType] = useState<TenderType>("EXTERNAL_CARD");
+  // Phase 31 (policy 10): a gift card refund goes back onto a card that paid this check.
+  const paidCards = [
+    ...new Map(
+      (view.current?.tenders ?? [])
+        .filter((tender) => tender.status === "RECORDED" && tender.giftCard)
+        .map((tender) => [tender.giftCard!.id, tender.giftCard!] as const),
+    ).values(),
+  ];
+  const [giftCardId, setGiftCardId] = useState(paidCards[0]?.id ?? "");
+  const ownGiftCard = tenderType === "GIFT_CARD" && giftCardsEnabled;
   const [amount, setAmount] = useState("");
   const [taxAmount, setTaxAmount] = useState("0.00");
   const [tipAmount, setTipAmount] = useState("0.00");
@@ -599,6 +695,7 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
         otherDescription: tenderType === "OTHER" ? otherDescription : null,
         externalReference: null,
         cashDrawerSessionId: tenderType === "CASH" && drawerId ? drawerId : null,
+        giftCardId: ownGiftCard && giftCardId ? giftCardId : null,
       },
       { "Idempotency-Key": key.current },
     );
@@ -657,6 +754,23 @@ function RefundForm({ view, drawers, drawerRequired }: { view: OrderSettlementVi
           <input className={INPUT} value={otherDescription} onChange={(event) => setOtherDescription(event.target.value)} required maxLength={200} />
         </label>
       )}
+      {ownGiftCard &&
+        (paidCards.length > 0 ? (
+          <label className={LABEL}>
+            Back onto gift card
+            <select className={INPUT} value={giftCardId} onChange={(event) => setGiftCardId(event.target.value)}>
+              {paidCards.map((card) => (
+                <option key={card.id} value={card.id}>
+                  {card.cardNumber}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="rounded-md border border-warning-300 bg-warning-50 p-2 text-sm text-warning-900">
+            No gift card paid this check, so a refund can&apos;t go onto one. Refund it the way the guest paid.
+          </p>
+        ))}
       {tenderType === "CASH" && drawers.length > 0 && (
         <label className={LABEL}>
           Cash drawer
@@ -769,12 +883,15 @@ export function SettlementWorkspace({
   drawerRequired,
   refunds,
   visitEarning = null,
+  giftCardsEnabled = false,
 }: {
   view: OrderSettlementView;
   abilities: SettlementAbilities;
   drawers: DrawerChoice[];
   drawerRequired: boolean;
   refunds: RefundLine[];
+  /** Phase 31 (policy 8): gift card tenders name one of the restaurant's own cards. */
+  giftCardsEnabled?: boolean;
   /** Phase 30 (amendment 7): what this check's visit earned in loyalty points. */
   visitEarning?: {
     profileId: string;
@@ -864,7 +981,14 @@ export function SettlementWorkspace({
         </div>
 
         {current?.status === "OPEN" && (
-          <OpenSettlement view={view} settlement={current} abilities={abilities} drawers={drawers} drawerRequired={drawerRequired} />
+          <OpenSettlement
+            view={view}
+            settlement={current}
+            abilities={abilities}
+            drawers={drawers}
+            drawerRequired={drawerRequired}
+            giftCardsEnabled={giftCardsEnabled}
+          />
         )}
         {current?.status === "COMPLETED" && <CompletedSettlement view={view} settlement={current} />}
         {order.status === "CLOSED" && (refunds.length > 0 || abilities.refund) && (
@@ -890,7 +1014,9 @@ export function SettlementWorkspace({
                 if needed.
               </p>
             )}
-            {abilities.refund && <RefundForm view={view} drawers={drawers} drawerRequired={drawerRequired} />}
+            {abilities.refund && (
+              <RefundForm view={view} drawers={drawers} drawerRequired={drawerRequired} giftCardsEnabled={giftCardsEnabled} />
+            )}
           </section>
         )}
 

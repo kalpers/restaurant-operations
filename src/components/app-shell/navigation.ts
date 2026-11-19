@@ -53,6 +53,7 @@ export type NavigationIcon =
   | "prep-list"
   | "guests"
   | "loyalty"
+  | "gift-cards"
   | "allergens"
   | "happy-hour"
   | "exports";
@@ -100,6 +101,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/kitchen/prep", label: "Prep list", permission: "kitchen.view", group: "service", icon: "prep-list" },
   { href: "/orders/discounts", label: "Discounts", permission: "orders.discount.manage", group: "service", icon: "discounts" },
   { href: "/cash-drawers", label: "Cash drawers", permission: "drawers.view", group: "service", icon: "drawers" },
+  { href: "/gift-cards", label: "Gift cards", permission: "gift-cards.view", group: "service", icon: "gift-cards" },
   { href: "/menu/86", label: "86 board", permission: "menu.view", group: "service", icon: "eighty-six" },
 
   { href: "/menu", label: "Menu", permission: "menu.view", group: "back-of-house", icon: "menu" },

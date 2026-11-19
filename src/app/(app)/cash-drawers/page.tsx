@@ -66,6 +66,14 @@ export default async function CashDrawersPage() {
                 <dd className="tabular">{formatMoney(session.totals.paidOut)}</dd>
                 <dt>Cash refunds</dt>
                 <dd className="tabular">{formatMoney(session.totals.cashRefunds)}</dd>
+                {(session.totals.giftCardSales !== "0.00" || session.totals.giftCardCashOuts !== "0.00") && (
+                  <>
+                    <dt>Gift card sales (cash)</dt>
+                    <dd className="tabular">{formatMoney(session.totals.giftCardSales)}</dd>
+                    <dt>Gift card cash-outs</dt>
+                    <dd className="tabular">{formatMoney(session.totals.giftCardCashOuts)}</dd>
+                  </>
+                )}
                 <dt className="font-semibold">Expected now</dt>
                 <dd aria-label="Expected cash" className="tabular font-semibold">
                   {formatMoney(session.totals.expected)}

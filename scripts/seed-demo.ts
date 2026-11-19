@@ -24,6 +24,7 @@ import { seedDemoPrepHistory } from "./demo-prep-history";
 import { seedDemoServiceHistory } from "./demo-service-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
+import { seedDemoGiftCards } from "./demo-gift-cards";
 import { seedDemoLoyalty, seedDemoRedemption } from "./demo-loyalty";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -297,6 +298,24 @@ async function main(): Promise<void> {
     const redemption = await seedDemoRedemption(database, await mainOwnerActor("loyalty.redeem"));
 
     console.log(`Demo loyalty redemption: ${redemption}.`);
+
+    // Phase 31 (policy 17): gift cards on, three cards sold, one reloaded, one spent on a check.
+    const giftCards = await seedDemoGiftCards(
+      database,
+      await mainOwnerActor("gift-cards.manage"),
+      await mainOwnerActor("gift-cards.sell"),
+    );
+
+    console.log(`Demo gift cards: ${giftCards.summary}.`);
+
+    if (giftCards.codes.length > 0) {
+      // Shown once, here, like the sale screen; the database keeps only each code's hash.
+      console.log("Demo gift card codes (shown once, not stored):");
+
+      for (const card of giftCards.codes) {
+        console.log(`  ${card.cardNumber}  ${card.code}  balance ${card.balance}`);
+      }
+    }
   } finally {
     await closeDatabase();
   }

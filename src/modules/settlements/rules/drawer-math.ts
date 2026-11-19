@@ -15,6 +15,10 @@ export type DrawerFacts = {
   movements: readonly { movementType: string; amount: string }[];
   /** Phase 20: `tipAmount` is a tip handed back; it leaves the drawer too. */
   refunds: readonly { status: string; amount: string; tipAmount?: string }[];
+  /** Phase 31 (policy 15): cash gift card sales into the session; only RECORDED count. */
+  giftCardSales?: readonly { status: string; amount: string }[];
+  /** Phase 31: cash-outs paid from the session (positive amounts). */
+  giftCardCashOuts?: readonly { amount: string }[];
 };
 
 export type DrawerTotals = {
@@ -24,12 +28,15 @@ export type DrawerTotals = {
   paidIn: string;
   paidOut: string;
   cashRefunds: string;
+  giftCardSales: string;
+  giftCardCashOuts: string;
   expected: string;
 };
 
 /**
  * Expected cash = float + RECORDED cash tenders (amount + tip, which is received minus change)
- * + paid-ins - paid-outs - RECORDED cash refunds. Voided rows don't count.
+ * + paid-ins - paid-outs - RECORDED cash refunds + RECORDED cash gift card sales (Phase 31)
+ * - gift card cash-outs. Voided rows don't count.
  */
 export function expectedCash(facts: DrawerFacts): DrawerTotals {
   const recorded = facts.tenders.filter((tender) => tender.status === "RECORDED");
@@ -49,15 +56,30 @@ export function expectedCash(facts: DrawerFacts): DrawerTotals {
       .map((refund) => addDecimals(refund.amount, refund.tipAmount ?? "0")),
     MONEY_SCALE,
   );
+  const giftCardSales = sumDecimals(
+    (facts.giftCardSales ?? []).filter((sale) => sale.status === "RECORDED").map((sale) => sale.amount),
+    MONEY_SCALE,
+  );
+  const giftCardCashOuts = sumDecimals((facts.giftCardCashOuts ?? []).map((cashOut) => cashOut.amount), MONEY_SCALE);
   const expected = toScale(
     subtractDecimals(
-      addDecimals(addDecimals(addDecimals(facts.openingFloat, cashSales), cashTips), paidIn),
-      addDecimals(paidOut, cashRefunds),
+      addDecimals(addDecimals(addDecimals(addDecimals(facts.openingFloat, cashSales), cashTips), paidIn), giftCardSales),
+      addDecimals(addDecimals(paidOut, cashRefunds), giftCardCashOuts),
     ),
     MONEY_SCALE,
   );
 
-  return { openingFloat: toScale(facts.openingFloat, MONEY_SCALE), cashSales, cashTips, paidIn, paidOut, cashRefunds, expected };
+  return {
+    openingFloat: toScale(facts.openingFloat, MONEY_SCALE),
+    cashSales,
+    cashTips,
+    paidIn,
+    paidOut,
+    cashRefunds,
+    giftCardSales,
+    giftCardCashOuts,
+    expected,
+  };
 }
 
 /** Counted minus expected: negative means the drawer is short. */

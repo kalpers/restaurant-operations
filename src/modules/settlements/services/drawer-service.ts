@@ -10,6 +10,8 @@ import {
   orderRefunds,
   settlements,
   settlementTenders,
+  giftCardEntries,
+  giftCardSales,
 } from "@/db/schema";
 import {
   withTransaction,
@@ -301,7 +303,24 @@ async function drawerFacts(executor: DatabaseExecutor, session: SessionRow): Pro
     .from(orderRefunds)
     .where(eq(orderRefunds.cashDrawerSessionId, session.id));
 
-  return expectedCash({ openingFloat: session.openingFloat, tenders, movements, refunds });
+  // Phase 31 (policy 15): cash taken for gift cards and paid out for card balances.
+  const cardSales = await executor
+    .select({ status: giftCardSales.status, amount: giftCardSales.amount })
+    .from(giftCardSales)
+    .where(eq(giftCardSales.cashDrawerSessionId, session.id));
+  const cashOuts = await executor
+    .select({ amount: sql<string>`(-${giftCardEntries.amount})::numeric(12,2)::text` })
+    .from(giftCardEntries)
+    .where(and(eq(giftCardEntries.cashDrawerSessionId, session.id), eq(giftCardEntries.kind, "CASHED_OUT")));
+
+  return expectedCash({
+    openingFloat: session.openingFloat,
+    tenders,
+    movements,
+    refunds,
+    giftCardSales: cardSales,
+    giftCardCashOuts: cashOuts,
+  });
 }
 
 export type SessionSummary = SessionRow & { totals: DrawerTotals; drawerCode: string; drawerName: string };

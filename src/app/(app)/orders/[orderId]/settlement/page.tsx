@@ -8,6 +8,7 @@ import { requirePageActor } from "@/modules/auth/guards";
 import { getOrderSettlementView } from "@/modules/settlements/queries/settlement-queries";
 import { actorHolds } from "@/modules/settlements/services/access";
 import { getDrawerSetting, listOpenSessionsForCash } from "@/modules/settlements/services/drawer-service";
+import { readGiftCardProgram } from "@/modules/settlements/services/gift-card-ledger";
 import { getVisitEarningForOrder } from "@/modules/reservations/services/loyalty-service";
 import { listRefundsForOrder } from "@/modules/settlements/services/refund-service";
 import { TENDER_PERMISSIONS, TENDER_TYPES } from "@/modules/settlements/types";
@@ -53,6 +54,8 @@ export default async function SettlementPage({ params }: { params: Promise<{ ord
   const refunds = view.order.status === "CLOSED" ? await listRefundsForOrder(database, actor, view.order.id) : [];
   // Phase 30 (amendment 7): a refund changes no points; show what the visit earned.
   const visitEarning = view.order.status === "CLOSED" ? await getVisitEarningForOrder(database, actor, view.order.id) : null;
+  // Phase 31 (policy 8): whether a gift card tender names one of the restaurant's own cards.
+  const giftCardsEnabled = (await readGiftCardProgram(database, actor.organizationId)).enabled;
 
   return (
     <>
@@ -70,6 +73,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ ord
         drawerRequired={drawerRequired}
         refunds={refunds}
         visitEarning={visitEarning}
+        giftCardsEnabled={giftCardsEnabled}
       />
     </>
   );

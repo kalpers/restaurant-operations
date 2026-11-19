@@ -10,7 +10,9 @@ import { rowsOf, type ReportContext } from "./report-context";
 // menu category snapshot taken at SEND, applied discounts, the `order_tax_lines` projection,
 // RECORDED tenders of their COMPLETED settlements, refunds by the business date recorded, and
 // closed drawer sessions by their business date (as the settlements report). Never current
-// prices, menus or tax rates.
+// prices, menus or tax rates. Phase 31: gift card sales by their business date (every sale,
+// voided or not), sale voids by the date voided, and cash-outs and adjustments from the card
+// ledger, all at this location.
 
 const UNCATEGORIZED = "Uncategorized";
 
@@ -22,7 +24,7 @@ export async function loadJournalFacts(context: ReportContext): Promise<JournalD
       AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
       AND o.status = 'CLOSED'
   `;
-  const [sales, totals, taxes, tenders, refunds, drawers] = await Promise.all([
+  const [sales, totals, taxes, tenders, refunds, drawers, cardSales, cardVoids, cardEntries] = await Promise.all([
     rowsOf<{ business_date: string; category: string | null; amount: string }>(
       context,
       sql`
@@ -116,6 +118,40 @@ export async function loadJournalFacts(context: ReportContext): Promise<JournalD
         ORDER BY s.business_date, s.id
       `,
     ),
+    rowsOf<{ business_date: string; tender_type: string; amount: string }>(
+      context,
+      sql`
+        SELECT g.business_date::text AS business_date, g.tender_type, SUM(g.amount)::numeric(14,2)::text AS amount
+        FROM gift_card_sales g
+        WHERE g.location_id = ${filters.locationId}
+          AND g.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        GROUP BY g.business_date, g.tender_type
+      `,
+    ),
+    rowsOf<{ business_date: string; tender_type: string; amount: string }>(
+      context,
+      sql`
+        SELECT g.voided_business_date::text AS business_date, g.tender_type, SUM(g.amount)::numeric(14,2)::text AS amount
+        FROM gift_card_sales g
+        WHERE g.location_id = ${filters.locationId}
+          AND g.status = 'VOIDED'
+          AND g.voided_business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        GROUP BY g.voided_business_date, g.tender_type
+      `,
+    ),
+    rowsOf<{ business_date: string; cash_outs: string; adjustments: string }>(
+      context,
+      sql`
+        SELECT e.business_date::text AS business_date,
+               COALESCE(-SUM(e.amount) FILTER (WHERE e.kind = 'CASHED_OUT'), 0)::numeric(14,2)::text AS cash_outs,
+               COALESCE(SUM(e.amount) FILTER (WHERE e.kind = 'ADJUSTED'), 0)::numeric(14,2)::text AS adjustments
+        FROM gift_card_entries e
+        WHERE e.location_id = ${filters.locationId}
+          AND e.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+          AND e.kind IN ('CASHED_OUT', 'ADJUSTED')
+        GROUP BY e.business_date
+      `,
+    ),
   ]);
   const dates = [
     ...new Set([
@@ -124,6 +160,9 @@ export async function loadJournalFacts(context: ReportContext): Promise<JournalD
       ...tenders.map((row) => row.business_date),
       ...refunds.map((row) => row.business_date),
       ...drawers.map((row) => row.business_date),
+      ...cardSales.map((row) => row.business_date),
+      ...cardVoids.map((row) => row.business_date),
+      ...cardEntries.map((row) => row.business_date),
     ]),
   ].sort();
 
@@ -152,6 +191,14 @@ export async function loadJournalFacts(context: ReportContext): Promise<JournalD
         .filter((row) => row.business_date === date)
         .map((row) => ({ tenderType: row.tender_type, amount: row.amount, tax: row.tax, tips: row.tips })),
       drawerVariances: drawers.filter((row) => row.business_date === date).map((row) => row.variance),
+      giftCardSales: cardSales
+        .filter((row) => row.business_date === date)
+        .map((row) => ({ tenderType: row.tender_type, amount: row.amount })),
+      giftCardSaleVoids: cardVoids
+        .filter((row) => row.business_date === date)
+        .map((row) => ({ tenderType: row.tender_type, amount: row.amount })),
+      giftCardCashOuts: cardEntries.find((row) => row.business_date === date)?.cash_outs ?? "0.00",
+      giftCardAdjustments: cardEntries.find((row) => row.business_date === date)?.adjustments ?? "0.00",
     };
   });
 }

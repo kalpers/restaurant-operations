@@ -14,6 +14,12 @@ import { addDecimals, compareDecimals, negateDecimal, subtractDecimals, toScale 
 // and, on the date they were recorded:
 //   Dr REFUND/<type>, Dr TAX/REFUNDED, Dr TIP_REFUND/<type>   Cr TENDER/<type>
 //   cash over or short from closed drawers, against TENDER/CASH.
+// Phase 31 gift cards (policy 16), on the date each happened:
+//   Dr TENDER/<payment type>  Cr GIFT_CARD/ISSUED        a card sold or reloaded (voids reverse it)
+//   Dr GIFT_CARD/CASHED_OUT   Cr TENDER/CASH             a balance paid out in cash
+//   GIFT_CARD/ADJUSTED against GIFT_CARD_ADJUSTMENT/ADJUSTED for manager adjustments.
+// Spending a card stays TENDER/GIFT_CARD; the bookkeeper maps it and GIFT_CARD/* to one
+// liability account. A card sale is never SALES.
 // Tenders equal total due plus tips, and total due = item subtotal - discounts - included tax
 // + tax, so a correct day always balances; one that doesn't is refused, never exported.
 
@@ -27,6 +33,8 @@ export const JOURNAL_LINE_TYPES = [
   "REFUND",
   "TIP_REFUND",
   "CASH_OVER_SHORT",
+  "GIFT_CARD",
+  "GIFT_CARD_ADJUSTMENT",
 ] as const;
 
 export type JournalLineType = (typeof JOURNAL_LINE_TYPES)[number];
@@ -43,6 +51,14 @@ export type JournalDayFacts = {
   refunds: { tenderType: string; amount: string; tax: string; tips: string }[];
   /** Counted minus expected, per closed drawer session. */
   drawerVariances: string[];
+  /** Phase 31: card sales recorded on the date, by how the guest paid. */
+  giftCardSales?: { tenderType: string; amount: string }[];
+  /** Phase 31: card sales voided on the date (by their voided business date). */
+  giftCardSaleVoids?: { tenderType: string; amount: string }[];
+  /** Phase 31: cash paid out for card balances on the date (positive). */
+  giftCardCashOuts?: string;
+  /** Phase 31: net manager adjustments to card balances on the date (signed). */
+  giftCardAdjustments?: string;
 };
 
 export type JournalRow = {
@@ -73,6 +89,8 @@ const ORDER: Record<JournalLineType, number> = {
   REFUND: 6,
   TIP_REFUND: 7,
   CASH_OVER_SHORT: 8,
+  GIFT_CARD: 9,
+  GIFT_CARD_ADJUSTMENT: 10,
 };
 
 export function buildJournalDay(facts: JournalDayFacts): JournalRow[] {
@@ -122,6 +140,29 @@ export function buildJournalDay(facts: JournalDayFacts): JournalRow[] {
       post("CASH_OVER_SHORT", "CASH", "debit", negateDecimal(variance));
       post("TENDER", "CASH", "credit", negateDecimal(variance));
     }
+  }
+
+  for (const sale of facts.giftCardSales ?? []) {
+    post("TENDER", sale.tenderType, "debit", sale.amount);
+    post("GIFT_CARD", "ISSUED", "credit", sale.amount);
+  }
+
+  for (const voided of facts.giftCardSaleVoids ?? []) {
+    post("GIFT_CARD", "ISSUED", "debit", voided.amount);
+    post("TENDER", voided.tenderType, "credit", voided.amount);
+  }
+
+  post("GIFT_CARD", "CASHED_OUT", "debit", facts.giftCardCashOuts ?? "0");
+  post("TENDER", "CASH", "credit", facts.giftCardCashOuts ?? "0");
+
+  const adjustment = facts.giftCardAdjustments ?? "0";
+
+  if (compareDecimals(adjustment, "0") > 0) {
+    post("GIFT_CARD_ADJUSTMENT", "ADJUSTED", "debit", adjustment);
+    post("GIFT_CARD", "ADJUSTED", "credit", adjustment);
+  } else if (compareDecimals(adjustment, "0") < 0) {
+    post("GIFT_CARD", "ADJUSTED", "debit", negateDecimal(adjustment));
+    post("GIFT_CARD_ADJUSTMENT", "ADJUSTED", "credit", negateDecimal(adjustment));
   }
 
   const rows = [...lines.values()].sort(
