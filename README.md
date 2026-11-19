@@ -2001,7 +2001,7 @@ Phase 30 builds guest loyalty, lifting the contract's "no loyalty" rule only; ma
 - **Unlink, merge, erase:** unlinking or relinking a visit with a reward is refused (`REWARD_APPLIED`); merge moves the duplicate's points (`MERGED_OUT` / `MERGED_IN`) and erase brings the balance to zero (`ERASED`), both refused while a reward is pending (`REWARD_PENDING`). Refunds change no points; the refund screen shows what the visit earned.
 - **Adjustments:** `POST /api/guests/{id}/loyalty/adjustments` (`loyalty.adjust`, reason required, never below zero available points). Profile page: balance, available, pending rewards and history.
 - **Permissions** (152 in all): `loyalty.redeem` (Server, Bartender, Manager), `loyalty.adjust` and `loyalty.manage` (Manager), plus Owner and General Manager; seeded by `security.loyalty-permissions`. Audit actions `loyalty.program-changed`, `loyalty.reward-created`, `loyalty.reward-updated`, `loyalty.reward-redeemed`, `loyalty.points-adjusted` (category GUESTS); merge and erase audit rows gain `pointsMoved` and `pointsCleared`. No outbox event.
-- **Demo data:** `db:seed:demo` turns the program on (1 per $1, 5 per visit), adds two rewards and gives the demo guests starting points.
+- **Demo data:** `db:seed:demo` turns the program on (1 per $1, 5 per visit), adds two rewards, gives the demo guests starting points and runs one finished visit at MAIN where "Demo Guest Peanut" redeems "Free fries" (settled by external card, earned at session end, table cleaned).
 - **Migrations:** `0070` (tables and `discount_definitions.reward_only`) and `0071` (custom: the ledger, balance, redemption, reward and reward-only guards).
 
 ### Phase 29 Seat Numbers and Split by Seat

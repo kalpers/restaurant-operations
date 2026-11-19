@@ -17,8 +17,7 @@ There are three new permissions (152 in all) and two migrations (0070 generated,
 
 All checks pass: lint, typecheck, unit, integration, E2E in CI mode, build and the production audit.
 
-Not done:
-- The demo seed creates no redemption (see Remaining issues).
+The demo redemption was added after the phase was committed (owner request, 2026-11-19); see "Demo redemption" below.
 
 Fixed after the report was first written (owner request, 2026-11-19): the validation seed now runs on the dev database. See "Validation seed fix" below.
 
@@ -215,6 +214,22 @@ The canonical result covers two runs: the existing suites with the program off, 
 - Scripts: `scripts/seed-demo.ts`
 - Tests: the database, reporting and orders authorization tests and fixtures listed above
 
+## Demo redemption
+
+Added at the owner's request after commit 54e168d, completing policy 16.
+
+`seedDemoRedemption` in `scripts/demo-loyalty.ts` runs once from `db:seed:demo`. It plays one finished visit at MAIN, using only the services staff would use:
+- a walk-in "Demo Guest Peanut", linked to the profile;
+- French Fries and a House IPA sent;
+- "Free fries" redeemed on the fries;
+- the kitchen and bar work completed;
+- the check settled by external card, so no cash drawer is needed;
+- the session ended, which earns the visit's points, and the table cleaned.
+
+It is skipped once the guest has any redemption. It is also skipped when the program is off, the guest or reward is missing, or no clean dining table is free.
+
+On the dev database the first run made check #2: $11.00 of items, $4.50 off for the fries, $6.50 paid. The ledger shows −50 (REDEEMED) and +11 (EARNED: 6 for $6.50, plus 5 for the visit), so the balance went from 180 to 141. The second run printed "already there" and added nothing. Typecheck and lint are clean.
+
 ## Validation seed fix
 
 Added at the owner's request after the phase was validated. It is not part of the Phase 30 scope.
@@ -249,7 +264,6 @@ All 7 validation test files pass (72 tests). Lint and typecheck are clean.
 
 ## Remaining issues
 
-- The demo seed gives points and rewards but no redemption. Policy 16 asked for one. Making one needs a seated, linked visit taken through SEND, redemption, settlement and close in the demo script. Left for the owner to decide whether it is worth adding.
 - The manual SMTP and Twilio check (Phase 22 leftover) is still with the owner.
 - A dev-server E2E run was not done; the CI-mode run is the authoritative one.
 - Nothing is committed.

@@ -24,7 +24,7 @@ import { seedDemoPrepHistory } from "./demo-prep-history";
 import { seedDemoServiceHistory } from "./demo-service-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
-import { seedDemoLoyalty } from "./demo-loyalty";
+import { seedDemoLoyalty, seedDemoRedemption } from "./demo-loyalty";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
 async function versionOf(employeeId: string): Promise<number> {
@@ -292,6 +292,11 @@ async function main(): Promise<void> {
     console.log(
       `Demo loyalty: program ${loyalty.programEnabled ? "turned on (1 point per $1, 5 per visit)" : "left as it was"}, ${loyalty.rewards} rewards added, ${loyalty.profiles} demo guests given starting points.`,
     );
+
+    // One finished visit where a demo guest redeems a reward.
+    const redemption = await seedDemoRedemption(database, await mainOwnerActor("loyalty.redeem"));
+
+    console.log(`Demo loyalty redemption: ${redemption}.`);
   } finally {
     await closeDatabase();
   }
