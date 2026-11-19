@@ -204,6 +204,23 @@ The restaurant's own gift cards work at every location. A manager turns them on 
 
 Managers and inventory managers set allergens up. On each inventory item, under **Allergens**, tick what the ingredient contains and choose **Save and mark reviewed**, even when it contains none. On a menu item, the **Allergens** section shows the label worked out from its recipe; declare **Contains** for what the recipe doesn't show (an item with no recipe) and **May contain** for cross-contact, then save. **Allergens** under **Back of house** lists ingredients in current recipes that nobody has reviewed, and manages the allergen list. Until every ingredient of an item is reviewed, the item shows **Allergens incomplete**, which servers treat as a possible match. Labels are only as good as this data.
 
+### Pre-shift notes
+
+Open **Pre-shift** (in **Service**), or look at **Pre-shift notes today** on the **Dashboard**. You see today's notes meant for everyone and those for your positions at this location. Pinned notes come first.
+
+Managers choose **Manage notes** to write a note for today or up to 14 days ahead. Give it a title and the note itself. Tick the positions it is for, or none for everyone, and **Pin to the top** if it matters most. Until its date has passed, a note can be changed with **Edit** or taken down with **Withdraw**. A withdrawn note stays listed for managers. Choosing positions only decides who sees the note on their page; anyone can be told what it says.
+
+### Manager log
+
+Managers record what happened at the location under **Manager log** (in **Service**). Typical entries are incidents, repairs, staffing changes and guest complaints.
+
+- **Add an entry:** choose a category and write the entry. It goes on today's business date, or choose **The previous business date** when writing up the night after the cutoff.
+- **Correct an entry:** entries can't be edited or deleted. Choose **Correct** on an entry and write the correction. The original stays, marked **Corrected by LOG-…**.
+- **Find entries:** pick a **Business date**, filter by category, or search the text across up to 31 days.
+- **Redact:** if an entry holds something that must not be kept, such as a guest's phone number, a health detail or an HR matter, an Owner or General Manager chooses **Redact** and gives a reason. The text is removed for good. The entry's number, date, category and author stay, with who redacted it and why, and the redaction is in the audit trail.
+
+Don't write guests' contact details, health details or HR matters in the log in the first place.
+
 ### The 86 board
 
 Open **86 board** to see what can't be sold at your location right now, what is running low (five portions or fewer, from recorded stock and the current recipe), what is being sold anyway today, and what was restored today. Everyone with menu access can see it.

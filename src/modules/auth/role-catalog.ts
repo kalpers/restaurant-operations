@@ -29,6 +29,9 @@ const SCHEDULE_SELF_SERVICE: readonly PermissionCode[] = [
   "timeclock.punch",
 ];
 
+/** Phase 32 (policy 11): everyone on staff reads the day's pre-shift notes. */
+const STAFF_BRIEFING: readonly PermissionCode[] = ["pre-shift.view"];
+
 /** Clearing up after a party, which floor staff do during service. */
 const SESSION_CLOSE_OUT: readonly PermissionCode[] = [
   "restaurant.complete-session",
@@ -52,6 +55,7 @@ const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   "orders.edit",
   "orders.submit",
   ...SCHEDULE_SELF_SERVICE,
+  ...STAFF_BRIEFING,
   "settlements.view",
   "settlements.create",
   "settlements.tender.cash",
@@ -202,6 +206,11 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "gift-cards.view",
       "gift-cards.sell",
       "gift-cards.manage",
+      // Phase 32: the manager log (not redaction) and pre-shift notes.
+      "manager-log.view",
+      "manager-log.write",
+      "pre-shift.view",
+      "pre-shift.manage",
       "drawers.view",
       "drawers.operate",
       "tax.view",
@@ -271,6 +280,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       // Phase 31: tell a guest what is left on their gift card.
       "gift-cards.view",
       ...SCHEDULE_SELF_SERVICE,
+      ...STAFF_BRIEFING,
     ],
   },
   {
@@ -287,6 +297,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "inventory.view",
       "inventory.waste",
       ...SCHEDULE_SELF_SERVICE,
+      ...STAFF_BRIEFING,
     ],
   },
   {
@@ -302,6 +313,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       // Phase 21: see a guest's allergies when running food.
       "guests.view",
       ...SCHEDULE_SELF_SERVICE,
+      ...STAFF_BRIEFING,
     ],
   },
   {
@@ -326,6 +338,7 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       // Phase 21: tag ingredients with their allergens.
       "recipes.allergens.manage",
       ...SCHEDULE_SELF_SERVICE,
+      ...STAFF_BRIEFING,
       "reports.view",
       "reports.inventory",
     ],

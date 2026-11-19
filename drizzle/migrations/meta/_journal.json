@@ -519,6 +519,20 @@
       "when": 1795109111002,
       "tag": "0073_gift_card_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795118826342,
+      "tag": "0074_manager_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795118838395,
+      "tag": "0075_manager_log_guards",
+      "breakpoints": true
     }
   ]
 }

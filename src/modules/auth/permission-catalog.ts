@@ -72,6 +72,12 @@ export const PERMISSION_CATALOG = [
   { code: "restaurant.server.assign", name: "Assign servers to sections and sessions", category: "Restaurant / Seating" },
   { code: "restaurant.capacity.override", name: "Override seating capacity", category: "Restaurant / Seating" },
   { code: "restaurant.schedule.override", name: "Assign a server who isn't on a published shift", category: "Restaurant / Seating" },
+  // Phase 32: the manager log and pre-shift notes (policy 11).
+  { code: "manager-log.view", name: "Read the manager log", category: "Manager log" },
+  { code: "manager-log.write", name: "Add and correct manager log entries", category: "Manager log" },
+  { code: "manager-log.redact", name: "Redact a manager log entry, with a reason", category: "Manager log" },
+  { code: "pre-shift.view", name: "Read today's pre-shift notes", category: "Manager log" },
+  { code: "pre-shift.manage", name: "Write, edit and withdraw pre-shift notes", category: "Manager log" },
 
   { code: "reservations.view", name: "View reservations", category: "Reservations" },
   { code: "reservations.manage", name: "Manage reservations", category: "Reservations" },

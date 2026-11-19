@@ -36,6 +36,7 @@ import {
 } from "./guest-profiles-permissions";
 import { securityGuestMessagingPermissionsSeed } from "./guest-messaging-permissions";
 import { securityGiftCardPermissionsSeed } from "./gift-card-permissions";
+import { securityManagerLogPermissionsSeed } from "./manager-log-permissions";
 import { securityLoyaltyPermissionsSeed } from "./loyalty-permissions";
 import { securityLocationsLotsPermissionsSeed } from "./locations-lots-permissions";
 
@@ -70,4 +71,5 @@ export const seeds: readonly Seed[] = [
   securityLocationsLotsPermissionsSeed,
   securityLoyaltyPermissionsSeed,
   securityGiftCardPermissionsSeed,
+  securityManagerLogPermissionsSeed,
 ];

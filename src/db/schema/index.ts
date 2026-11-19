@@ -14,6 +14,7 @@ export * from "./inventory";
 export * from "./inventory-links";
 export * from "./kitchen";
 export * from "./menu";
+export * from "./manager-log";
 export * from "./menu-outages";
 export * from "./notifications";
 export * from "./nutrition";

@@ -190,6 +190,7 @@ describe("runSeeds", () => {
       "security.locations-lots-permissions",
       "security.loyalty-permissions",
       "security.gift-card-permissions",
+      "security.manager-log-permissions",
     ]);
   });
 });

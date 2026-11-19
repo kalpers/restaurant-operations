@@ -25,6 +25,7 @@ import { seedDemoServiceHistory } from "./demo-service-history";
 import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
 import { seedDemoGiftCards } from "./demo-gift-cards";
+import { seedDemoBriefings } from "./demo-briefings";
 import { seedDemoLoyalty, seedDemoRedemption } from "./demo-loyalty";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -316,6 +317,13 @@ async function main(): Promise<void> {
         console.log(`  ${card.cardNumber}  ${card.code}  balance ${card.balance}`);
       }
     }
+
+    // Phase 32 (policy 13): manager log entries (one correction) and pre-shift notes at MAIN.
+    const briefings = await seedDemoBriefings(database, await mainOwnerActor("manager-log.write"));
+
+    console.log(
+      `Demo manager log and pre-shift: ${briefings.entries} log entries and ${briefings.notes} pre-shift notes added; existing ones were left alone.`,
+    );
   } finally {
     await closeDatabase();
   }

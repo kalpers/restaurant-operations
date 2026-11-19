@@ -71,6 +71,7 @@ import { clearGuestMessagingData } from "./messaging-cleanup";
 import { clearAuditEvents } from "./audit-cleanup";
 import { clearPhase20Notifications } from "./notification-cleanup";
 import { clearDemandForecasts } from "./forecast-fixtures";
+import { clearBriefingData } from "./briefing-cleanup";
 
 export const HIRE_DATE = "2024-01-15";
 export const ABSENT_ID = "00000000-0000-4000-8000-000000000000";
@@ -205,6 +206,8 @@ export async function clearGuestProfileData(database: Database): Promise<void> {
  * only goes if a fixture location owns it: tests run on their own fixture locations.
  */
 export async function clearRestaurantData(database: Database): Promise<void> {
+  // Phase 32: log entries and notes reference users, employees, positions and locations.
+  await clearBriefingData(database);
   // Orders reference table sessions, guest parties and employees.
   await clearOrderData(database);
   // Phase 22: messages reference reservations, waitlist entries and parties.

@@ -363,6 +363,13 @@ export const AUDIT_ACTIONS = {
   },
   // Phase 20 (policy 6): general location settings. Settings with their own action
   // (tax, cash drawers, auto-86) keep it.
+  // Phase 32 (policy 11): a manager log entry redacted. Never the body; only the reason's length.
+  "restaurant.manager-log-redacted": {
+    category: "ORGANIZATION",
+    entityType: "manager_log_entry",
+    scope: "LOCATION",
+    fields: ["entryNumber", "businessDate", "category", "reasonLength"],
+  },
   // Phase 23 (policy 27): opening, closing and reopening a location. Codes and counts only.
   "locations.created": {
     category: "ORGANIZATION",

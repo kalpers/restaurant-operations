@@ -56,7 +56,9 @@ export type NavigationIcon =
   | "gift-cards"
   | "allergens"
   | "happy-hour"
-  | "exports";
+  | "exports"
+  | "manager-log"
+  | "pre-shift";
 
 export type NavigationItem = {
   href: string;
@@ -103,6 +105,8 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/cash-drawers", label: "Cash drawers", permission: "drawers.view", group: "service", icon: "drawers" },
   { href: "/gift-cards", label: "Gift cards", permission: "gift-cards.view", group: "service", icon: "gift-cards" },
   { href: "/menu/86", label: "86 board", permission: "menu.view", group: "service", icon: "eighty-six" },
+  { href: "/pre-shift", label: "Pre-shift", permission: "pre-shift.view", group: "service", icon: "pre-shift" },
+  { href: "/manager-log", label: "Manager log", permission: "manager-log.view", group: "service", icon: "manager-log" },
 
   { href: "/menu", label: "Menu", permission: "menu.view", group: "back-of-house", icon: "menu" },
   { href: "/menu/manage", label: "Manage menu", permission: "menu.edit", group: "back-of-house", icon: "menu-manage" },

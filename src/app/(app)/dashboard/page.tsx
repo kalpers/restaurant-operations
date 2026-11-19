@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { DashboardOverview } from "@/components/reports/dashboard-overview";
 import { LocationsToday } from "@/components/reports/locations-today";
+import { PreShiftToday } from "@/components/restaurant/pre-shift-today";
 import { requirePageUser, resolveCurrentLocation } from "@/modules/auth/guards";
 import { requirePermission } from "@/modules/auth/services/permission-service";
 import { dashboardQuerySchema } from "@/modules/reporting/validators/report-filters";
@@ -22,6 +23,7 @@ export default async function DashboardPage({
   const auth = await requirePageUser();
   const location = await resolveCurrentLocation(auth);
   const canReport = location?.permissions.includes("reports.view") ?? false;
+  const canReadBriefing = location?.permissions.includes("pre-shift.view") ?? false;
   const raw = await searchParams;
   const parsed = dashboardQuerySchema.safeParse({
     locationId: location?.locationId,
@@ -46,6 +48,12 @@ export default async function DashboardPage({
         <p className="text-neutral-700">
           Your account has no role at any location yet. Ask an administrator to assign one.
         </p>
+      )}
+
+      {location && canReadBriefing && (
+        <Suspense fallback={<p className="mb-6 text-neutral-600">Loading pre-shift notes…</p>}>
+          <PreShiftToday auth={auth} locationId={location.locationId} />
+        </Suspense>
       )}
 
       {location && canReport && (

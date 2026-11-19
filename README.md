@@ -552,7 +552,13 @@ server_section_tables
 server_section_assignments
 table_condition_history
 table_session_overrides
+manager_log_number_counters (Phase 32)
+manager_log_entries         (Phase 32)
+pre_shift_notes             (Phase 32)
+pre_shift_note_positions    (Phase 32)
 ```
+
+Phase 32 adds a location's manager log and pre-shift notes to this domain. The **manager log** is append-only: each entry has an organization-wide number (`LOG-000123`), the location's current or previous business date, a fixed category (`SERVICE`, `INCIDENT`, `MAINTENANCE`, `STAFFING`, `GUEST`, `OTHER`), its text and its author. A correction is a new entry naming the one it corrects. The one change ever made to an entry is a single redaction by an Owner or General Manager (`manager-log.redact`), with a reason. It empties the text, keeps everything else, and is audited. **Pre-shift notes** are briefings for one business date, today or up to 14 days ahead, aimed at everyone or at chosen positions. Managers can edit or withdraw them until the date has passed. Staff see today's notes for everyone and for the positions they hold at the location, on `/pre-shift` and the dashboard. Position targeting decides relevance, not access.
 
 Physical condition is separate from occupancy.
 
@@ -1055,6 +1061,8 @@ Audit data is append-only.
 Never include passwords, password hashes, session tokens, secrets, prohibited payment information, or unnecessary sensitive HR data. Phase 21 adds the `GUESTS` category: guest audit rows name changed fields and allergen codes, never contact details, notes, preferences or allergy notes.
 
 Phase 22 adds the `MESSAGING` category (consent, resends, opt-outs, online booking settings, online bookings and guest cancellations) and a third actor type, `GUEST`: a guest acting on the public booking page, with no user. Messaging audit rows name channels, kinds and reasons, never an address, a message body, a manage or unsubscribe token, or provider credentials.
+
+Phase 32 adds `restaurant.manager-log-redacted` (category `ORGANIZATION`). Its row names the entry number, business date, category and the reason's length, never the entry's text or the reason itself. Writing log entries and pre-shift notes isn't audited, because each one records who wrote it.
 
 Audit access is permission controlled.
 
@@ -1998,6 +2006,20 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 32 Manager Log and Pre-Shift Notes
+
+Phase 32 builds a daily manager log and pre-shift notes, owned by Restaurant (plan approved 2026-11-19, D1–D13 as recommended, with four amendments). Plan: `docs/Phase-32-Manager-Log-and-Pre-Shift-Notes.md`. Report: `docs/Phase-32-Completion-Report.md`.
+
+- **Log entries:** `manager_log_entries` (location, `entry_number` from `manager_log_number_counters` per organization, shown as `LOG-000123`; `business_date`; `category`; `body` 1 to 4000; `author_user_id`; `author_employee_id` when the user has an employee; `corrects_entry_id`). `POST /api/manager-log` (`manager-log.write`, idempotency scope `restaurant.manager-log-entry`; the idempotency record keeps the number and date, never the text) takes `dateChoice` `CURRENT` or `PREVIOUS`, worked out from the location's clock. A correction names an earlier entry at the same location.
+- **Append-only:** migration `0075` refuses DELETE, every UPDATE except one redaction, and a correction of an entry at another location or a later one. `POST /api/manager-log/{id}/redact` (`manager-log.redact`, reason 1 to 500) empties the body and records who, when and why; a second one is `ALREADY_REDACTED`. Text that looks like a card number (13 or more digits in a row) is refused (`CARD_DATA_REFUSED`).
+- **Reading:** `GET /api/manager-log` (`manager-log.view`) takes one `date`, or `from`, `to`, `q` (text, wildcards taken literally) and `category` for up to 31 days (`RANGE_TOO_LONG`), at most 300 entries. Each entry shows its author's employee name and what corrects it or what it corrects.
+- **Pre-shift notes:** `pre_shift_notes` (`business_date` from today to 14 days ahead, `title` 1 to 120, `body` 1 to 2000, `pinned`, `active`, `version`) with `pre_shift_note_positions`; none means everyone. `POST /api/pre-shift-notes`, `PATCH /api/pre-shift-notes/{id}` and `POST …/withdraw` (`pre-shift.manage`, `expectedVersion`) work until the note's date has passed (`NOTE_READ_ONLY`). `GET /api/pre-shift-notes?from&to` lists every note for managers. A reader holds a position when the employee linked to their user has an active `employee_positions` row for it at the location.
+- **Screens:** `/manager-log` (Service group): date picker, category filter, search, Add entry, Correct, and Redact for its holders. `/pre-shift` (Service group): today's notes for the reader, with Manage notes (`/pre-shift/manage`) for managers. A "Pre-shift notes today" panel on the dashboard for `pre-shift.view` holders.
+- **Permissions** (160 in all): `manager-log.view` and `manager-log.write` (Manager), `manager-log.redact` (Owner and General Manager only), `pre-shift.manage` (Manager), `pre-shift.view` (every system role), plus Owner and General Manager; seeded by `security.manager-log-permissions`. Audit action `restaurant.manager-log-redacted`.
+- **Not built:** follow-ups, read receipts, notifications, attachments, comments, staff-written entries, log reports or CSV, cross-location logs, configurable categories, live updates. Guest erase doesn't search free text, so redaction is the tool for personal data written in the log.
+- **Demo data:** `db:seed:demo` adds five log entries at MAIN (one a correction) and three notes (one pinned, one for servers, one tomorrow) while MAIN has none.
+- **Migrations:** `0074` (the four tables) and `0075` (custom: the append-only guard).
+
 ### Phase 31 Gift Card Balances
 
 Phase 31 builds the restaurant's own gift cards, lifting the contract's "no gift-card balances" rule for those cards only; settlement stays record only and other companies' cards are recorded as `OTHER` (plan approved 2026-11-19, D1–D17 as recommended, with seven amendments). Plan: `docs/Phase-31-Gift-Card-Balances.md`. Report: `docs/Phase-31-Completion-Report.md`.
@@ -2396,6 +2418,12 @@ Requested and approved by the owner on 2026-11-19, with decisions D1–D16 as re
 The restaurant's own gift cards, record only: sold outside orders and never revenue, an append-only balance ledger per card, spent as gift card tenders and returned on tender voids and refunds, manager voids, cash-outs, adjustments, deactivation and code replacement, drawer and journal lines, and a gift card report in Settlements. Three new permissions (155). Plan: `docs/Phase-31-Gift-Card-Balances.md`.
 
 Requested and approved by the owner on 2026-11-19, with decisions D1–D17 as recommended in the plan.
+
+### Phase 32: Manager Log and Pre-Shift Notes
+
+A daily manager log per location and business date, append-only with corrections as new entries and one audited redaction by an Owner or General Manager; pre-shift notes for a business date, aimed at everyone or at positions, read by staff on a pre-shift page and the dashboard. Five new permissions (160). Plan: `docs/Phase-32-Manager-Log-and-Pre-Shift-Notes.md`.
+
+Requested and approved by the owner on 2026-11-19, with decisions D1–D13 as recommended in the plan.
 
 ### Cloud Deployment: On Hold
 
