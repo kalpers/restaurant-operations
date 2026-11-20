@@ -29,7 +29,8 @@ import {
   voidGiftCardSale,
   type SellGiftCardInput,
 } from "@/modules/settlements/services/gift-card-service";
-import { recordRefund, voidRefund } from "@/modules/settlements/services/refund-service";
+import { recordRefund } from "@/workflows/record-refund/record-refund";
+import { voidRefund } from "@/workflows/void-refund/void-refund";
 import { openSettlement, voidTender } from "@/modules/settlements/services/settlement-service";
 import { AppError } from "@/shared/errors/app-error";
 import { addDraftItem } from "@/modules/orders/services/draft-item-service";

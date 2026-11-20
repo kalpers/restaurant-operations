@@ -679,10 +679,13 @@ function RefundForm({
   const [otherDescription, setOtherDescription] = useState("");
   const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
   const key = useRef<string | null>(null);
+  // Phase 33 (policies 7, 8): what the last refund did to the guest's loyalty points.
+  const [pointsNotice, setPointsNotice] = useState<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     key.current ??= newKey("refund");
+    setPointsNotice(null);
 
     const result = await run(
       `/api/orders/${view.order.id}/refunds`,
@@ -709,6 +712,17 @@ function RefundForm({
       setTaxAmount("0.00");
       setTipAmount("0.00");
       setReason("");
+
+      const data = result.data as { loyaltyPointsTaken?: number; loyaltyPointsShort?: number } | undefined;
+      const taken = data?.loyaltyPointsTaken ?? 0;
+      const short = data?.loyaltyPointsShort ?? 0;
+
+      if (taken > 0 || short > 0) {
+        setPointsNotice(
+          `${taken} loyalty point${taken === 1 ? " was" : "s were"} taken back.` +
+            (short > 0 ? ` ${short} couldn't be: the guest had already spent them.` : ""),
+        );
+      }
     }
   }
 
@@ -787,6 +801,11 @@ function RefundForm({
       <button type="submit" className={PRIMARY} disabled={pending || (!amount && !(tipsAllowed && tipAmount && tipAmount !== "0.00" && tipAmount !== "0")) || !reason.trim()}>
         Record refund
       </button>
+      {pointsNotice && (
+        <p role="status" className="text-sm" data-testid="refund-points-notice">
+          {pointsNotice}
+        </p>
+      )}
       <ErrorText error={error} />
     </form>
   );
@@ -1006,12 +1025,12 @@ export function SettlementWorkspace({
             {visitEarning && (
               <p className="text-sm" data-testid="refund-loyalty-note">
                 This visit earned {visitEarning.points} loyalty points (on ${visitEarning.eligibleSubtotal},{" "}
-                {visitEarning.pointsPerDollar} per $1 and {visitEarning.pointsPerVisit} per visit). A refund doesn&apos;t
-                change points;{" "}
+                {visitEarning.pointsPerDollar} per $1 and {visitEarning.pointsPerVisit} per visit). A refund takes back
+                the points its amount before tax paid for; the visit points stay. See{" "}
                 <a href={`/host/guests/${visitEarning.profileId}`} className="underline">
-                  adjust them on profile #{visitEarning.profileNumber}
+                  profile #{visitEarning.profileNumber}
                 </a>{" "}
-                if needed.
+                for the balance.
               </p>
             )}
             {abilities.refund && (

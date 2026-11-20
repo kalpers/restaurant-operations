@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
-import { createBriefingsSetup, disableBriefingsAccounts, type BriefingsSetup } from "../helpers/e2e-briefings";
+import { briefingsGuestProfile, createBriefingsSetup, disableBriefingsAccounts, type BriefingsSetup } from "../helpers/e2e-briefings";
 import type { OrdersAccount } from "../helpers/e2e-orders";
 import { expandNavGroups, signInWithRetry } from "../helpers/e2e-ui";
 
@@ -122,4 +122,67 @@ test("a note for servers reaches a server, not a cook, and staff can't open the 
   await cook.goto("/pre-shift");
   await expect(cook.getByRole("heading", { name: "Pre-shift" })).toBeVisible();
   await expect(cook.getByText(`Specials ${setup.suffix}`)).toHaveCount(0);
+});
+
+// Phase 33 (policies 17, 18): the owner adds a category; a manager uses it.
+test("an owner adds a log category that managers can then use", async ({ browser }) => {
+  test.setTimeout(120_000);
+
+  const name = `Inspection ${setup.suffix}`;
+  const owner = await signedIn(browser, setup.owner);
+
+  await owner.goto("/manager-log");
+  await owner.getByRole("link", { name: "Categories" }).click();
+  await expect(owner.getByRole("heading", { name: "Manager log categories" })).toBeVisible();
+  await owner.getByLabel("Name").first().fill(name);
+  await owner.getByRole("button", { name: "Add category" }).click();
+  await expect(owner.getByRole("listitem").filter({ hasText: name })).toBeVisible();
+
+  const manager = await signedIn(browser, setup.manager);
+
+  await manager.goto("/manager-log");
+  await expect(manager.getByRole("link", { name: "Categories" })).toHaveCount(0);
+
+  const addForm = manager.getByRole("form", { name: "Add an entry" });
+
+  await addForm.getByLabel("Category").selectOption({ label: name });
+  await addForm.getByLabel("Entry").fill(`Health inspector visited (${setup.suffix})`);
+  await addForm.getByRole("button", { name: "Add entry" }).click();
+  await expect(manager.getByTestId("log-entry").filter({ hasText: `Health inspector visited (${setup.suffix})` })).toContainText(name);
+});
+
+// Phase 33 (policies 2–4): erasing a guest offers to redact the log entry that names them.
+test("erasing a guest redacts the log entry that mentions them", async ({ browser }) => {
+  test.setTimeout(120_000);
+
+  const surname = `Quill${setup.suffix.replace(/[^a-z]/g, "")}on`;
+  const profileId = await briefingsGuestProfile(setup, `Zelda ${surname}`, "(555) 987-6543");
+  const owner = await signedIn(browser, setup.owner);
+
+  await owner.goto("/manager-log");
+
+  const addForm = owner.getByRole("form", { name: "Add an entry" });
+
+  await addForm.getByLabel("Category").selectOption("GUEST");
+  await addForm.getByLabel("Entry").fill(`Mrs. ${surname} left her scarf at table 4.`);
+  await addForm.getByRole("button", { name: "Add entry" }).click();
+
+  const entry = owner.getByTestId("log-entry").filter({ hasText: surname });
+
+  await expect(entry).toBeVisible();
+
+  await owner.goto(`/host/guests/${profileId}`);
+
+  const erase = owner.getByRole("form", { name: "Erase guest details" });
+  const mention = erase.getByTestId("guest-mention").filter({ hasText: surname });
+
+  await expect(mention).toBeVisible();
+  await expect(mention.getByRole("checkbox")).toBeChecked();
+  await erase.getByLabel("Reason").fill("Guest asked to be forgotten");
+  await erase.getByRole("button", { name: "Erase personal data" }).click();
+  await expect(owner.getByText("Erased.")).toBeVisible();
+
+  await owner.goto("/manager-log");
+  await expect(owner.getByText(`Mrs. ${surname} left her scarf at table 4.`)).toHaveCount(0);
+  await expect(owner.getByTestId("log-entry").filter({ hasText: "Guest erase, profile #" })).toBeVisible();
 });

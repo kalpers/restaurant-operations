@@ -5,6 +5,7 @@ import {
   guestLoyaltyEntries,
   guestLoyaltyPrograms,
   guestLoyaltyRedemptions,
+  LOYALTY_ENTRY_KINDS,
   orderDiscounts,
   orderItemDiscounts,
   orders,
@@ -18,7 +19,7 @@ import { compareDecimals } from "@/shared/decimal/decimal";
 // profile's balance row first, so entries of one profile are serialized and each continues
 // the running balance that migration 0071 checks.
 
-export type LoyaltyEntryKind = "EARNED" | "REDEEMED" | "ADJUSTED" | "MERGED_OUT" | "MERGED_IN" | "ERASED";
+export type LoyaltyEntryKind = (typeof LOYALTY_ENTRY_KINDS)[number];
 
 export type LoyaltyEntryInput = {
   kind: LoyaltyEntryKind;
@@ -31,6 +32,8 @@ export type LoyaltyEntryInput = {
   pointsPerDollarSnapshot?: number | null;
   pointsPerVisitSnapshot?: number | null;
   reason?: string | null;
+  /** Phase 33: REFUND_REVERSED / REFUND_RESTORED. */
+  refundId?: string | null;
 };
 
 export type LoyaltyProgram = typeof guestLoyaltyPrograms.$inferSelect;
@@ -119,6 +122,7 @@ export async function postLoyaltyEntry(
       pointsPerDollarSnapshot: entry.pointsPerDollarSnapshot ?? null,
       pointsPerVisitSnapshot: entry.pointsPerVisitSnapshot ?? null,
       reason: entry.reason ?? null,
+      refundId: entry.refundId ?? null,
       createdByUserId: actor.userId,
       occurredAt: at,
     })

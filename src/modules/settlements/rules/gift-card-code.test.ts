@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canonicalGiftCardCode,
+  checkSupplierCode,
   formatGiftCardNumber,
   generateGiftCardCode,
   hashGiftCardCode,
@@ -55,5 +57,36 @@ describe("gift card codes", () => {
     expect(parseGiftCardNumber("  42 ")).toBe(42);
     expect(parseGiftCardNumber("GC-0")).toBeNull();
     expect(parseGiftCardNumber("7KQ2-M9XD")).toBeNull();
+  });
+});
+
+// Phase 33 (policy 13, amendment 1): supplier-printed codes.
+describe("supplier codes", () => {
+  it("reads a generated-style code with the look-alike rules, and anything else as typed", () => {
+    expect(canonicalGiftCardCode("7kq2-m9xd-4tpa-w3hr")).toBe("7KQ2M9XD4TPAW3HR");
+    expect(canonicalGiftCardCode("7KQ2-M9XD-4TPA-W3HO")).toBe("7KQ2M9XD4TPAW3H0");
+    expect(canonicalGiftCardCode("demo-prnt-2026")).toBe("DEMOPRNT2026");
+    expect(canonicalGiftCardCode("ABCD OLIU 12")).toBe("ABCDOLIU12");
+  });
+
+  it("refuses codes that are too short or long, or hold other characters", () => {
+    expect(checkSupplierCode("ABC1234")).toEqual({ ok: false, reason: "INVALID" });
+    expect(checkSupplierCode("A".repeat(25))).toEqual({ ok: false, reason: "INVALID" });
+    expect(checkSupplierCode("ABCD_1234")).toEqual({ ok: false, reason: "INVALID" });
+    expect(canonicalGiftCardCode("short")).toBeNull();
+  });
+
+  it("refuses 13 or more digits in a row, which could be a payment card", () => {
+    expect(checkSupplierCode("4111 1111 1111 1111")).toEqual({ ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" });
+    expect(checkSupplierCode("GC1234567890123")).toEqual({ ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" });
+    expect(canonicalGiftCardCode("4111111111111111")).toBeNull();
+  });
+
+  it("stores the same hash however the code is typed, and its last four", () => {
+    const typed = checkSupplierCode("demo-prnt-2026");
+    const again = checkSupplierCode("DEMO PRNT 2026");
+
+    expect(typed).toEqual(again);
+    expect(typed).toMatchObject({ ok: true, lastFour: "2026", codeHash: hashGiftCardCode("DEMOPRNT2026") });
   });
 });

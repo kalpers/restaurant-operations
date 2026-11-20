@@ -1,12 +1,13 @@
 import Link from "next/link";
 
-import { LOG_CATEGORY_LABELS, ManagerLogWorkspace } from "@/components/restaurant/manager-log-workspace";
+import { ManagerLogWorkspace } from "@/components/restaurant/manager-log-workspace";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { actorHolds } from "@/modules/restaurant/services/access";
+import { listLogCategories } from "@/modules/restaurant/services/manager-log-category-service";
 import { currentLogDate, listLogEntries } from "@/modules/restaurant/services/manager-log-service";
 import { logQuerySchema } from "@/modules/restaurant/validators/briefing-validators";
 import { AppError } from "@/shared/errors/app-error";
@@ -27,6 +28,7 @@ export default async function ManagerLogPage({ searchParams }: { searchParams: P
   const { actor } = await requirePageActor("manager-log.view");
   const database = getDatabase();
   const currentDate = await currentLogDate(database, actor);
+  const categories = await listLogCategories(database, actor);
   const raw = await searchParams;
   const searching = Boolean(single(raw, "from") || single(raw, "to") || single(raw, "q"));
   const parsed = logQuerySchema.safeParse(
@@ -61,6 +63,13 @@ export default async function ManagerLogPage({ searchParams }: { searchParams: P
       <PageHeader
         title="Manager log"
         description="What happened at this location, by business date. Entries can't be edited or deleted; a correction is a new entry."
+        actions={
+          actorHolds(actor, "manager-log.categories") ? (
+            <Link href="/manager-log/categories" className="text-sm font-medium underline">
+              Categories
+            </Link>
+          ) : undefined
+        }
       />
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <form method="get" aria-label="Choose a business date" className="flex flex-wrap items-end gap-3">
@@ -70,9 +79,9 @@ export default async function ManagerLogPage({ searchParams }: { searchParams: P
           <Field label="Category">
             <Select name="category" defaultValue={!searching ? (single(raw, "category") ?? "") : ""}>
               <option value="">All</option>
-              {Object.entries(LOG_CATEGORY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
+              {categories.map((category) => (
+                <option key={category.code} value={category.code}>
+                  {category.active ? category.name : `${category.name} (inactive)`}
                 </option>
               ))}
             </Select>
@@ -116,6 +125,7 @@ export default async function ManagerLogPage({ searchParams }: { searchParams: P
       {result.truncated && <p className="mb-4 text-sm text-neutral-700">Showing the first 300 entries. Narrow the search to see the rest.</p>}
       <ManagerLogWorkspace
         entries={result.entries}
+        categories={categories.map(({ code, name, active }) => ({ code, name, active }))}
         abilities={{ write: actorHolds(actor, "manager-log.write"), redact: actorHolds(actor, "manager-log.redact") }}
         currentDate={currentDate}
         showDates={searching}

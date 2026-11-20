@@ -109,6 +109,9 @@ function SellForm({
   const action = useAction();
   const [reload, setReload] = useState(false);
   const [code, setCode] = useState("");
+  // Phase 33 (policy 14): a new card may carry the code its supplier printed on it.
+  const [printed, setPrinted] = useState(false);
+  const [supplierCode, setSupplierCode] = useState("");
   const [amount, setAmount] = useState("");
   const [tenderType, setTenderType] = useState<SaleTender>(abilities.saleTenders[0] ?? "CASH");
   const [received, setReceived] = useState("");
@@ -142,6 +145,7 @@ function SellForm({
       "/api/gift-cards",
       {
         giftCardCode: reload ? code : null,
+        supplierCode: !reload && printed ? supplierCode : null,
         amount,
         tenderType,
         receivedAmount: isCash ? received || amount : null,
@@ -166,11 +170,12 @@ function SellForm({
       setDone(
         `${data.kind === "ISSUED" ? "Sold" : "Reloaded"} ${data.card.cardNumber}: balance ${formatMoney(data.card.balance)}` +
           (data.changeAmount !== "0.00" ? `, change ${formatMoney(data.changeAmount)}` : "") +
-          (data.replayed && !data.code && data.kind === "ISSUED"
+          (data.replayed && !data.code && data.kind === "ISSUED" && !printed
             ? ". This sale was already recorded, so its code can't be shown again; a manager can replace the code."
             : "."),
       );
       setCode("");
+      setSupplierCode("");
       setAmount("");
       setReceived("");
       setOtherDescription("");
@@ -195,6 +200,33 @@ function SellForm({
             Reload a card
           </label>
         </fieldset>
+        {!reload && (
+          <fieldset className="grid gap-2 text-sm">
+            <legend className="sr-only">Card code</legend>
+            <label className="flex min-h-11 items-center gap-2">
+              <input type="radio" name="code-kind" checked={!printed} onChange={() => edited(setPrinted)(false)} className="size-5" />
+              Generate a code
+            </label>
+            <label className="flex min-h-11 items-center gap-2">
+              <input type="radio" name="code-kind" checked={printed} onChange={() => edited(setPrinted)(true)} className="size-5" />
+              Use the code printed on the card
+            </label>
+            {printed && (
+              <label className={LABEL}>
+                Printed code (8 to 24 letters and digits)
+                <input
+                  className={INPUT}
+                  value={supplierCode}
+                  onChange={(event) => edited(setSupplierCode)(event.target.value)}
+                  required
+                  maxLength={40}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+            )}
+          </fieldset>
+        )}
         {reload && (
           <label className={LABEL}>
             Card code
@@ -299,12 +331,14 @@ function ManagerActions({
   const [reason, setReason] = useState("");
   const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
   const [newCode, setNewCode] = useState<string | null>(null);
+  const [replacement, setReplacement] = useState("");
   const key = useRef<string | null>(null);
 
   function choose(next: typeof mode) {
     setMode(next);
     setReason("");
     setAmount("");
+    setReplacement("");
     key.current = null;
   }
 
@@ -331,9 +365,10 @@ function ManagerActions({
         expectedVersion: card.version,
       });
     } else {
-      result = await action.run<{ card: GiftCardView; code: string }>("POST", `${base}/replace-code`, {
+      result = await action.run<{ card: GiftCardView; code: string | null }>("POST", `${base}/replace-code`, {
         reason,
         expectedVersion: card.version,
+        supplierCode: replacement.trim() || null,
       });
     }
 
@@ -392,6 +427,19 @@ function ManagerActions({
                 </label>
               )}
             </>
+          )}
+          {mode === "replace" && (
+            <label className={LABEL}>
+              Code printed on a replacement card (optional; leave empty to generate one)
+              <input
+                className={INPUT}
+                value={replacement}
+                onChange={(event) => setReplacement(event.target.value)}
+                maxLength={40}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
           )}
           <label className={LABEL}>
             Reason
@@ -517,11 +565,17 @@ function ProgramForm({ program }: { program: GiftCardProgramView }) {
   const action = useAction();
   const [enabled, setEnabled] = useState(program.enabled);
   const [maxBalance, setMaxBalance] = useState(program.maxBalance);
+  const [dormancyMonths, setDormancyMonths] = useState(String(program.dormancyMonths));
 
   async function submit(event: FormEvent) {
     event.preventDefault();
 
-    const result = await action.run("PUT", "/api/gift-cards/program", { enabled, maxBalance, expectedVersion: program.version });
+    const result = await action.run("PUT", "/api/gift-cards/program", {
+      enabled,
+      maxBalance,
+      dormancyMonths: Number(dormancyMonths),
+      expectedVersion: program.version,
+    });
 
     if (result.ok) {
       action.refresh();
@@ -539,6 +593,18 @@ function ProgramForm({ program }: { program: GiftCardProgramView }) {
         <label className={LABEL}>
           Most a card can hold
           <input className={INPUT} inputMode="decimal" value={maxBalance} onChange={(event) => setMaxBalance(event.target.value)} required />
+        </label>
+        <label className={LABEL}>
+          Months without use before a balance is listed as unused (12 to 120)
+          <input
+            className={INPUT}
+            type="number"
+            min={12}
+            max={120}
+            value={dormancyMonths}
+            onChange={(event) => setDormancyMonths(event.target.value)}
+            required
+          />
         </label>
         <p className="text-xs text-neutral-600">
           While this is on, every gift card tender names one of these cards. Record other companies&apos; gift cards as

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { EntityForm } from "@/components/forms/entity-form";
+import { EraseGuestPanel } from "@/components/reservations/erase-guest-panel";
 import { MergeProfileForm } from "@/components/reservations/merge-profile-form";
 import { ProfileAllergiesForm } from "@/components/reservations/profile-allergies-form";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,8 @@ const ENTRY_LABELS: Record<string, string> = {
   MERGED_OUT: "Moved to another profile (merge)",
   MERGED_IN: "Moved in from a merged profile",
   ERASED: "Cleared (erased)",
+  REFUND_REVERSED: "Taken back (refund)",
+  REFUND_RESTORED: "Put back (refund voided)",
 };
 
 function loyaltyEntryLabel(entry: {
@@ -313,18 +316,12 @@ export default async function GuestProfilePage({ params }: { params: Promise<{ p
       {active && actorHolds(actor, "guests.erase") && (
         <section aria-label="Erase this guest" className="mb-8 rounded-lg border border-danger-300 bg-danger-50 p-4">
           <h2 className="mb-1 text-xl font-semibold">Erase this guest</h2>
-          <p className="mb-3 text-sm">
-            Clears the name, contact details, notes and allergies from this profile, any profile merged into it,
-            and its past visits. Orders and reports stay. This can&apos;t be undone. Don&apos;t put the guest&apos;s
-            name in the reason.
-          </p>
-          <EntityForm
-            method="POST"
-            url={`/api/guests/${profile.id}/erase`}
+          <EraseGuestPanel
+            mentionsUrl={`/api/guests/${profile.id}/erase-mentions`}
+            eraseUrl={`/api/guests/${profile.id}/erase`}
+            expectedVersion={profile.version}
+            description="Clears the name, contact details, notes and allergies from this profile, any profile merged into it, and its past visits. Orders and reports stay. This can't be undone."
             submitLabel="Erase personal data"
-            successMessage="Erased."
-            hidden={{ expectedVersion: profile.version }}
-            fields={[{ name: "reason", label: "Reason", required: true }]}
           />
         </section>
       )}

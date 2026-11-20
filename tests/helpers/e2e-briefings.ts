@@ -6,6 +6,7 @@ import { closeDatabase, getDatabase } from "../../src/db";
 import { employees, locations, locationSettings, positions, users } from "../../src/db/schema";
 import { getUserAuthContext, requirePermission } from "../../src/modules/auth/services/permission-service";
 import { createEmployee } from "../../src/modules/employees/services/employee-service";
+import { createGuestProfile } from "../../src/modules/reservations/services/guest-profile-service";
 
 import { assignAt } from "./e2e-accounts";
 import { createRoleAccount, type E2eScope, type OrdersAccount } from "./e2e-orders";
@@ -85,6 +86,25 @@ export async function createBriefingsSetup(): Promise<BriefingsSetup> {
   }
 
   return { locationId, owner, manager, server, cook, suffix };
+}
+
+/** Phase 33: a guest profile created by the owner, for the erase-with-mentions spec. */
+export async function briefingsGuestProfile(setup: BriefingsSetup, displayName: string, phone: string): Promise<string> {
+  const database = getDatabase();
+  const context = await getUserAuthContext(database, setup.owner.id);
+  const owner = requirePermission(context!, { permission: "guests.manage", locationId: setup.locationId });
+  const profile = await createGuestProfile(database, owner, {
+    displayName,
+    phone,
+    email: null,
+    vip: false,
+    vipReason: null,
+    preferences: null,
+    notes: null,
+    otherDietaryNeeds: null,
+  });
+
+  return profile.id;
 }
 
 export async function disableBriefingsAccounts(): Promise<void> {

@@ -7,7 +7,7 @@ import { readOrderLocation } from "@/modules/orders/repositories/order-repositor
 import { addDecimals, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
-import { formatGiftCardNumber, hashGiftCardCode, normalizeGiftCardCode } from "../rules/gift-card-code";
+import { canonicalGiftCardCode, formatGiftCardNumber, hashGiftCardCode } from "../rules/gift-card-code";
 import { assertCardCovers } from "../rules/gift-card-math";
 
 // Phase 31 (policy 7, amendment 3): the one place gift card entries are written. Every entry
@@ -53,6 +53,7 @@ export async function readGiftCardProgram(executor: DatabaseExecutor, organizati
       organizationId,
       enabled: false,
       maxBalance: "500.00",
+      dormancyMonths: 36,
       enabledAt: null,
       updatedByUserId: null,
       createdAt: new Date(0),
@@ -68,7 +69,7 @@ export async function findGiftCardIdByCode(
   organizationId: string,
   code: string,
 ): Promise<string | null> {
-  const normalized = normalizeGiftCardCode(code);
+  const normalized = canonicalGiftCardCode(code);
 
   if (!normalized) {
     return null;
@@ -84,7 +85,7 @@ export async function findGiftCardIdByCode(
 
 /** The SHA-256 of a code for idempotency fingerprints (amendment 1); null if it can't be one. */
 export function codeFingerprint(code: string | null | undefined): string | null {
-  const normalized = code ? normalizeGiftCardCode(code) : null;
+  const normalized = code ? canonicalGiftCardCode(code) : null;
 
   return normalized ? hashGiftCardCode(normalized) : null;
 }

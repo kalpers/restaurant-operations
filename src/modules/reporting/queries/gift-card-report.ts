@@ -8,6 +8,10 @@ import { rowsOf, type ReportContext } from "./report-context";
 // outstanding balance is organization-wide (cards are), as of the range end. Cards appear by
 // their public number only, never their code or its last four characters, so the CSV holds
 // none either.
+//
+// Phase 33 (policies 15, 16): organization-wide sections are titled "(all locations)", and
+// "Unused gift card balances" lists cards whose last ledger activity is older than the
+// program's dormancy period, for unclaimed-property reporting (a list, not a filing).
 
 export async function giftCardSections(context: ReportContext): Promise<ReportSection[]> {
   const { filters } = context;
@@ -104,9 +108,9 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
     },
     {
       key: "giftCardOutstanding",
-      title: "Outstanding gift card balances",
+      title: "Outstanding gift card balances (all locations)",
       description:
-        "What the restaurant owes on its gift cards at the end of the range, across all locations (cards are organization-wide).",
+        "What the restaurant owes on its gift cards at the end of the range, across all locations (cards are organization-wide), so every location shows the same figure: don't add locations together.",
       columns: [
         { key: "cards", label: "Cards with a balance", kind: "count" },
         { key: "balance", label: "Outstanding", kind: "money" },
@@ -115,7 +119,7 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
     },
     {
       key: "giftCardBalances",
-      title: "Cards holding a balance",
+      title: "Cards holding a balance (all locations)",
       description:
         "Each card with value left at the end of the range and the business date of its last activity, by card number. Up to 500 cards.",
       columns: [
@@ -129,5 +133,86 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
         lastActivity: row.last_activity,
       })),
     },
+    await unusedBalancesSection(context),
   ];
+}
+
+/**
+ * Phase 33 (policy 15): cards with value left at the end of the range whose last ledger
+ * activity is on or before the range end less the program's dormancy period. Organization-
+ * wide, every card, no limit. Only ledger entries count as activity.
+ */
+async function unusedBalancesSection(context: ReportContext): Promise<ReportSection> {
+  const { filters } = context;
+  const [program] = await rowsOf<{ dormancy_months: number }>(
+    context,
+    sql`
+      SELECT COALESCE(
+        (SELECT p.dormancy_months FROM gift_card_programs p
+         WHERE p.organization_id = (SELECT l.organization_id FROM locations l WHERE l.id = ${filters.locationId})),
+        36)::int AS dormancy_months
+    `,
+  );
+  const months = program?.dormancy_months ?? 36;
+  const rows = await rowsOf<{
+    card_number: number;
+    first_sold: string | null;
+    sold_at: string;
+    balance: string;
+    last_activity: string;
+    months_inactive: number;
+  }>(
+    context,
+    sql`
+      WITH latest AS (
+        SELECT DISTINCT ON (e.gift_card_id) e.gift_card_id, e.balance_after, e.business_date
+        FROM gift_card_entries e
+        WHERE e.organization_id = (SELECT l.organization_id FROM locations l WHERE l.id = ${filters.locationId})
+          AND e.business_date <= ${filters.to}::date
+        ORDER BY e.gift_card_id, e.sequence DESC
+      ),
+      first_sale AS (
+        SELECT e.gift_card_id, MIN(e.business_date) AS business_date
+        FROM gift_card_entries e
+        WHERE e.kind = 'ISSUED'
+        GROUP BY e.gift_card_id
+      )
+      SELECT c.card_number,
+             first_sale.business_date::text AS first_sold,
+             l.name AS sold_at,
+             latest.balance_after::text AS balance,
+             latest.business_date::text AS last_activity,
+             ((EXTRACT(YEAR FROM age(${filters.to}::date, latest.business_date)) * 12
+               + EXTRACT(MONTH FROM age(${filters.to}::date, latest.business_date))))::int AS months_inactive
+      FROM latest
+      JOIN gift_cards c ON c.id = latest.gift_card_id
+      JOIN locations l ON l.id = c.issued_location_id
+      LEFT JOIN first_sale ON first_sale.gift_card_id = c.id
+      WHERE latest.balance_after > 0
+        AND latest.business_date <= (${filters.to}::date - make_interval(months => ${months}))::date
+      ORDER BY latest.business_date, c.card_number
+    `,
+  );
+
+  return {
+    key: "giftCardUnused",
+    title: "Unused gift card balances (all locations)",
+    description: `Cards with value left at the end of the range and no card activity for at least ${months} months (the gift card settings' period), across all locations. For unclaimed-property reporting: the app keeps no purchaser names or addresses, so this list supports a filing but isn't one.`,
+    columns: [
+      { key: "cardNumber", label: "Card", kind: "text" },
+      { key: "firstSold", label: "First sold", kind: "date" },
+      { key: "soldAt", label: "Sold at", kind: "text" },
+      { key: "balance", label: "Balance", kind: "money" },
+      { key: "lastActivity", label: "Last activity", kind: "date" },
+      { key: "monthsInactive", label: "Months without activity", kind: "count" },
+    ],
+    rows: rows.map((row) => ({
+      cardNumber: `GC-${String(row.card_number).padStart(6, "0")}`,
+      firstSold: row.first_sold,
+      soldAt: row.sold_at,
+      balance: row.balance,
+      lastActivity: row.last_activity,
+      monthsInactive: row.months_inactive,
+    })),
+  };
 }

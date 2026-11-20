@@ -4,12 +4,13 @@ import type { Database } from "@/db";
 import { assertVersionMatched, nextVersion } from "@/db/helpers/versioning";
 import { preShiftNotePositions, preShiftNotes } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
+import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { findHeldPositionIds, findTargetPositions } from "@/modules/employees/queries/briefing-positions";
 import { findDisplayNamesByUser } from "@/modules/employees/queries/employee-display-names";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
-import { assertNoCardNumber, assertSearchRange } from "../rules/manager-log-rules";
+import { assertNoCardNumber, assertSearchRange, redactionReason } from "../rules/manager-log-rules";
 import { assertNoteDate, assertNoteEditable, compareNotes, notesForReader } from "../rules/pre-shift-rules";
 import { actorHolds, assertPermission, readLocationClock } from "./access";
 
@@ -34,6 +35,8 @@ export type PreShiftNoteView = {
   updatedAt: string;
   version: number;
   editable: boolean;
+  /** Phase 33 (policy 5): set once a note has been redacted. */
+  redaction: { at: string; byName: string | null; reason: string } | null;
 };
 
 async function positionIdsOf(executor: DatabaseExecutor, noteIds: readonly string[]): Promise<Map<string, string[]>> {
@@ -65,7 +68,11 @@ async function viewsOf(
     findTargetPositions(executor, { organizationId: actor.organizationId, ids: [...new Set(rows.flatMap((row) => row.positionIds))] }),
     findDisplayNamesByUser(executor, {
       organizationId: actor.organizationId,
-      userIds: rows.flatMap((row) => [row.createdByUserId, row.updatedByUserId]),
+      userIds: rows.flatMap((row) => [
+        row.createdByUserId,
+        row.updatedByUserId,
+        ...(row.redactedByUserId ? [row.redactedByUserId] : []),
+      ]),
     }),
   ]);
   const positionNames = new Map(positionList.map((position) => [position.id, position.name]));
@@ -86,6 +93,14 @@ async function viewsOf(
     updatedAt: row.updatedAt.toISOString(),
     version: row.version,
     editable: row.active && row.businessDate >= today,
+    redaction:
+      row.redactedAt && row.redactionReason
+        ? {
+            at: row.redactedAt.toISOString(),
+            byName: row.redactedByUserId ? (names.get(row.redactedByUserId) ?? null) : null,
+            reason: row.redactionReason,
+          }
+        : null,
   }));
 }
 
@@ -322,6 +337,77 @@ export async function withdrawNote(
         .returning({ id: preShiftNotes.id }),
       { type: "pre-shift note", id: noteId },
     );
+
+    return viewOne(transaction, actor, noteId);
+  });
+}
+
+/** Phase 33 (policy 5): the text a redacted note keeps in place of its title. */
+export const REDACTED_NOTE_TITLE = "Redacted";
+
+/**
+ * Phase 33 (policy 5): redacts a note at the given location inside the caller's transaction:
+ * the title becomes "Redacted", the body is emptied and the note withdrawn, once, with a
+ * reason. Audited without the text. Any date, past or future. The caller checks permission.
+ */
+export async function redactNoteInTransaction(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  input: { noteId: string; locationId: string; reason: string; at?: Date },
+): Promise<void> {
+  const [note] = await transaction
+    .select()
+    .from(preShiftNotes)
+    .where(and(eq(preShiftNotes.id, input.noteId), eq(preShiftNotes.locationId, input.locationId)))
+    .for("update");
+
+  if (!note) {
+    throw new NotFoundError("pre-shift note");
+  }
+
+  if (note.redactedAt) {
+    throw new BusinessRuleError("ALREADY_REDACTED", "This note has already been redacted.");
+  }
+
+  const at = input.at ?? new Date();
+
+  await transaction
+    .update(preShiftNotes)
+    .set({
+      title: REDACTED_NOTE_TITLE,
+      body: "",
+      active: false,
+      pinned: false,
+      redactedAt: at,
+      redactedByUserId: actor.userId,
+      redactionReason: input.reason,
+      updatedByUserId: actor.userId,
+      updatedAt: at,
+      version: nextVersion(preShiftNotes.version),
+    })
+    .where(eq(preShiftNotes.id, note.id));
+  await recordAudit(transaction, actor, {
+    action: "restaurant.pre-shift-note-redacted",
+    entityId: note.id,
+    details: { locationId: note.locationId, businessDate: note.businessDate, reasonLength: input.reason.length },
+  });
+}
+
+/** Phase 33 (policy 5, amendment 6): a `manager-log.redact` holder redacts one note here. */
+export async function redactNote(
+  database: Database,
+  actor: Actor,
+  noteId: string,
+  input: { reason: string },
+): Promise<PreShiftNoteView> {
+  assertPermission(actor, "manager-log.redact");
+
+  const reason = redactionReason(input.reason);
+
+  assertNoCardNumber(reason);
+
+  return withTransaction(database, async (transaction) => {
+    await redactNoteInTransaction(transaction, actor, { noteId, locationId: actor.locationId, reason });
 
     return viewOne(transaction, actor, noteId);
   });

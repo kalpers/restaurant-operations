@@ -103,3 +103,30 @@ test("a card is sold with its code shown once, pays part of a check, and keeps t
   await expect(card.getByRole("list", { name: "Card history" })).toContainText("Spent on a check");
   await expect(card.getByRole("list", { name: "Card history" })).toContainText("Sold");
 });
+
+// Phase 33 (policies 13, 14): a card from a supplier keeps the code printed on it.
+test("a pre-printed card is sold with its own code and found by it", async ({ browser }) => {
+  test.setTimeout(120_000);
+
+  const printed = `PRE-${setup.suffix.toUpperCase()}-CARD`;
+  const server = await signedIn(browser, setup.server);
+
+  await server.goto("/gift-cards");
+
+  const sell = server.getByRole("region", { name: "Sell or reload a gift card" });
+
+  await sell.getByLabel("Use the code printed on the card").check();
+  await sell.getByLabel(/^Printed code/).fill(printed);
+  await sell.getByLabel(/^Amount/).fill("20.00");
+  await sell.getByLabel("Guest paid by").selectOption("EXTERNAL_CARD");
+  await sell.getByRole("button", { name: "Sell card" }).click();
+  await expect(sell.getByText(/Sold GC-\d{6}: balance \$20\.00/)).toBeVisible();
+  // Nothing to write down: the code is on the card.
+  await expect(server.getByRole("button", { name: "I've written it down" })).toHaveCount(0);
+
+  const lookup = server.getByRole("region", { name: "Look up a gift card" });
+
+  await lookup.getByLabel("Card code").fill(printed.toLowerCase().replaceAll("-", " "));
+  await lookup.getByRole("button", { name: "Check balance" }).click();
+  await expect(server.getByLabel("Gift card balance")).toHaveText("$20.00");
+});

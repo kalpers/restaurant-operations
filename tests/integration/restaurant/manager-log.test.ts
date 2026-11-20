@@ -185,7 +185,14 @@ describe("manager log (Phase 32)", () => {
 
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ action: "restaurant.manager-log-redacted", category: "ORGANIZATION", locationId: scenario.locationA });
-    expect(audits[0]!.details).toEqual({ entryNumber: added.entryNumber, businessDate: today, category: "GUEST", reasonLength: 27 });
+    expect(audits[0]!.details).toEqual({
+      entryNumber: added.entryNumber,
+      // Phase 33: the entry's location, since an erase may redact at another one.
+      locationId: scenario.locationA,
+      businessDate: today,
+      category: "GUEST",
+      reasonLength: 27,
+    });
     expect(JSON.stringify(audits[0])).not.toContain("allergy");
 
     expect(await codeOf(redactLogEntry(database(), generalManager, added.id, { reason: "Again" }))).toBe("ALREADY_REDACTED");

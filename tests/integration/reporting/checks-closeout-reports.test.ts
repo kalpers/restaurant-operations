@@ -15,7 +15,7 @@ import {
   recordDrawerMovement,
   setCashDrawerRequired,
 } from "@/modules/settlements/services/drawer-service";
-import { recordRefund } from "@/modules/settlements/services/refund-service";
+import { recordRefund } from "@/workflows/record-refund/record-refund";
 import { openSettlement } from "@/modules/settlements/services/settlement-service";
 import { completeSettlement } from "@/workflows/close-order/complete-settlement";
 import { sendOrderItems } from "@/workflows/submit-order/submit-order";

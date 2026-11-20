@@ -26,6 +26,7 @@ import { seedDemoLocationsAndLots } from "./demo-locations-lots";
 import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
 import { seedDemoGiftCards } from "./demo-gift-cards";
 import { seedDemoBriefings } from "./demo-briefings";
+import { seedDemoFollowUps } from "./demo-follow-ups";
 import { seedDemoLoyalty, seedDemoRedemption } from "./demo-loyalty";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -324,6 +325,16 @@ async function main(): Promise<void> {
     console.log(
       `Demo manager log and pre-shift: ${briefings.entries} log entries and ${briefings.notes} pre-shift notes added; existing ones were left alone.`,
     );
+
+    // Phase 33 (policy 19): a supplier-coded card, an unused old balance and a refund that
+    // takes back loyalty points.
+    const followUps = await seedDemoFollowUps(database, await mainOwnerActor("settlements.refund"));
+
+    console.log(`Demo follow-ups: ${followUps.lines.join("; ")}.`);
+
+    for (const card of followUps.codes) {
+      console.log(`  ${card.cardNumber}  ${card.code}  balance ${card.balance} (shown once, not stored)`);
+    }
   } finally {
     await closeDatabase();
   }

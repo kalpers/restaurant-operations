@@ -1,8 +1,7 @@
 import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
 
-import type { Database } from "@/db";
 import { orderItems, orderRefundItems, orderRefunds, orders, settlements, settlementTenders, tipDistributions } from "@/db/schema";
-import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import type { DatabaseExecutor, DatabaseTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import { recordAudit } from "@/modules/auditing";
@@ -42,6 +41,17 @@ export type RecordRefundInput = {
   /** Phase 31 (policy 10): the card that paid this check, for a GIFT_CARD refund. */
   giftCardId?: string | null;
 };
+
+/**
+ * Phase 33 (amendment 4): what a workflow adds once the refund row is written, in the same
+ * transaction, such as loyalty points taken back. Its figures go into the refund's audit row
+ * and its response.
+ */
+export type RefundHook = (
+  transaction: DatabaseTransaction,
+  refund: { id: string; orderId: string; amount: string; taxAmount: string },
+  at: Date,
+) => Promise<Record<string, number>>;
 
 export type RefundResult = {
   refundId: string;
@@ -102,12 +112,17 @@ function refundEvent(actor: Actor, eventType: string, refund: { id: string; orde
   };
 }
 
-export async function recordRefund(
-  database: Database,
+/**
+ * Records a refund in the caller's transaction (Phase 33: the `record-refund` workflow), with
+ * its idempotency key. A retry returns the first outcome, `afterRecorded` included.
+ */
+export async function recordRefundInTransaction(
+  transaction: DatabaseTransaction,
   actor: Actor,
   orderId: string,
   input: RecordRefundInput,
-): Promise<RefundResult & { replayed: boolean }> {
+  afterRecorded?: RefundHook,
+): Promise<RefundResult & Record<string, unknown> & { replayed: boolean }> {
   assertPermission(actor, "settlements.view");
   assertPermission(actor, "settlements.refund");
 
@@ -145,8 +160,7 @@ export async function recordRefund(
 
   const orderItemIds = [...new Set(input.orderItemIds ?? [])];
   const { idempotencyKey, ...request } = input;
-  const outcome = await withTransaction(database, (transaction) =>
-    runIdempotent<RefundResult>(
+  const outcome = await runIdempotent<RefundResult & Record<string, number | string>>(
       transaction,
       {
         organizationId: actor.organizationId,
@@ -302,6 +316,10 @@ export async function recordRefund(
             .values(orderItemIds.map((orderItemId) => ({ refundId: refund!.id, orderItemId })));
         }
 
+        const extras = afterRecorded
+          ? await afterRecorded(transaction, { id: refund!.id, orderId: order.id, amount, taxAmount }, now)
+          : {};
+
         await writeOutboxEvents(transaction, [refundEvent(actor, "settlement.refund-recorded", refund!, now)]);
         // The external reference is not copied into the audit trail.
         await recordAudit(transaction, actor, {
@@ -318,10 +336,12 @@ export async function recordRefund(
             tipAmount,
             businessDate: refund!.businessDate,
             giftNumber: giftCard ? formatGiftCardNumber(giftCard.cardNumber) : null,
+            ...extras,
           },
         });
 
         return {
+          ...extras,
           refundId: refund!.id,
           orderId: order.id,
           refundNumber: refund!.refundNumber,
@@ -333,18 +353,22 @@ export async function recordRefund(
           remainingTips,
         };
       },
-    ),
   );
 
   return { ...outcome.response, replayed: outcome.replayed };
 }
 
-export async function voidRefund(
-  database: Database,
+/**
+ * Voids a refund in the caller's transaction (Phase 33: the `void-refund` workflow).
+ * `afterVoided` runs once the refund is VOIDED; its figures go into the audit row and result.
+ */
+export async function voidRefundInTransaction(
+  transaction: DatabaseTransaction,
   actor: Actor,
   refundId: string,
   input: { expectedVersion: number; reason: string },
-) {
+  afterVoided?: (transaction: DatabaseTransaction, refundId: string, at: Date) => Promise<Record<string, number>>,
+): Promise<{ refundId: string; status: string; version: number } & Record<string, number | string>> {
   assertPermission(actor, "settlements.view");
   assertPermission(actor, "settlements.refund-void");
 
@@ -352,7 +376,7 @@ export async function voidRefund(
     throw new BusinessRuleError("CARD_DATA_REFUSED", "Don't enter card numbers.");
   }
 
-  return withTransaction(database, async (transaction) => {
+  {
     const [found] = await transaction
       .select({ orderId: orderRefunds.orderId })
       .from(orderRefunds)
@@ -421,6 +445,8 @@ export async function voidRefund(
       .where(eq(orderRefunds.id, refundId))
       .returning();
 
+    const extras = afterVoided ? await afterVoided(transaction, refundId, now) : {};
+
     await writeOutboxEvents(transaction, [refundEvent(actor, "settlement.refund-voided", refund!, now)]);
     await recordAudit(transaction, actor, {
       action: "settlements.refund-voided",
@@ -431,11 +457,12 @@ export async function voidRefund(
         status: "VOIDED",
         reason: input.reason.trim(),
         giftNumber: giftCard ? formatGiftCardNumber(giftCard.cardNumber) : null,
+        ...extras,
       },
     });
 
-    return { refundId, status: updated!.status, version: updated!.version };
-  });
+    return { ...extras, refundId, status: updated!.status, version: updated!.version };
+  }
 }
 
 /** Refunds of an order, oldest first. References are returned only with card metadata. */

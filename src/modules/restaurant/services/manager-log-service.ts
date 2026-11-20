@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 
 import type { Database } from "@/db";
-import { managerLogEntries, MANAGER_LOG_CATEGORIES } from "@/db/schema";
-import { withTransaction, type DatabaseExecutor } from "@/db/transactions/transaction-context";
+import { managerLogEntries } from "@/db/schema";
+import { withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import { runIdempotent } from "@/infrastructure/idempotency/idempotency-service";
 import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
@@ -27,6 +27,7 @@ import {
   type LogDateChoice,
 } from "../rules/manager-log-rules";
 import { assertPermission, readLocationClock } from "./access";
+import { assertActiveLogCategory } from "./manager-log-category-service";
 
 // Phase 32 manager log (policies 3–6, 10–12). Entries are append-only: a correction is a new
 // entry, and a redaction (Owner and General Manager) is the one change, made once with a
@@ -38,7 +39,8 @@ export const MANAGER_LOG_ENTRY_SCOPE = "restaurant.manager-log-entry";
 /** Search results are capped, so a broad search stays quick. */
 const SEARCH_LIMIT = 300;
 
-export type ManagerLogCategory = (typeof MANAGER_LOG_CATEGORIES)[number];
+/** Phase 33 (policy 17): a category code of the organization. */
+export type ManagerLogCategory = string;
 
 export type ManagerLogEntryView = {
   id: string;
@@ -169,6 +171,8 @@ export async function addLogEntry(
         request: { ...request, body, locationId: actor.locationId },
       },
       async () => {
+        await assertActiveLogCategory(transaction, actor.organizationId, input.category);
+
         if (input.correctsEntryId) {
           const corrected = await findLogEntry(transaction, { entryId: input.correctsEntryId, locationId: actor.locationId });
 
@@ -207,6 +211,47 @@ export async function addLogEntry(
   return { ...outcome.response, replayed: outcome.replayed };
 }
 
+/**
+ * Policy 6 (Phase 33: shared with the erase workflow): empties one entry's body at the given
+ * location, once, with a reason, inside the caller's transaction, and audits it without the
+ * body. The caller checks permission.
+ */
+export async function redactLogEntryInTransaction(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  input: { entryId: string; locationId: string; reason: string; at?: Date },
+): Promise<ManagerLogRow> {
+  const entry = await findLogEntry(transaction, { entryId: input.entryId, locationId: input.locationId, lock: true });
+
+  if (!entry) {
+    throw new NotFoundError("manager log entry");
+  }
+
+  if (entry.redactedAt) {
+    throw new BusinessRuleError("ALREADY_REDACTED", "This entry has already been redacted.");
+  }
+
+  const [updated] = await transaction
+    .update(managerLogEntries)
+    .set({ body: "", redactedAt: input.at ?? new Date(), redactedByUserId: actor.userId, redactionReason: input.reason })
+    .where(eq(managerLogEntries.id, entry.id))
+    .returning();
+
+  await recordAudit(transaction, actor, {
+    action: "restaurant.manager-log-redacted",
+    entityId: entry.id,
+    details: {
+      entryNumber: formatLogNumber(entry.entryNumber),
+      locationId: entry.locationId,
+      businessDate: entry.businessDate,
+      category: entry.category,
+      reasonLength: input.reason.length,
+    },
+  });
+
+  return updated!;
+}
+
 /** Policy 6: empties an entry's body, once, with a reason, and audits it without the body. */
 export async function redactLogEntry(
   database: Database,
@@ -221,34 +266,8 @@ export async function redactLogEntry(
   assertNoCardNumber(reason);
 
   return withTransaction(database, async (transaction) => {
-    const entry = await findLogEntry(transaction, { entryId, locationId: actor.locationId, lock: true });
-
-    if (!entry) {
-      throw new NotFoundError("manager log entry");
-    }
-
-    if (entry.redactedAt) {
-      throw new BusinessRuleError("ALREADY_REDACTED", "This entry has already been redacted.");
-    }
-
-    const [updated] = await transaction
-      .update(managerLogEntries)
-      .set({ body: "", redactedAt: new Date(), redactedByUserId: actor.userId, redactionReason: reason })
-      .where(eq(managerLogEntries.id, entry.id))
-      .returning();
-
-    await recordAudit(transaction, actor, {
-      action: "restaurant.manager-log-redacted",
-      entityId: entry.id,
-      details: {
-        entryNumber: formatLogNumber(entry.entryNumber),
-        businessDate: entry.businessDate,
-        category: entry.category,
-        reasonLength: reason.length,
-      },
-    });
-
-    const [view] = await viewsOf(transaction, actor, [updated!]);
+    const updated = await redactLogEntryInTransaction(transaction, actor, { entryId, locationId: actor.locationId, reason });
+    const [view] = await viewsOf(transaction, actor, [updated]);
 
     return view!;
   });

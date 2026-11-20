@@ -17,14 +17,8 @@ import { useToast } from "@/components/ui/toast";
 import type { ManagerLogEntryView } from "@/modules/restaurant/services/manager-log-service";
 import { formatInstant } from "@/shared/time/format-instant";
 
-export const LOG_CATEGORY_LABELS: Record<string, string> = {
-  SERVICE: "Service",
-  INCIDENT: "Incident",
-  MAINTENANCE: "Maintenance",
-  STAFFING: "Staffing",
-  GUEST: "Guest",
-  OTHER: "Other",
-};
+/** Phase 33 (policy 17): the organization's categories, inactive ones only naming old entries. */
+export type LogCategoryOption = { code: string; name: string; active: boolean };
 
 type Failure = Pick<ApiFailure, "code" | "message" | "requestId">;
 
@@ -50,11 +44,13 @@ type Abilities = { write: boolean; redact: boolean };
  */
 export function ManagerLogWorkspace({
   entries,
+  categories,
   abilities,
   currentDate,
   showDates,
 }: {
   entries: ManagerLogEntryView[];
+  categories: LogCategoryOption[];
   abilities: Abilities;
   currentDate: string;
   /** True for a search across dates, where each entry shows its business date. */
@@ -62,6 +58,7 @@ export function ManagerLogWorkspace({
 }) {
   const [correcting, setCorrecting] = useState<ManagerLogEntryView | null>(null);
   const [redacting, setRedacting] = useState<ManagerLogEntryView | null>(null);
+  const labels = new Map(categories.map((category) => [category.code, category.name]));
 
   return (
     <div className="grid gap-6">
@@ -69,6 +66,7 @@ export function ManagerLogWorkspace({
         <AddEntryForm
           key={correcting?.id ?? "new"}
           currentDate={currentDate}
+          options={categories.filter((category) => category.active)}
           correcting={correcting}
           onDone={() => setCorrecting(null)}
         />
@@ -81,6 +79,7 @@ export function ManagerLogWorkspace({
             <li key={entry.id}>
               <EntryCard
                 entry={entry}
+                categoryName={labels.get(entry.category) ?? entry.category}
                 showDate={showDates}
                 abilities={abilities}
                 onCorrect={() => {
@@ -100,12 +99,14 @@ export function ManagerLogWorkspace({
 
 function EntryCard({
   entry,
+  categoryName,
   showDate,
   abilities,
   onCorrect,
   onRedact,
 }: {
   entry: ManagerLogEntryView;
+  categoryName: string;
   showDate: boolean;
   abilities: Abilities;
   onCorrect: () => void;
@@ -117,7 +118,7 @@ function EntryCard({
     <Card className="grid gap-2" data-testid="log-entry" aria-label={entry.entryNumber}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-semibold tabular">{entry.entryNumber}</span>
-        <Badge tone={entry.category === "INCIDENT" ? "warning" : "neutral"}>{LOG_CATEGORY_LABELS[entry.category] ?? entry.category}</Badge>
+        <Badge tone={entry.category === "INCIDENT" ? "warning" : "neutral"}>{categoryName}</Badge>
         {showDate && <span className="text-neutral-700">Business date {entry.businessDate}</span>}
         <span className="text-neutral-600">
           {formatInstant(entry.createdAt, timeZone, showDate ? "dateTime" : "time")} · {entry.authorName ?? "No employee record"}
@@ -154,10 +155,12 @@ function EntryCard({
 
 function AddEntryForm({
   currentDate,
+  options,
   correcting,
   onDone,
 }: {
   currentDate: string;
+  options: LogCategoryOption[];
   correcting: ManagerLogEntryView | null;
   onDone: () => void;
 }) {
@@ -223,10 +226,15 @@ function AddEntryForm({
             </Select>
           </Field>
           <Field label="Category">
-            <Select name="category" defaultValue={correcting?.category ?? "SERVICE"}>
-              {Object.entries(LOG_CATEGORY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
+            <Select
+              name="category"
+              defaultValue={
+                options.some((option) => option.code === correcting?.category) ? correcting!.category : options[0]?.code
+              }
+            >
+              {options.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name}
                 </option>
               ))}
             </Select>

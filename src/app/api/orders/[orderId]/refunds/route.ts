@@ -1,8 +1,9 @@
 import { getDatabase } from "@/db";
 import { requireApiActor } from "@/modules/auth/guards";
-import { listRefundsForOrder, recordRefund } from "@/modules/settlements/services/refund-service";
+import { listRefundsForOrder } from "@/modules/settlements/services/refund-service";
 import { orderIdParamsSchema, recordRefundSchema } from "@/modules/settlements/validators/settlement-validators";
 import { apiRoute, parseWith } from "@/shared/http/api-route";
+import { recordRefund } from "@/workflows/record-refund/record-refund";
 
 export const GET = apiRoute<{ orderId: string }>(
   { module: "settlements", operation: "list-refunds" },

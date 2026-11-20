@@ -20,6 +20,7 @@ import {
   useSubmit,
   type HostTableOption,
 } from "./shared";
+import { EraseGuestPanel } from "./erase-guest-panel";
 import { GuestPicker, type PickedGuest } from "./guest-picker";
 import { GuestMarks, PartyGuestPanel, type AllergenOption, type HostGuestAbilities } from "./party-guest-panel";
 import { GuestMessagesPanel, MessageConsentFields, type HostMessageAbilities, type MessageConsent } from "./guest-messages";
@@ -571,44 +572,17 @@ function CancelPanel({
 }
 
 function EraseVisitPanel({ reservation, onDone }: { reservation: ReservationView; onDone: () => void }) {
-  const { submit, pending, error } = useSubmit();
-  const [reason, setReason] = useState("");
-
   return (
-    <form
-      aria-label="Erase guest details"
-      className="mt-3 grid gap-3 rounded-md border border-danger-300 p-3"
-      onSubmit={async (event) => {
-        event.preventDefault();
-
-        if (
-          await submit("POST", `/api/guest-parties/${reservation.guestPartyId}/erase`, {
-            reason,
-            expectedVersion: reservation.guest.partyVersion,
-          })
-        ) {
-          onDone();
-        }
-      }}
-    >
-      <p className="text-sm">
-        Removes this guest&apos;s name, phone, email, requests, allergies and message history text. The booking and its
-        history stay. This can&apos;t be undone.
-      </p>
-      <label className="grid gap-1 text-sm font-medium">
-        Reason
-        <input required maxLength={200} value={reason} onChange={(event) => setReason(event.target.value)} className={INPUT_CLASS} />
-      </label>
-      <ErrorText error={error} />
-      <div className="flex gap-2">
-        <button type="submit" disabled={pending} className={PRIMARY_CLASS}>
-          Erase guest details
-        </button>
-        <button type="button" onClick={onDone} className={BUTTON_CLASS}>
-          Keep
-        </button>
-      </div>
-    </form>
+    <div className="mt-3 rounded-md border border-danger-300 p-3">
+      <EraseGuestPanel
+        mentionsUrl={`/api/guest-parties/${reservation.guestPartyId}/erase-mentions`}
+        eraseUrl={`/api/guest-parties/${reservation.guestPartyId}/erase`}
+        expectedVersion={reservation.guest.partyVersion}
+        description="Removes this guest's name, phone, email, requests, allergies and message history text. The booking and its history stay. This can't be undone."
+        submitLabel="Erase guest details"
+        onDone={onDone}
+      />
+    </div>
   );
 }
 

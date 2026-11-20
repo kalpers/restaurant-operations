@@ -21,13 +21,24 @@ import { users } from "./auth";
 import { guestParties, guestProfiles } from "./guest-parties";
 import { discountDefinitions, orderDiscounts, orderItemDiscounts, orders } from "./orders";
 import { locations, organizations } from "./organization";
+import { orderRefunds } from "./settlements";
 
 // Phase 30 guest loyalty, owned by Reservations. One program per organization; an append-only
 // points ledger per guest profile (`guest_loyalty_entries`, guarded by migration 0071) with a
 // balance row that changes with it; rewards that are reward-only discount definitions; and a
 // record of each reward applied to a check, whose points leave the balance when it closes.
 
-export const LOYALTY_ENTRY_KINDS = ["EARNED", "REDEEMED", "ADJUSTED", "MERGED_OUT", "MERGED_IN", "ERASED"] as const;
+export const LOYALTY_ENTRY_KINDS = [
+  "EARNED",
+  "REDEEMED",
+  "ADJUSTED",
+  "MERGED_OUT",
+  "MERGED_IN",
+  "ERASED",
+  // Phase 33 (policies 10, 11): points a refund took back, and put back when it was voided.
+  "REFUND_REVERSED",
+  "REFUND_RESTORED",
+] as const;
 
 /** Policy 5: one program row per organization, off until a manager enables it. */
 export const guestLoyaltyPrograms = pgTable(
@@ -191,6 +202,8 @@ export const guestLoyaltyEntries = pgTable(
     redemptionId: uuid("redemption_id"),
     /** MERGED_OUT / MERGED_IN: the other profile of the merge. */
     relatedProfileId: uuid("related_profile_id").references(() => guestProfiles.id, { onDelete: "restrict" }),
+    /** Phase 33 REFUND_REVERSED / REFUND_RESTORED: the refund that moved the points. */
+    refundId: uuid("refund_id").references(() => orderRefunds.id, { onDelete: "restrict" }),
     /** EARNED: the CLOSED check subtotals and the rates in effect, as they were. */
     eligibleSubtotal: money("eligible_subtotal"),
     pointsPerDollarSnapshot: integer("points_per_dollar_snapshot"),
@@ -215,14 +228,14 @@ export const guestLoyaltyEntries = pgTable(
     }).onDelete("restrict"),
     check(
       "guest_loyalty_entries_kind_valid",
-      sql`${table.kind} IN ('EARNED', 'REDEEMED', 'ADJUSTED', 'MERGED_OUT', 'MERGED_IN', 'ERASED')`,
+      sql`${table.kind} IN ('EARNED', 'REDEEMED', 'ADJUSTED', 'MERGED_OUT', 'MERGED_IN', 'ERASED', 'REFUND_REVERSED', 'REFUND_RESTORED')`,
     ),
     check("guest_loyalty_entries_points_nonzero", sql`${table.points} <> 0`),
     check("guest_loyalty_entries_balance_non_negative", sql`${table.balanceAfter} >= 0`),
     check(
       "guest_loyalty_entries_sign_valid",
-      sql`(${table.kind} IN ('EARNED', 'MERGED_IN') AND ${table.points} > 0)
-        OR (${table.kind} IN ('REDEEMED', 'MERGED_OUT', 'ERASED') AND ${table.points} < 0)
+      sql`(${table.kind} IN ('EARNED', 'MERGED_IN', 'REFUND_RESTORED') AND ${table.points} > 0)
+        OR (${table.kind} IN ('REDEEMED', 'MERGED_OUT', 'ERASED', 'REFUND_REVERSED') AND ${table.points} < 0)
         OR ${table.kind} = 'ADJUSTED'`,
     ),
     check(
@@ -239,6 +252,10 @@ export const guestLoyaltyEntries = pgTable(
       sql`${table.kind} NOT IN ('MERGED_OUT', 'MERGED_IN') OR ${table.relatedProfileId} IS NOT NULL`,
     ),
     check(
+      "guest_loyalty_entries_refund_fields",
+      sql`(${table.kind} IN ('REFUND_REVERSED', 'REFUND_RESTORED')) = (${table.refundId} IS NOT NULL)`,
+    ),
+    check(
       "guest_loyalty_entries_reason_valid",
       sql`(${table.kind} <> 'ADJUSTED' OR ${table.reason} IS NOT NULL)
         AND (${table.reason} IS NULL OR length(trim(${table.reason})) BETWEEN 1 AND 200)`,
@@ -251,6 +268,12 @@ export const guestLoyaltyEntries = pgTable(
     uniqueIndex("guest_loyalty_entries_redeemed_unique")
       .on(table.redemptionId)
       .where(sql`${table.kind} = 'REDEEMED'`),
+    uniqueIndex("guest_loyalty_entries_refund_reversed_unique")
+      .on(table.refundId)
+      .where(sql`${table.kind} = 'REFUND_REVERSED'`),
+    uniqueIndex("guest_loyalty_entries_refund_restored_unique")
+      .on(table.refundId)
+      .where(sql`${table.kind} = 'REFUND_RESTORED'`),
     index("guest_loyalty_entries_profile_sequence_idx").on(table.guestProfileId, table.sequence),
     index("guest_loyalty_entries_org_date_idx").on(table.organizationId, table.businessDate),
   ],

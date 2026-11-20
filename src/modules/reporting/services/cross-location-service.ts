@@ -110,6 +110,16 @@ const FIGURES: Record<CrossLocationArea, Figure[]> = {
 };
 
 const section = (sections: ReportSection[], key: string) => sections.find((entry) => entry.key === key);
+
+/**
+ * Phase 33 (policy 16): figures that are the organization's, not a location's. Every location's
+ * report shows the same ones, so a comparison shows them once, apart from the table and its
+ * total.
+ */
+const ORGANIZATION_WIDE: Partial<Record<CrossLocationArea, string[]>> = {
+  sales: ["loyaltyOutstanding"],
+  settlements: ["giftCardOutstanding"],
+};
 const rowWhere = (entry: ReportSection | undefined, key: string, value: ReportCell) =>
   entry?.rows.find((row) => row[key] === value);
 const sumOf = (rows: ReportRow[] | undefined, key: string, scale: number) =>
@@ -272,6 +282,7 @@ export async function runCrossLocationReport(
 
   return withReadOnlySnapshot(database, async (tx) => {
     const rows: ReportRow[] = [];
+    let organizationWide: ReportSection[] = [];
     let costEverywhere = true;
     let wagesEverywhere = true;
 
@@ -280,10 +291,17 @@ export async function runCrossLocationReport(
 
       costEverywhere &&= context.canViewCost;
       wagesEverywhere &&= context.canViewCompensation;
+
+      const sections = await BUILDERS[area](context);
+
+      if (organizationWide.length === 0) {
+        organizationWide = (ORGANIZATION_WIDE[crossArea] ?? []).flatMap((key) => section(sections, key) ?? []);
+      }
+
       rows.push({
         locationCode: entry.location.locationCode,
         location: entry.closed ? `${entry.location.locationName} (closed)` : entry.location.locationName,
-        ...figuresOf(crossArea, await BUILDERS[area](context)),
+        ...figuresOf(crossArea, sections),
       });
     }
 
@@ -329,6 +347,12 @@ export async function runCrossLocationReport(
           ],
           rows: [...rows.map(keep), keep(totals)],
         },
+        ...organizationWide.map((entry) => ({
+          ...entry,
+          key: `organization-${entry.key}`,
+          title: `Organization-wide balances: ${entry.title.replace(/ \(all locations\)$/, "").toLowerCase()}`,
+          description: `${entry.description} Shown once here: it isn't a location's figure and isn't in the table's total.`,
+        })),
       ],
     };
   });

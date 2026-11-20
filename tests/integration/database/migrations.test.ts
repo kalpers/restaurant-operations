@@ -98,6 +98,7 @@ const EXPECTED_TABLES = [
   "public.location_settings",
   "public.locations",
   "public.login_throttles",
+  "public.manager_log_categories",
   "public.manager_log_entries",
   "public.manager_log_number_counters",
   "public.menu_availability",
@@ -630,7 +631,29 @@ describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () =>
     ]);
   });
 
-  async function upgradeFromMigrationIndex(lastIndex: number): Promise<void> {
+  it("upgrades a Phase 32 database in place: existing log entries get their categories, new columns default", async () => {
+    // 0000-0075 are Phase 32 and earlier; 0076-0077 are Phase 33.
+    await upgradeFromMigrationIndex(75, async () => {
+      await query(`
+        INSERT INTO manager_log_entries (organization_id, location_id, entry_number, business_date, category, body, author_user_id)
+        SELECT l.organization_id, l.id, 1, '2026-11-18', 'INCIDENT', 'Fryer 2 down', u.id
+        FROM locations l, users u WHERE l.location_code = 'UPGRADE' AND u.email = 'upgrade@example.test'
+      `);
+    });
+
+    expect(
+      await query("SELECT code FROM manager_log_categories c JOIN organizations o ON o.id = c.organization_id WHERE o.name = 'Upgrade Org' ORDER BY sort_order"),
+    ).toEqual(["SERVICE", "INCIDENT", "MAINTENANCE", "STAFFING", "GUEST", "OTHER"].map((code) => ({ code })));
+    expect(await query("SELECT category, body FROM manager_log_entries")).toEqual([{ category: "INCIDENT", body: "Fryer 2 down" }]);
+    expect(await query("SELECT conname FROM pg_constraint WHERE conname = 'manager_log_entries_category_fk'")).toEqual([
+      { conname: "manager_log_entries_category_fk" },
+    ]);
+    expect(
+      await query("SELECT tgname FROM pg_trigger WHERE tgname IN ('manager_log_categories_guard', 'pre_shift_notes_redaction_guard') ORDER BY tgname"),
+    ).toEqual([{ tgname: "manager_log_categories_guard" }, { tgname: "pre_shift_notes_redaction_guard" }]);
+  });
+
+  async function upgradeFromMigrationIndex(lastIndex: number, beforeUpgrade?: () => Promise<void>): Promise<void> {
     // Apply only the migrations Phase 5 shipped, from a copy with a shortened journal.
     const oldFolder = mkdtempSync(path.join(tmpdir(), "old-migrations-"));
 
@@ -685,6 +708,7 @@ describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () =>
       SELECT loc.id, 3, usr.id FROM loc, usr
     `);
 
+    await beforeUpgrade?.();
     await applyMigrations(databaseUrl);
 
     expect(await countAppliedMigrations()).toBe(journal.entries.length);

@@ -18,7 +18,7 @@ import { setTaxExemption } from "@/modules/orders/services/tax-exemption-service
 import { exportPayrollHours, exportSalesJournal } from "@/modules/reporting/services/export-service";
 import { runReport } from "@/modules/reporting/services/report-service";
 import { closeDrawerSession, createDrawer, openDrawerSession } from "@/modules/settlements/services/drawer-service";
-import { recordRefund } from "@/modules/settlements/services/refund-service";
+import { recordRefund } from "@/workflows/record-refund/record-refund";
 import { openSettlement } from "@/modules/settlements/services/settlement-service";
 import { addDecimals, subtractDecimals } from "@/shared/decimal/decimal";
 import { businessDateOf } from "@/shared/time/business-date-service";

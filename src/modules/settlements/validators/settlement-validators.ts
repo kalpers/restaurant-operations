@@ -135,12 +135,16 @@ export const giftCardSaleParamsSchema = z.object({ saleId: z.uuid() });
 export const giftCardProgramSchema = z.object({
   enabled: z.boolean(),
   maxBalance: money,
+  /** Phase 33 (policy 15): months without activity before a balance counts as unused. */
+  dormancyMonths: z.int().min(12).max(120).optional(),
   expectedVersion: z.int().nonnegative(),
 });
 
 export const sellGiftCardSchema = z.object({
   idempotencyKey,
   giftCardCode,
+  /** Phase 33 (policy 14): the code printed on a supplier's card, for a new card. */
+  supplierCode: giftCardCode,
   amount: money,
   tenderType: z.enum(["CASH", "EXTERNAL_CARD", "OTHER"]),
   receivedAmount: money.nullable().optional().transform((value) => value ?? null),
@@ -195,4 +199,4 @@ export const giftCardStatusSchema = z.object({
   expectedVersion,
 });
 
-export const replaceGiftCardCodeSchema = z.object({ reason: giftCardReason, expectedVersion });
+export const replaceGiftCardCodeSchema = z.object({ reason: giftCardReason, expectedVersion, supplierCode: giftCardCode });

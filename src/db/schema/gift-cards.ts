@@ -31,6 +31,8 @@ import { locations, organizations } from "./organization";
 const NO_PAN = (column: unknown) => sql`${column} IS NULL OR ${column} !~ '[0-9]{13,}'`;
 
 export const GIFT_CARD_STATUSES = ["ACTIVE", "INACTIVE"] as const;
+/** Phase 33 (policy 13): who made the code, the app or a card supplier. */
+export const GIFT_CARD_CODE_SOURCES = ["GENERATED", "SUPPLIER"] as const;
 export const GIFT_CARD_SALE_KINDS = ["ISSUED", "RELOADED"] as const;
 export const GIFT_CARD_SALE_TENDER_TYPES = ["CASH", "EXTERNAL_CARD", "OTHER"] as const;
 
@@ -41,6 +43,8 @@ export const giftCardPrograms = pgTable(
     organizationId: uuid("organization_id").primaryKey(),
     enabled: boolean("enabled").notNull().default(false),
     maxBalance: money("max_balance").notNull().default("500.00"),
+    /** Phase 33 (policy 15): months without ledger activity before a balance counts as unused. */
+    dormancyMonths: integer("dormancy_months").notNull().default(36),
     /** When gift cards were first turned on. */
     enabledAt: timestamptz("enabled_at"),
     updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "restrict" }),
@@ -55,6 +59,7 @@ export const giftCardPrograms = pgTable(
       foreignColumns: [organizations.id],
     }).onDelete("restrict"),
     check("gift_card_programs_max_valid", sql`${table.maxBalance} >= 1.00 AND ${table.maxBalance} <= 10000.00`),
+    check("gift_card_programs_dormancy_valid", sql`${table.dormancyMonths} BETWEEN 12 AND 120`),
     check("gift_card_programs_enabled_at", sql`NOT ${table.enabled} OR ${table.enabledAt} IS NOT NULL`),
   ],
 );
@@ -92,6 +97,8 @@ export const giftCards = pgTable(
     codeHash: text("code_hash").notNull(),
     /** The code's last four characters, for staff to tell cards apart. Never audited. */
     codeLastFour: text("code_last_four").notNull(),
+    /** Phase 33 (policy 13): `GENERATED` by the app or printed by a `SUPPLIER`. */
+    codeSource: text("code_source").notNull().default("GENERATED"),
     status: text("status").notNull().default("ACTIVE"),
     balance: money("balance").notNull().default("0.00"),
     issuedLocationId: uuid("issued_location_id").notNull(),
@@ -117,6 +124,7 @@ export const giftCards = pgTable(
     check("gift_cards_number_positive", sql`${table.cardNumber} > 0`),
     check("gift_cards_code_hash_valid", sql`${table.codeHash} ~ '^[0-9a-f]{64}$'`),
     check("gift_cards_code_last_four_valid", sql`${table.codeLastFour} ~ '^[0-9A-Z]{4}$'`),
+    check("gift_cards_code_source_valid", sql`${table.codeSource} IN ('GENERATED', 'SUPPLIER')`),
     check("gift_cards_status_valid", sql`${table.status} IN ('ACTIVE', 'INACTIVE')`),
     check("gift_cards_balance_non_negative", sql`${table.balance} >= 0`),
     check(

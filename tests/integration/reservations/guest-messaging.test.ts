@@ -507,6 +507,9 @@ describe("guest messaging from staff actions (Phase 22)", () => {
       expect(await eraseGuestVisit(database(), manager, { guestPartyId: party!.id, expectedVersion: party!.version, reason: "Request" })).toEqual({
         id: party!.id,
         erased: true,
+        // Phase 33: nothing was chosen for redaction alongside it.
+        logEntriesRedacted: 0,
+        notesRedacted: 0,
       });
 
       const [after] = await database().select().from(guestParties).where(eq(guestParties.id, party!.id));

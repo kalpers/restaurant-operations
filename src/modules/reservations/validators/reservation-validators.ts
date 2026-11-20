@@ -225,9 +225,15 @@ export const mergeGuestProfilesSchema = z.object({
   reason: requiredText(200),
 });
 
-export const eraseGuestProfileSchema = z.object({ expectedVersion, reason: requiredText(200) });
+/** Phase 33 (policy 2): the possible mentions the eraser ticked for redaction. */
+const chosenMentions = {
+  redactEntryIds: z.array(z.uuid()).max(500).default([]),
+  redactNoteIds: z.array(z.uuid()).max(500).default([]),
+};
+
+export const eraseGuestProfileSchema = z.object({ expectedVersion, reason: requiredText(200), ...chosenMentions });
 /** Phase 22 (policy 17): the party's version and why. */
-export const eraseGuestVisitSchema = z.object({ expectedVersion, reason: requiredText(200) });
+export const eraseGuestVisitSchema = z.object({ expectedVersion, reason: requiredText(200), ...chosenMentions });
 
 export const messageChannelParamsSchema = z.object({ partyId: z.uuid(), channel: z.enum(["SMS", "EMAIL"]) });
 export const messageIdParamsSchema = z.object({ messageId: z.uuid() });

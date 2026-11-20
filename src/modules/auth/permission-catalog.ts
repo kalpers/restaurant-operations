@@ -76,6 +76,7 @@ export const PERMISSION_CATALOG = [
   { code: "manager-log.view", name: "Read the manager log", category: "Manager log" },
   { code: "manager-log.write", name: "Add and correct manager log entries", category: "Manager log" },
   { code: "manager-log.redact", name: "Redact a manager log entry, with a reason", category: "Manager log" },
+  { code: "manager-log.categories", name: "Add, rename and deactivate manager log categories", category: "Manager log" },
   { code: "pre-shift.view", name: "Read today's pre-shift notes", category: "Manager log" },
   { code: "pre-shift.manage", name: "Write, edit and withdraw pre-shift notes", category: "Manager log" },
 

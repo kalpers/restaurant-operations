@@ -368,7 +368,14 @@ export const AUDIT_ACTIONS = {
     category: "ORGANIZATION",
     entityType: "manager_log_entry",
     scope: "LOCATION",
-    fields: ["entryNumber", "businessDate", "category", "reasonLength"],
+    fields: ["entryNumber", "locationId", "businessDate", "category", "reasonLength"],
+  },
+  // Phase 33 (policy 5): a pre-shift note redacted. Never the title or body; only the reason's length.
+  "restaurant.pre-shift-note-redacted": {
+    category: "ORGANIZATION",
+    entityType: "pre_shift_note",
+    scope: "LOCATION",
+    fields: ["locationId", "businessDate", "reasonLength"],
   },
   // Phase 23 (policy 27): opening, closing and reopening a location. Codes and counts only.
   "locations.created": {
@@ -626,13 +633,17 @@ export const AUDIT_ACTIONS = {
       "tipAmount",
       "businessDate",
       "giftNumber",
+      // Phase 33 (policy 11): loyalty points the refund took back, and those it couldn't.
+      "loyaltyPointsTaken",
+      "loyaltyPointsShort",
     ],
   },
   "settlements.refund-voided": {
     category: "SETTLEMENTS",
     entityType: "order_refund",
     scope: "LOCATION",
-    fields: ["status", "amount", "tenderType", "reason", "giftNumber"],
+    // Phase 33 (policy 10): loyalty points put back with the void.
+    fields: ["status", "amount", "tenderType", "reason", "giftNumber", "loyaltyPointsRestored"],
   },
   // Phase 31 gift cards (policy 14): by card number and amounts; never the code, its hash or
   // its last four characters. Spending and refunds are on the tender and refund rows above.
@@ -640,13 +651,25 @@ export const AUDIT_ACTIONS = {
     category: "SETTLEMENTS",
     entityType: "gift_card_program",
     scope: "ORGANIZATION",
-    fields: ["enabled", "maxBalance"],
+    fields: ["enabled", "maxBalance", "dormancyMonths"],
   },
   "settlements.gift-card-sold": {
     category: "SETTLEMENTS",
     entityType: "gift_card",
     scope: "LOCATION",
-    fields: ["giftNumber", "kind", "amount", "tenderType", "cashReceived", "changeGiven", "description", "balanceAfter", "businessDate"],
+    fields: [
+      "giftNumber",
+      "kind",
+      "amount",
+      "tenderType",
+      "cashReceived",
+      "changeGiven",
+      "description",
+      "balanceAfter",
+      "businessDate",
+      // Phase 33 (policy 13): GENERATED or SUPPLIER; never the code.
+      "codeSource",
+    ],
   },
   "settlements.gift-card-sale-voided": {
     category: "SETTLEMENTS",
@@ -676,7 +699,7 @@ export const AUDIT_ACTIONS = {
     category: "SETTLEMENTS",
     entityType: "gift_card",
     scope: "ORGANIZATION",
-    fields: ["giftNumber", "reason"],
+    fields: ["giftNumber", "reason", "codeSource"],
   },
   "drawers.drawer-created": {
     category: "SETTLEMENTS",
@@ -796,7 +819,8 @@ export const AUDIT_ACTIONS = {
     category: "GUESTS",
     entityType: "guest_profile",
     scope: "ORGANIZATION",
-    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "pointsCleared", "reason"],
+    // Phase 33 (policy 2): how many log entries and notes were redacted with it.
+    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "pointsCleared", "reason", "logEntriesRedacted", "notesRedacted"],
   },
   // Phase 30 guest loyalty (policy 14). Earning and posting at close are recorded by the ledger.
   "loyalty.program-changed": {
@@ -834,7 +858,7 @@ export const AUDIT_ACTIONS = {
     category: "GUESTS",
     entityType: "guest_party",
     scope: "LOCATION",
-    fields: ["guestPartyId", "reason"],
+    fields: ["guestPartyId", "reason", "logEntriesRedacted", "notesRedacted"],
   },
   // Phase 21 (policy 14): a server sent an item despite a conflict with recorded allergies.
   "orders.allergen-acknowledged": {

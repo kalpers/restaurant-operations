@@ -13,7 +13,8 @@ import {
   recordDrawerMovement,
   setCashDrawerRequired,
 } from "@/modules/settlements/services/drawer-service";
-import { recordRefund, voidRefund } from "@/modules/settlements/services/refund-service";
+import { recordRefund } from "@/workflows/record-refund/record-refund";
+import { voidRefund } from "@/workflows/void-refund/void-refund";
 import { openSettlement, voidTender } from "@/modules/settlements/services/settlement-service";
 import { AppError } from "@/shared/errors/app-error";
 import { completeSettlement } from "@/workflows/close-order/complete-settlement";

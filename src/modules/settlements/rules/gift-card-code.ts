@@ -58,6 +58,47 @@ export function normalizeGiftCardCode(input: string): string | null {
   return cleaned;
 }
 
+/** Phase 33 (policy 13): a supplier's printed code is 8 to 24 letters and digits. */
+const SUPPLIER_CODE = /^[0-9A-Z]{8,24}$/;
+
+/**
+ * Phase 33 (amendment 1): the one stored form of a typed or scanned code. A code that is a
+ * valid app-style code (16 Crockford characters) is read that way; anything else is read as
+ * a supplier code, upper-cased with spaces and dashes removed and no look-alike mapping.
+ * Null when it can't be a code, or holds 13 digits in a row (never treated as a code).
+ */
+export function canonicalGiftCardCode(input: string): string | null {
+  const generated = normalizeGiftCardCode(input);
+  const canonical = generated ?? input.toUpperCase().replace(/[\s-]/g, "");
+
+  if (!SUPPLIER_CODE.test(canonical) || looksLikeCardNumber(canonical)) {
+    return null;
+  }
+
+  return canonical;
+}
+
+export type SupplierCodeCheck =
+  | { ok: true; codeHash: string; lastFour: string }
+  | { ok: false; reason: "INVALID" | "LOOKS_LIKE_CARD_NUMBER" };
+
+/** Phase 33 (policy 13): whether a supplier's printed code can be used, and its hash. */
+export function checkSupplierCode(input: string): SupplierCodeCheck {
+  const cleaned = input.toUpperCase().replace(/[\s-]/g, "");
+
+  if (/[0-9]{13,}/.test(cleaned)) {
+    return { ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" };
+  }
+
+  const canonical = canonicalGiftCardCode(input);
+
+  if (!canonical) {
+    return { ok: false, reason: "INVALID" };
+  }
+
+  return { ok: true, codeHash: hashGiftCardCode(canonical), lastFour: canonical.slice(-4) };
+}
+
 export function hashGiftCardCode(normalized: string): string {
   return createHash("sha256").update(`gift-card:${normalized}`).digest("hex");
 }

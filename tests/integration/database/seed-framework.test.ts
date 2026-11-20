@@ -191,6 +191,8 @@ describe("runSeeds", () => {
       "security.loyalty-permissions",
       "security.gift-card-permissions",
       "security.manager-log-permissions",
+      "security.manager-log-category-permissions",
+      "restaurant.manager-log-categories",
     ]);
   });
 });

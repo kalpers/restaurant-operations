@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
@@ -18,10 +19,24 @@ import type { PreShiftNoteView } from "@/modules/restaurant/services/pre-shift-s
 type Failure = Pick<ApiFailure, "code" | "message" | "requestId">;
 type Position = { id: string; name: string };
 
-/** Phase 32 (policies 7–9): managers write, edit and withdraw pre-shift notes. */
-export function PreShiftManager({ notes, positions, today }: { notes: PreShiftNoteView[]; positions: Position[]; today: string }) {
+/**
+ * Phase 32 (policies 7–9): managers write, edit and withdraw pre-shift notes. Phase 33
+ * (policy 5): a `manager-log.redact` holder may redact any note, once, with a reason.
+ */
+export function PreShiftManager({
+  notes,
+  positions,
+  today,
+  canRedact = false,
+}: {
+  notes: PreShiftNoteView[];
+  positions: Position[];
+  today: string;
+  canRedact?: boolean;
+}) {
   const [editing, setEditing] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState<PreShiftNoteView | null>(null);
+  const [redacting, setRedacting] = useState<PreShiftNoteView | null>(null);
   const dates = [...new Set(notes.map((note) => note.businessDate))].sort();
 
   return (
@@ -49,7 +64,11 @@ export function PreShiftManager({ notes, positions, today }: { notes: PreShiftNo
                           <div className="flex flex-wrap items-center gap-2">
                             {note.pinned && <Pin aria-label="Pinned" className="size-4 text-brand-700" />}
                             <h3 className="font-semibold">{note.title}</h3>
-                            {!note.active && <Badge tone="danger">Withdrawn</Badge>}
+                            {note.redaction ? (
+                              <Badge tone="danger">Redacted</Badge>
+                            ) : (
+                              !note.active && <Badge tone="danger">Withdrawn</Badge>
+                            )}
                             {note.positions.length === 0 ? (
                               <Badge>Everyone</Badge>
                             ) : (
@@ -60,21 +79,36 @@ export function PreShiftManager({ notes, positions, today }: { notes: PreShiftNo
                               ))
                             )}
                           </div>
-                          <p className="whitespace-pre-wrap break-words text-sm">{note.body}</p>
+                          {note.redaction ? (
+                            <p className="text-sm italic text-neutral-700">
+                              Redacted by {note.redaction.byName ?? "No employee record"}. Reason: {note.redaction.reason}
+                            </p>
+                          ) : (
+                            <p className="whitespace-pre-wrap break-words text-sm">{note.body}</p>
+                          )}
                           <p className="text-xs text-neutral-600">
                             Written by {note.createdByName ?? "No employee record"}
                             {note.updatedByName !== note.createdByName || note.version > 1
                               ? `, last changed by ${note.updatedByName ?? "No employee record"}`
                               : ""}
                           </p>
-                          {note.editable && (
+                          {(note.editable || (canRedact && !note.redaction)) && (
                             <div className="flex flex-wrap gap-2">
-                              <Button variant="secondary" onClick={() => setEditing(note.id)}>
-                                Edit
-                              </Button>
-                              <Button variant="ghost" onClick={() => setWithdrawing(note)}>
-                                Withdraw
-                              </Button>
+                              {note.editable && (
+                                <>
+                                  <Button variant="secondary" onClick={() => setEditing(note.id)}>
+                                    Edit
+                                  </Button>
+                                  <Button variant="ghost" onClick={() => setWithdrawing(note)}>
+                                    Withdraw
+                                  </Button>
+                                </>
+                              )}
+                              {canRedact && !note.redaction && (
+                                <Button variant="ghost" onClick={() => setRedacting(note)}>
+                                  Redact
+                                </Button>
+                              )}
                             </div>
                           )}
                         </>
@@ -87,6 +121,7 @@ export function PreShiftManager({ notes, positions, today }: { notes: PreShiftNo
         ))
       )}
       <WithdrawDialog note={withdrawing} onClose={() => setWithdrawing(null)} />
+      <RedactNoteDialog note={redacting} onClose={() => setRedacting(null)} />
     </div>
   );
 }
@@ -229,5 +264,66 @@ function WithdrawDialog({ note, onClose }: { note: PreShiftNoteView | null; onCl
         onClose();
       }}
     />
+  );
+}
+
+function RedactNoteDialog({ note, onClose }: { note: PreShiftNoteView | null; onClose: () => void }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<Failure | null>(null);
+  const [reason, setReason] = useState("");
+
+  function close() {
+    setReason("");
+    setError(null);
+    onClose();
+  }
+
+  async function handleRedact() {
+    if (!note) {
+      return;
+    }
+
+    setPending(true);
+    setError(null);
+
+    const result = await sendApiRequest("POST", `/api/pre-shift-notes/${note.id}/redact`, { reason });
+
+    setPending(false);
+
+    if (result.ok) {
+      toast.success("Note redacted.");
+      close();
+      router.refresh();
+    } else {
+      setError(result);
+    }
+  }
+
+  return (
+    <Dialog
+      open={note !== null}
+      onClose={close}
+      title={note ? `Redact "${note.title}"?` : ""}
+      description="The note's title and text are removed for good and it is withdrawn. Its date stays, with your name and reason."
+      footer={
+        <>
+          <Button variant="secondary" onClick={close}>
+            Keep it
+          </Button>
+          <Button variant="danger" pending={pending} pendingLabel="Redacting…" disabled={!reason.trim()} onClick={handleRedact}>
+            Redact note
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-2">
+        <Field label="Reason">
+          <Textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={500} rows={3} />
+        </Field>
+        <ApiErrorMessage error={error} />
+      </div>
+    </Dialog>
   );
 }

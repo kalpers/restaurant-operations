@@ -61,7 +61,12 @@ export default async function ManagePreShiftPage({ searchParams }: { searchParam
           {problem}
         </p>
       )}
-      <PreShiftManager notes={notes} positions={positions.map(({ id, name }) => ({ id, name }))} today={today} />
+      <PreShiftManager
+        notes={notes}
+        positions={positions.map(({ id, name }) => ({ id, name }))}
+        today={today}
+        canRedact={actor.permissions.has("manager-log.redact")}
+      />
     </>
   );
 }

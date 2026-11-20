@@ -8,10 +8,10 @@ import { recordAudit } from "@/modules/auditing";
 import type { Actor } from "@/modules/auth/types";
 import { readOrderLocation } from "@/modules/orders/repositories/order-repository";
 import { compareDecimals, subtractDecimals, toScale } from "@/shared/decimal/decimal";
-import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
+import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
-import { formatGiftCardNumber, generateGiftCardCode, parseGiftCardNumber } from "../rules/gift-card-code";
+import { checkSupplierCode, formatGiftCardNumber, generateGiftCardCode, parseGiftCardNumber } from "../rules/gift-card-code";
 import {
   assertAdjustmentWithinLimits,
   assertCanCashOut,
@@ -116,6 +116,7 @@ async function assertProgramEnabled(executor: DatabaseExecutor, actor: Actor) {
 export type GiftCardProgramView = {
   enabled: boolean;
   maxBalance: string;
+  dormancyMonths: number;
   enabledAt: string | null;
   version: number;
   outstandingBalance: string;
@@ -137,6 +138,7 @@ export async function getGiftCardProgram(executor: DatabaseExecutor, actor: Acto
   return {
     enabled: program.enabled,
     maxBalance: program.maxBalance,
+    dormancyMonths: program.dormancyMonths,
     enabledAt: program.enabledAt?.toISOString() ?? null,
     version: program.version,
     outstandingBalance: outstanding?.total ?? "0.00",
@@ -147,7 +149,7 @@ export async function getGiftCardProgram(executor: DatabaseExecutor, actor: Acto
 export async function updateGiftCardProgram(
   database: Database,
   actor: Actor,
-  input: { enabled: boolean; maxBalance: string; expectedVersion: number },
+  input: { enabled: boolean; maxBalance: string; dormancyMonths?: number; expectedVersion: number },
 ): Promise<GiftCardProgramView> {
   assertPermission(actor, "gift-cards.view");
   assertPermission(actor, "gift-cards.manage");
@@ -156,6 +158,10 @@ export async function updateGiftCardProgram(
 
   if (compareDecimals(maxBalance, "1.00") < 0 || compareDecimals(maxBalance, "10000.00") > 0) {
     throw new BusinessRuleError("INVALID_MAX_BALANCE", "The maximum balance is between 1.00 and 10,000.00.");
+  }
+
+  if (input.dormancyMonths !== undefined && (!Number.isInteger(input.dormancyMonths) || input.dormancyMonths < 12 || input.dormancyMonths > 120)) {
+    throw new BusinessRuleError("INVALID_DORMANCY", "The unused-balance period is 12 to 120 months.");
   }
 
   await withTransaction(database, async (transaction) => {
@@ -197,6 +203,7 @@ export async function updateGiftCardProgram(
       .set({
         enabled: input.enabled,
         maxBalance,
+        dormancyMonths: input.dormancyMonths ?? current!.dormancyMonths,
         enabledAt: current!.enabledAt ?? (input.enabled ? now : null),
         updatedByUserId: actor.userId,
         updatedAt: now,
@@ -207,8 +214,8 @@ export async function updateGiftCardProgram(
       action: "settlements.gift-card-program-changed",
       entityId: actor.organizationId,
       occurredAt: now,
-      before: { enabled: current!.enabled, maxBalance: current!.maxBalance },
-      after: { enabled: input.enabled, maxBalance },
+      before: { enabled: current!.enabled, maxBalance: current!.maxBalance, dormancyMonths: current!.dormancyMonths },
+      after: { enabled: input.enabled, maxBalance, dormancyMonths: input.dormancyMonths ?? current!.dormancyMonths },
     });
   });
 
@@ -221,6 +228,8 @@ export type SellGiftCardInput = {
   idempotencyKey: string;
   /** A reload names the card by its code; a new card has none. */
   giftCardCode?: string | null;
+  /** Phase 33 (policy 14): a new card's code printed by a supplier, instead of a generated one. */
+  supplierCode?: string | null;
   amount: string;
   tenderType: GiftCardSaleTenderType;
   receivedAmount?: string | null;
@@ -281,9 +290,17 @@ export async function sellGiftCard(
     throw giftCardNotFound();
   }
 
+  if (input.giftCardCode && input.supplierCode) {
+    throw new BusinessRuleError("SUPPLIER_CODE_NEW_CARD_ONLY", "A printed code is entered for a new card only.");
+  }
+
+  const supplier = input.supplierCode ? supplierCodeOrRefuse(input.supplierCode) : null;
+
   // Amendment 1: the new code is handed back once, outside what the idempotency record keeps.
   let issuedCode: string | null = null;
-  const { idempotencyKey, giftCardCode, ...request } = input;
+  const { idempotencyKey, giftCardCode, ...rest } = input;
+  // The printed code is never kept, in the idempotency record or anywhere: only its hash.
+  const request = { ...rest, supplierCode: undefined };
   const outcome = await withTransaction(database, (transaction) =>
     runIdempotent<GiftCardSaleResult>(
       transaction,
@@ -292,7 +309,7 @@ export async function sellGiftCard(
         scope: GIFT_CARD_SALE_SCOPE,
         key: idempotencyKey,
         actorUserId: actor.userId,
-        request: { ...request, amount, receivedAmount, reloadFingerprint },
+        request: { ...request, amount, receivedAmount, reloadFingerprint, supplierFingerprint: supplier?.codeHash ?? null },
       },
       async (idempotencyRecordId) => {
         // Shares the program row so turning cards off can't race a sale.
@@ -325,7 +342,13 @@ export async function sellGiftCard(
             .set({ lastNumber: sql`${giftCardNumberCounters.lastNumber} + 1` })
             .where(eq(giftCardNumberCounters.organizationId, actor.organizationId))
             .returning({ lastNumber: giftCardNumberCounters.lastNumber });
-          const issued = generateGiftCardCode();
+          const generated = supplier ? null : generateGiftCardCode();
+          const issued = supplier ?? generated!;
+
+          if (supplier) {
+            await assertCodeUnused(transaction, supplier.codeHash);
+          }
+
           const [created] = await transaction
             .insert(giftCards)
             .values({
@@ -333,6 +356,7 @@ export async function sellGiftCard(
               cardNumber: counter!.lastNumber,
               codeHash: issued.codeHash,
               codeLastFour: issued.lastFour,
+              codeSource: supplier ? "SUPPLIER" : "GENERATED",
               issuedLocationId: actor.locationId,
               issuedByUserId: actor.userId,
               issuedAt: now,
@@ -341,7 +365,8 @@ export async function sellGiftCard(
 
           card = created!;
           kind = "ISSUED";
-          issuedCode = issued.code;
+          // A supplier's code is on the card the guest holds, so it isn't shown again.
+          issuedCode = generated?.code ?? null;
         }
 
         assertSaleWithinLimits(amount, card.balance, program.maxBalance);
@@ -391,6 +416,7 @@ export async function sellGiftCard(
             description: sale!.otherDescription,
             balanceAfter: posted.balanceAfter,
             businessDate: location.businessDate,
+            codeSource: card.codeSource,
           },
         });
 
@@ -778,12 +804,14 @@ export async function replaceGiftCardCode(
   database: Database,
   actor: Actor,
   cardId: string,
-  input: { reason: string; expectedVersion: number },
-): Promise<{ card: GiftCardView; code: string }> {
+  input: { reason: string; expectedVersion: number; supplierCode?: string | null },
+): Promise<{ card: GiftCardView; code: string | null }> {
   assertPermission(actor, "gift-cards.view");
   assertPermission(actor, "gift-cards.manage");
 
   const reason = requiredReason(input.reason);
+  // Phase 33 (policy 14): the replacement may be a supplier's printed card.
+  const supplier = input.supplierCode ? supplierCodeOrRefuse(input.supplierCode) : null;
 
   return withTransaction(database, async (transaction) => {
     const card = await lockGiftCard(transaction, actor, cardId);
@@ -792,13 +820,20 @@ export async function replaceGiftCardCode(
       throw new ConcurrencyError("gift card", cardId);
     }
 
-    const issued = generateGiftCardCode();
+    const generated = supplier ? null : generateGiftCardCode();
+    const issued = supplier ?? generated!;
+
+    if (supplier) {
+      await assertCodeUnused(transaction, supplier.codeHash);
+    }
+
     const now = new Date();
     const [updated] = await transaction
       .update(giftCards)
       .set({
         codeHash: issued.codeHash,
         codeLastFour: issued.lastFour,
+        codeSource: supplier ? "SUPPLIER" : "GENERATED",
         codeReplacedAt: now,
         updatedAt: now,
         version: sql`${giftCards.version} + 1`,
@@ -810,9 +845,36 @@ export async function replaceGiftCardCode(
       action: "settlements.gift-card-code-replaced",
       entityId: card.id,
       occurredAt: now,
-      after: { giftNumber: formatGiftCardNumber(card.cardNumber), reason },
+      after: { giftNumber: formatGiftCardNumber(card.cardNumber), reason, codeSource: updated!.codeSource },
     });
 
-    return { card: viewOf(updated!), code: issued.code };
+    return { card: viewOf(updated!), code: generated?.code ?? null };
   });
+}
+
+// ------------------------------------------------------------- Supplier codes (Phase 33)
+
+/** Policy 13: a usable supplier code's hash and last four, or a refusal that says why. */
+function supplierCodeOrRefuse(code: string): { codeHash: string; lastFour: string } {
+  const checked = checkSupplierCode(code);
+
+  if (!checked.ok) {
+    throw checked.reason === "LOOKS_LIKE_CARD_NUMBER"
+      ? new BusinessRuleError(
+          "LOOKS_LIKE_CARD_NUMBER",
+          "That looks like a payment card number, so it can't be a gift card code.",
+        )
+      : new BusinessRuleError("INVALID_SUPPLIER_CODE", "A printed code is 8 to 24 letters and digits.");
+  }
+
+  return { codeHash: checked.codeHash, lastFour: checked.lastFour };
+}
+
+/** Policy 13: a code already on a card (any organization's) can't be used again. */
+async function assertCodeUnused(executor: DatabaseExecutor, codeHash: string): Promise<void> {
+  const [existing] = await executor.select({ id: giftCards.id }).from(giftCards).where(eq(giftCards.codeHash, codeHash)).limit(1);
+
+  if (existing) {
+    throw new ConflictError("GIFT_CARD_CODE_IN_USE", "That code is already on another gift card.");
+  }
 }

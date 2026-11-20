@@ -23,7 +23,44 @@ import { locations, organizations } from "./organization";
 // location's day of service. The log is append-only (migration 0075): a correction is a new
 // entry, and the one permitted change is a single redaction with a reason (policy 6).
 
-export const MANAGER_LOG_CATEGORIES = ["SERVICE", "INCIDENT", "MAINTENANCE", "STAFFING", "GUEST", "OTHER"] as const;
+/**
+ * Phase 33 (policy 17): the categories every organization starts with. Since Phase 33 they are
+ * rows of `manager_log_categories`, which managers can add to, rename and deactivate.
+ */
+export const DEFAULT_MANAGER_LOG_CATEGORIES = [
+  { code: "SERVICE", name: "Service", sortOrder: 10 },
+  { code: "INCIDENT", name: "Incident", sortOrder: 20 },
+  { code: "MAINTENANCE", name: "Maintenance", sortOrder: 30 },
+  { code: "STAFFING", name: "Staffing", sortOrder: 40 },
+  { code: "GUEST", name: "Guest", sortOrder: 50 },
+  { code: "OTHER", name: "Other", sortOrder: 60 },
+] as const;
+
+/** Phase 33 (policies 17–18): an organization's log categories, deactivated, never deleted. */
+export const managerLogCategories = pgTable(
+  "manager_log_categories",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    /** Never changes: entries name their category by this code. */
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: activeColumn(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    updatedByUserId: uuid("updated_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    version: versionColumn(),
+  },
+  (table) => [
+    unique("manager_log_categories_org_code_unique").on(table.organizationId, table.code),
+    check("manager_log_categories_code_valid", sql`${table.code} ~ '^[A-Z][A-Z0-9_]{1,29}$'`),
+    check("manager_log_categories_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 40`),
+  ],
+);
 
 /** One counter per organization for the entry numbers (`LOG-000123`; amendment 1). */
 export const managerLogNumberCounters = pgTable(
@@ -82,10 +119,13 @@ export const managerLogEntries = pgTable(
     unique("manager_log_entries_id_org_unique").on(table.id, table.organizationId),
     unique("manager_log_entries_org_number_unique").on(table.organizationId, table.entryNumber),
     check("manager_log_entries_number_positive", sql`${table.entryNumber} > 0`),
-    check(
-      "manager_log_entries_category_valid",
-      sql`${table.category} IN ('SERVICE', 'INCIDENT', 'MAINTENANCE', 'STAFFING', 'GUEST', 'OTHER')`,
-    ),
+    // Phase 33 (policy 17): the category is one of the organization's (added by migration 0077,
+    // after the default categories exist).
+    foreignKey({
+      name: "manager_log_entries_category_fk",
+      columns: [table.organizationId, table.category],
+      foreignColumns: [managerLogCategories.organizationId, managerLogCategories.code],
+    }).onDelete("restrict"),
     check("manager_log_entries_not_self", sql`${table.correctsEntryId} IS NULL OR ${table.correctsEntryId} <> ${table.id}`),
     check(
       "manager_log_entries_body_or_redaction",
@@ -122,6 +162,10 @@ export const preShiftNotes = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
+    /** Phase 33 (policy 5): a redacted note is titled "Redacted", empty and withdrawn, for good. */
+    redactedAt: timestamptz("redacted_at"),
+    redactedByUserId: uuid("redacted_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    redactionReason: text("redaction_reason"),
   },
   (table) => [
     foreignKey({
@@ -131,7 +175,14 @@ export const preShiftNotes = pgTable(
     }).onDelete("restrict"),
     unique("pre_shift_notes_id_org_unique").on(table.id, table.organizationId),
     check("pre_shift_notes_title_length", sql`char_length(${table.title}) BETWEEN 1 AND 120`),
-    check("pre_shift_notes_body_length", sql`char_length(${table.body}) BETWEEN 1 AND 2000`),
+    check(
+      "pre_shift_notes_body_or_redaction",
+      sql`(${table.redactedAt} IS NULL AND ${table.redactedByUserId} IS NULL AND ${table.redactionReason} IS NULL
+          AND char_length(${table.body}) BETWEEN 1 AND 2000)
+        OR (${table.redactedAt} IS NOT NULL AND ${table.redactedByUserId} IS NOT NULL
+          AND char_length(${table.redactionReason}) BETWEEN 1 AND 500 AND ${table.body} = ''
+          AND ${table.title} = 'Redacted' AND NOT ${table.active})`,
+    ),
     index("pre_shift_notes_location_date_idx").on(table.locationId, table.businessDate),
   ],
 );

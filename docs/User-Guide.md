@@ -34,7 +34,7 @@ Reservation holds appear on the floor. An override may require a reason and the 
 
 Each card has **Messages**: which channels the guest agreed to (with **Stop texts** or **Stop emails**), and every message with its status (*Waiting to send*, *Sent*, *Failed*, *Opted out* or *Not sent*). A failed message has **Retry**; a confirmed booking has **Send confirmation again**; a notified waitlist party has **Text again** (at most once a minute). You see the full phone or email only if you can see guest contact details. Messages never include notes, special requests or allergies. A guest who replies STOP, or uses the link in an email, gets no more messages at that address.
 
-**Online bookings.** Bookings guests make themselves show an **Online** mark. They have no table planned yet: plan tables as usual. If the restaurant holds online bookings for approval, they arrive as *Pending*; **Confirm** sends the guest their confirmation. Allergies the guest gave appear like any other. An online booking is never linked to a guest profile by itself; use **Guest & allergies** to link one. To remove the personal details of a booking with no profile (a guest's request), an owner or general manager chooses **Erase guest details** and gives a reason.
+**Online bookings.** Bookings guests make themselves show an **Online** mark. They have no table planned yet: plan tables as usual. If the restaurant holds online bookings for approval, they arrive as *Pending*; **Confirm** sends the guest their confirmation. Allergies the guest gave appear like any other. An online booking is never linked to a guest profile by itself; use **Guest & allergies** to link one. To remove the personal details of a booking with no profile (a guest's request), an owner or general manager chooses **Erase guest details** and gives a reason; as with a profile, possible mentions in the manager log and pre-shift notes are listed for redaction.
 
 ### 2. Seat the party
 
@@ -175,6 +175,7 @@ Open **Guests** (under **Service**, or the tab at the host stand) to find a gues
 
 - **Merge:** a manager opens the duplicate, finds the profile to keep, gives a reason and confirms. Visits and allergies move over (the more severe allergy wins), and the duplicate closes. A merge can't be undone.
 - **Erase:** when a guest asks to be forgotten, an owner or general manager chooses **Erase personal data**. The name becomes "Erased guest" and contact details, notes, preferences and allergies are removed from the profile, any profile merged into it and its past visits. Orders and reports are kept. Don't put the guest's name in the reason.
+  Before you confirm, the dialog lists **possible mentions**: manager log entries and pre-shift notes that contain the guest's name, email or phone number, at the locations where you can redact the log. Each is ticked; read them and untick any that aren't about this guest (a different "Maria", say). The ticked ones are redacted as part of the erase, for good. Mentions written as a nickname or misspelt won't be found; redact those by hand.
 
 ### Loyalty points
 
@@ -184,21 +185,22 @@ When the program is on, a guest earns points on each visit that is linked to the
 - **Redeem:** on the order screen, the **Loyalty** box shows the linked guest's available points. Choose a reward they can afford (and the item, for an item reward) and **Redeem**. It appears on the check as a discount named "Loyalty: …". The points stay on the guest's balance, shown as not available, until the check closes; if a manager removes the discount first, nothing is taken.
 - **Profile:** the guest's profile shows the balance, what's available, rewards on open checks and every change with its business date. A manager can **Adjust points** with a reason (for example a goodwill gift or a mistake).
 - **Merge and erase:** merging moves the duplicate's points to the profile kept; erasing clears the balance. Both wait until no reward is on an open check. A visit that used a reward keeps its guest (it can't be unlinked).
-- **Refunds** don't change points. The refund screen shows what the visit earned, with a link to adjust if needed.
-- Reports: **Sales** shows points earned, redeemed and adjusted per day, rewards used and their discount, and the points guests hold now.
+- **Refunds** take back the points the refunded amount paid for (per $1, before tax and tips); the points for the visit itself stay. If the guest has already spent them, what's left is taken and the screen says how many couldn't be. Voiding the refund puts the points back. A refund made before the guests leave simply comes off what the visit earns.
+- Reports: **Sales** shows points earned, redeemed, adjusted and taken back by refunds per day, rewards used and their discount, and the points guests hold now (the same at every location, as points belong to the guest).
 
 ### Gift cards
 
 The restaurant's own gift cards work at every location. A manager turns them on under **Gift cards** (in **Service**), in **Settings**, and sets the most a card can hold. Once they are on, every **Gift card** tender must be one of these cards; record another company's gift card as **Other**. Selling a card isn't a sale: it carries no tax or tip and doesn't count in sales.
 
 - **Sell:** on **Gift cards**, choose **New card**, enter the amount and how the guest paid (cash into a drawer, a card on the external terminal, or other), and **Sell card**. The card's code appears once, in large type. **Write it on the card now**: the app keeps only a scrambled copy and can never show it again. The receipt number (for example GC-000012) is not the code.
+- **Pre-printed cards:** if the card came from a supplier with a code printed on it, choose **Use the code printed on the card** and type that code (8 to 24 letters and digits) instead of generating one. Nothing is shown afterwards: the code is on the card. A code that is already on another card, or looks like a payment card number, is refused.
 - **Reload:** choose **Reload a card**, type or scan its code, and add the amount.
 - **Pay with a card:** on the settlement screen choose **Gift card** as the tender, type or scan the code, **Check balance**, then **Use balance** (or type a smaller amount) and record it. The rest of the check goes on another tender. If the tender is voided, the value goes back on the card.
 - **Check a balance:** type the code under **Look up a card**. Managers can also find a card by its receipt number.
 - **Refund onto a card:** on a closed check paid with a gift card, choose **Gift card** under **Refunded as** and pick the card. Only a card that paid the check can take a refund, up to what it paid.
-- **Managers:** on a card's page, **Adjust** adds or takes off value with a reason; **Cash out** pays the whole balance in cash from an open drawer; **Deactivate** stops a lost or stolen card being used (its balance stays); **Replace code** gives the card a new code for a guest who lost it (the new code is shown once). A sale entered by mistake can be voided while none of its value has been spent and, for cash, its drawer is still open.
+- **Managers:** on a card's page, **Adjust** adds or takes off value with a reason; **Cash out** pays the whole balance in cash from an open drawer; **Deactivate** stops a lost or stolen card being used (its balance stays); **Replace code** gives the card a new code for a guest who lost it (the new code is shown once), or takes the code printed on a replacement card. A sale entered by mistake can be voided while none of its value has been spent and, for cash, its drawer is still open.
 - **Drawers** count cash taken for gift cards and cash paid out for them; both show on the drawer.
-- Reports: **Settlements** shows gift card value sold, spent, refunded, adjusted and cashed out per day, and what is owed on all cards. Gift cards can't be turned off while any card holds a balance.
+- Reports: **Settlements** shows gift card value sold, spent, refunded, adjusted and cashed out per day, and what is owed on all cards. **Unused gift card balances** lists cards with value left and no activity for the period set under **Settings** (36 months unless changed). Many states require such balances to be reported as unclaimed property; check your state's period. The app keeps no buyer names or addresses, so the list helps with a filing but isn't one. Gift cards can't be turned off while any card holds a balance.
 
 ### Allergens
 
@@ -208,12 +210,13 @@ Managers and inventory managers set allergens up. On each inventory item, under 
 
 Open **Pre-shift** (in **Service**), or look at **Pre-shift notes today** on the **Dashboard**. You see today's notes meant for everyone and those for your positions at this location. Pinned notes come first.
 
-Managers choose **Manage notes** to write a note for today or up to 14 days ahead. Give it a title and the note itself. Tick the positions it is for, or none for everyone, and **Pin to the top** if it matters most. Until its date has passed, a note can be changed with **Edit** or taken down with **Withdraw**. A withdrawn note stays listed for managers. Choosing positions only decides who sees the note on their page; anyone can be told what it says.
+Managers choose **Manage notes** to write a note for today or up to 14 days ahead. Give it a title and the note itself. Tick the positions it is for, or none for everyone, and **Pin to the top** if it matters most. Until its date has passed, a note can be changed with **Edit** or taken down with **Withdraw**. A withdrawn note stays listed for managers. Choosing positions only decides who sees the note on their page; anyone can be told what it says. An owner or general manager can **Redact** any note, even a past one, with a reason: its title and text are removed for good and it is withdrawn.
 
 ### Manager log
 
 Managers record what happened at the location under **Manager log** (in **Service**). Typical entries are incidents, repairs, staffing changes and guest complaints.
 
+- **Categories:** an owner or general manager chooses **Categories** on the log page to add, rename, reorder or deactivate them. A deactivated category stays on the entries that used it but can't be picked for new ones.
 - **Add an entry:** choose a category and write the entry. It goes on today's business date, or choose **The previous business date** when writing up the night after the cutoff.
 - **Correct an entry:** entries can't be edited or deleted. Choose **Correct** on an entry and write the correction. The original stays, marked **Corrected by LOG-…**.
 - **Find entries:** pick a **Business date**, filter by category, or search the text across up to 31 days.

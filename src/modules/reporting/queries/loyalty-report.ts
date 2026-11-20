@@ -14,6 +14,7 @@ export async function loyaltySections(context: ReportContext): Promise<ReportSec
     earned: number;
     redeemed: number;
     adjusted: number;
+    refunds: number;
     other: number;
     guests: number;
   }>(
@@ -23,6 +24,7 @@ export async function loyaltySections(context: ReportContext): Promise<ReportSec
              COALESCE(SUM(e.points) FILTER (WHERE e.kind = 'EARNED'), 0)::int AS earned,
              COALESCE(-SUM(e.points) FILTER (WHERE e.kind = 'REDEEMED'), 0)::int AS redeemed,
              COALESCE(SUM(e.points) FILTER (WHERE e.kind = 'ADJUSTED'), 0)::int AS adjusted,
+             COALESCE(SUM(e.points) FILTER (WHERE e.kind IN ('REFUND_REVERSED', 'REFUND_RESTORED')), 0)::int AS refunds,
              COALESCE(SUM(e.points) FILTER (WHERE e.kind IN ('MERGED_OUT', 'MERGED_IN', 'ERASED')), 0)::int AS other,
              COUNT(DISTINCT e.guest_profile_id) FILTER (WHERE e.kind = 'EARNED')::int AS guests
       FROM guest_loyalty_entries e
@@ -63,13 +65,14 @@ export async function loyaltySections(context: ReportContext): Promise<ReportSec
       key: "loyaltyPoints",
       title: "Loyalty points",
       description:
-        "Points posted at this location by business date, from the loyalty ledger. Earned when a linked visit's session ends; redeemed when a check with a reward closes. Other is merges and erasures.",
+        "Points posted at this location by business date, from the loyalty ledger. Earned when a linked visit's session ends; redeemed when a check with a reward closes; refunds take back what they paid for (net of voided refunds). Other is merges and erasures.",
       columns: [
         { key: "businessDate", label: "Business date", kind: "date" },
         { key: "guests", label: "Guests who earned", kind: "count" },
         { key: "earned", label: "Earned", kind: "count" },
         { key: "redeemed", label: "Redeemed", kind: "count" },
         { key: "adjusted", label: "Adjusted (net)", kind: "count" },
+        { key: "refunds", label: "Refunds (net)", kind: "count" },
         { key: "other", label: "Other (net)", kind: "count" },
       ],
       rows: byDate.map((row) => ({
@@ -78,6 +81,7 @@ export async function loyaltySections(context: ReportContext): Promise<ReportSec
         earned: row.earned,
         redeemed: row.redeemed,
         adjusted: row.adjusted,
+        refunds: row.refunds,
         other: row.other,
       })),
     },
@@ -103,9 +107,10 @@ export async function loyaltySections(context: ReportContext): Promise<ReportSec
     },
     {
       key: "loyaltyOutstanding",
-      title: "Outstanding loyalty points",
+      // Phase 33 (policy 16): organization-wide, so the same at every location; never add them up.
+      title: "Outstanding loyalty points (all locations)",
       description:
-        "Points guests hold now, across all locations (profiles are organization-wide). Not valued in money and not in the sales journal.",
+        "Points guests hold now, across all locations (profiles are organization-wide), so every location shows the same figure: don't add locations together. Not valued in money and not in the sales journal.",
       columns: [
         { key: "profiles", label: "Guests with points", kind: "count" },
         { key: "points", label: "Points outstanding", kind: "count" },

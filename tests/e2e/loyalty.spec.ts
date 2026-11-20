@@ -110,3 +110,32 @@ test("a manager turns loyalty on, a visit earns at session end, and a reward is 
   await expect(points.getByTestId("loyalty-balance")).toHaveText(String(earned - 5));
   await expect(points).toContainText("Reward used on check #");
 });
+
+// Phase 33 (policies 7, 8): a refund takes back the points it paid for; the visit points stay.
+test("a refund on a linked visit takes back its points", async ({ browser }) => {
+  test.setTimeout(180_000);
+
+  const guest = await profileFor(setup, `Refund E2E ${setup.suffix}`);
+  const visit = await linkedVisit(setup, guest.id, setup.satay.id);
+
+  await settleCheck(setup, visit.orderId);
+  await endVisit(setup, visit.sessionId);
+
+  const subtotal = Number(await orderSubtotal(visit.orderId));
+  const earned = Math.floor(subtotal) + 1;
+  const taken = Math.floor(subtotal) - Math.floor(subtotal - 5);
+  const manager = await signedIn(browser, setup.manager);
+
+  await manager.goto(`/orders/${visit.orderId}/settlement`);
+
+  const refund = manager.getByRole("form", { name: "Record refund" });
+
+  await refund.getByLabel("Amount refunded (with tax)").fill("5.00");
+  await refund.getByLabel("Reason").fill("Satay was cold");
+  await refund.getByRole("button", { name: "Record refund" }).click();
+  await expect(manager.getByTestId("refund-points-notice")).toHaveText(`${taken} loyalty points were taken back.`);
+
+  await manager.goto(`/host/guests/${guest.id}`);
+  await expect(manager.getByRole("region", { name: "Loyalty points" }).getByTestId("loyalty-balance")).toHaveText(String(earned - taken));
+  await expect(manager.getByRole("region", { name: "Loyalty points" })).toContainText("Taken back (refund)");
+});

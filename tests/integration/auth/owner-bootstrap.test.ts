@@ -180,7 +180,8 @@ describe("bootstrapOwner", () => {
     } finally {
       await client.end();
     }
-  });
+    // It builds the whole schema from scratch, so it needs more than the default 5 seconds.
+  }, 30_000);
 
   it("assigns the seeded Owner role, identified by its code", async () => {
     const input = { email: uniqueEmail("owner"), password: generatePassword() };

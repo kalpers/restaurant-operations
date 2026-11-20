@@ -1,6 +1,6 @@
 import { getDatabase } from "@/db";
 import { requireApiActor } from "@/modules/auth/guards";
-import { voidRefund } from "@/modules/settlements/services/refund-service";
+import { voidRefund } from "@/workflows/void-refund/void-refund";
 import { refundIdParamsSchema, voidRefundSchema } from "@/modules/settlements/validators/settlement-validators";
 import { apiRoute, parseJsonBody, parseWith } from "@/shared/http/api-route";
 

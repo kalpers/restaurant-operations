@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import {
@@ -9,6 +9,7 @@ import {
   discountDefinitions,
   guestParties,
   guestProfiles,
+  orderRefunds,
   orders,
 } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
@@ -19,6 +20,7 @@ import {
   updateRewardDiscountDefinition,
 } from "@/modules/orders/services/discount-service";
 import type { DiscountScope, DiscountType } from "@/modules/orders/types";
+import { compareDecimals, subtractDecimals, sumDecimals } from "@/shared/decimal/decimal";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
@@ -31,6 +33,7 @@ import {
   availablePoints,
   pointsEarned,
 } from "../rules/loyalty";
+import { pointsDueForRefund, pointsToTake, refundNetOfTax } from "../rules/loyalty-refunds";
 import { assertPermission } from "./guest-access";
 import {
   lockLoyaltyBalance,
@@ -533,11 +536,19 @@ export async function earnPointsForFinishedParty(
   }
 
   const closed = await transaction
-    .select({ subtotal: orders.subtotal })
+    .select({ id: orders.id, subtotal: orders.subtotal })
     .from(orders)
     .where(and(eq(orders.guestPartyId, partyId), eq(orders.status, "CLOSED")));
+  // Phase 33 (policy 9): refunds already recorded on these checks come off what earns points.
+  const refunds =
+    closed.length === 0
+      ? []
+      : await transaction
+          .select({ amount: orderRefunds.amount, taxAmount: orderRefunds.taxAmount })
+          .from(orderRefunds)
+          .where(and(inArray(orderRefunds.orderId, closed.map((row) => row.id)), eq(orderRefunds.status, "RECORDED")));
   const earned = pointsEarned(
-    closed.map((row) => row.subtotal),
+    closed.length === 0 ? [] : [netOfRefunds(closed.map((row) => row.subtotal), refunds.map(refundNetOfTax))],
     { pointsPerDollar: program.pointsPerDollar, pointsPerVisit: program.pointsPerVisit },
   );
 
@@ -668,4 +679,171 @@ export async function getVisitEarningForOrder(executor: DatabaseExecutor, actor:
     .where(and(eq(orders.id, orderId), eq(orders.organizationId, actor.organizationId)));
 
   return row ?? null;
+}
+
+/** The checks' subtotals less refunds, never below zero. */
+function netOfRefunds(subtotals: readonly string[], refunds: readonly string[]): string {
+  const net = subtractDecimals(sumDecimals(subtotals, 2), sumDecimals(refunds, 2));
+
+  return compareDecimals(net, "0") < 0 ? "0.00" : net;
+}
+
+// ------------------------------------------------------------------ refunds (Phase 33)
+
+/** Points a refund took back, and those it couldn't (policy 8). */
+export type RefundPoints = { taken: number; short: number };
+
+/**
+ * Policy 11: the profile now holding a visit's points: the one it was earned on, or the
+ * profile that one was merged into, following the chain. Null once erased.
+ */
+async function currentHolder(transaction: DatabaseTransaction, organizationId: string, profileId: string): Promise<string | null> {
+  let id = profileId;
+
+  for (let hop = 0; hop < 100; hop += 1) {
+    const [profile] = await transaction
+      .select({ status: guestProfiles.status, mergedInto: guestProfiles.mergedIntoProfileId })
+      .from(guestProfiles)
+      .where(and(eq(guestProfiles.id, id), eq(guestProfiles.organizationId, organizationId)))
+      .for("share");
+
+    if (!profile || profile.status === "ERASED") {
+      return null;
+    }
+
+    if (profile.status !== "MERGED" || !profile.mergedInto) {
+      return id;
+    }
+
+    id = profile.mergedInto;
+  }
+
+  return null;
+}
+
+/**
+ * Phase 33 (policies 7, 8, 11): called by the `record-refund` workflow in its transaction,
+ * after the refund row is written. Takes back the points the refunded amount (before tax)
+ * paid for, on the visit's running total, from the profile now holding them, no further than
+ * the points the guest can spend. A visit that earned nothing, or whose profile was erased,
+ * gets no entry. Runs whether or not the program is still on.
+ */
+export async function reversePointsForRefund(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  refund: { id: string; orderId: string; amount: string; taxAmount: string },
+  at: Date,
+): Promise<RefundPoints> {
+  const [order] = await transaction
+    .select({ guestPartyId: orders.guestPartyId })
+    .from(orders)
+    .where(and(eq(orders.id, refund.orderId), eq(orders.organizationId, actor.organizationId)));
+
+  if (!order?.guestPartyId) {
+    return { taken: 0, short: 0 };
+  }
+
+  const [earnedEntry] = await transaction
+    .select({
+      profileId: guestLoyaltyEntries.guestProfileId,
+      eligibleSubtotal: guestLoyaltyEntries.eligibleSubtotal,
+      pointsPerDollar: guestLoyaltyEntries.pointsPerDollarSnapshot,
+      occurredAt: guestLoyaltyEntries.occurredAt,
+    })
+    .from(guestLoyaltyEntries)
+    .where(and(eq(guestLoyaltyEntries.guestPartyId, order.guestPartyId), eq(guestLoyaltyEntries.kind, "EARNED")));
+
+  // Policy 9: before the visit earned, earning itself leaves refunds out.
+  if (!earnedEntry?.eligibleSubtotal || earnedEntry.pointsPerDollar === null) {
+    return { taken: 0, short: 0 };
+  }
+
+  // The visit's other refunds recorded since it earned (those before are already left out).
+  const earlier = await transaction
+    .select({ amount: orderRefunds.amount, taxAmount: orderRefunds.taxAmount })
+    .from(orderRefunds)
+    .innerJoin(orders, eq(orders.id, orderRefunds.orderId))
+    .where(
+      and(
+        eq(orders.guestPartyId, order.guestPartyId),
+        eq(orderRefunds.status, "RECORDED"),
+        gt(orderRefunds.recordedAt, earnedEntry.occurredAt),
+        ne(orderRefunds.id, refund.id),
+      ),
+    );
+  const due = pointsDueForRefund(
+    { eligibleSubtotal: earnedEntry.eligibleSubtotal, pointsPerDollar: earnedEntry.pointsPerDollar },
+    earlier.map(refundNetOfTax),
+    refundNetOfTax(refund),
+  );
+
+  if (due <= 0) {
+    return { taken: 0, short: 0 };
+  }
+
+  const holder = await currentHolder(transaction, actor.organizationId, earnedEntry.profileId);
+
+  if (!holder) {
+    return { taken: 0, short: 0 };
+  }
+
+  const balance = await lockLoyaltyBalance(transaction, actor.organizationId, holder);
+  const pending = (await pendingRedemptions(transaction, holder)).map((row) => row.pointsCost);
+  const result = pointsToTake(due, balance, pending);
+
+  if (result.taken > 0) {
+    await postLoyaltyEntry(
+      transaction,
+      actor,
+      holder,
+      { kind: "REFUND_REVERSED", points: -result.taken, refundId: refund.id, orderId: refund.orderId, guestPartyId: order.guestPartyId },
+      at,
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Phase 33 (policy 10): called by the `void-refund` workflow in its transaction. Puts back
+ * exactly what the refund took, onto the profile now holding the visit's points; nothing
+ * when it took nothing or that profile was erased.
+ */
+export async function restorePointsForRefundVoid(
+  transaction: DatabaseTransaction,
+  actor: Actor,
+  refundId: string,
+  at: Date,
+): Promise<number> {
+  const [reversed] = await transaction
+    .select({
+      profileId: guestLoyaltyEntries.guestProfileId,
+      points: guestLoyaltyEntries.points,
+      orderId: guestLoyaltyEntries.orderId,
+      guestPartyId: guestLoyaltyEntries.guestPartyId,
+    })
+    .from(guestLoyaltyEntries)
+    .where(and(eq(guestLoyaltyEntries.refundId, refundId), eq(guestLoyaltyEntries.kind, "REFUND_REVERSED")));
+
+  if (!reversed) {
+    return 0;
+  }
+
+  const holder = await currentHolder(transaction, actor.organizationId, reversed.profileId);
+
+  if (!holder) {
+    return 0;
+  }
+
+  const points = -reversed.points;
+
+  await postLoyaltyEntry(
+    transaction,
+    actor,
+    holder,
+    { kind: "REFUND_RESTORED", points, refundId, orderId: reversed.orderId, guestPartyId: reversed.guestPartyId },
+    at,
+  );
+
+  return points;
 }

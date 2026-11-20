@@ -3,7 +3,8 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/db";
 import { auditEvents, orders, tipDistributions } from "@/db/schema";
-import { recordRefund, voidRefund } from "@/modules/settlements/services/refund-service";
+import { recordRefund } from "@/workflows/record-refund/record-refund";
+import { voidRefund } from "@/workflows/void-refund/void-refund";
 import { openSettlement } from "@/modules/settlements/services/settlement-service";
 import { declareTips } from "@/modules/settlements/services/tip-declaration-service";
 import { readPoolTotals } from "@/modules/settlements/services/tip-service";
