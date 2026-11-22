@@ -130,3 +130,61 @@ export function excerptAround(text: string, match: MentionMatch, context = 60): 
 
   return `${start > 0 ? "…" : ""}${text.slice(start, end).replace(/\s+/g, " ").trim()}${end < text.length ? "…" : ""}`;
 }
+
+/** Phase 34 (policy 12): what a redacted mention becomes. */
+export const REDACTION_MARK = "[redacted]";
+
+/** Every mention of the guest in a text, overlapping ones merged, in order. */
+export function findAllMentions(text: string, terms: MentionTerms): MentionMatch[] {
+  const ranges: MentionMatch[] = [];
+
+  for (const term of [...terms.names, ...terms.emails]) {
+    const pattern = new RegExp(wholeWord(term).source, "giu");
+
+    for (const found of text.matchAll(pattern)) {
+      ranges.push({ index: found.index, length: found[0].length });
+    }
+  }
+
+  if (terms.phoneTails.length > 0) {
+    for (const run of text.matchAll(PHONE_RUN)) {
+      const digits = run[0].replace(/\D/g, "");
+
+      if (digits.length >= PHONE_TAIL_DIGITS && digits.length <= 15 && terms.phoneTails.includes(digits.slice(-PHONE_TAIL_DIGITS))) {
+        ranges.push({ index: run.index, length: run[0].length });
+      }
+    }
+  }
+
+  ranges.sort((a, b) => a.index - b.index || b.length - a.length);
+
+  const merged: MentionMatch[] = [];
+
+  for (const range of ranges) {
+    const last = merged.at(-1);
+
+    if (last && range.index <= last.index + last.length) {
+      last.length = Math.max(last.length, range.index + range.length - last.index);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Phase 34 (policy 12): the text with each mention replaced by "[redacted]" and everything else
+ * kept, so an instruction such as "No onion" survives. Unchanged when nothing matches.
+ */
+export function redactMentions(text: string, terms: MentionTerms): string {
+  let result = "";
+  let position = 0;
+
+  for (const match of findAllMentions(text, terms)) {
+    result += text.slice(position, match.index) + REDACTION_MARK;
+    position = match.index + match.length;
+  }
+
+  return position === 0 ? text : result + text.slice(position);
+}

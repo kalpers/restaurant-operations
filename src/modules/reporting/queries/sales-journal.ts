@@ -139,16 +139,17 @@ export async function loadJournalFacts(context: ReportContext): Promise<JournalD
         GROUP BY g.voided_business_date, g.tender_type
       `,
     ),
-    rowsOf<{ business_date: string; cash_outs: string; adjustments: string }>(
+    rowsOf<{ business_date: string; cash_outs: string; adjustments: string; escheated: string }>(
       context,
       sql`
         SELECT e.business_date::text AS business_date,
                COALESCE(-SUM(e.amount) FILTER (WHERE e.kind = 'CASHED_OUT'), 0)::numeric(14,2)::text AS cash_outs,
-               COALESCE(SUM(e.amount) FILTER (WHERE e.kind = 'ADJUSTED'), 0)::numeric(14,2)::text AS adjustments
+               COALESCE(SUM(e.amount) FILTER (WHERE e.kind = 'ADJUSTED'), 0)::numeric(14,2)::text AS adjustments,
+               COALESCE(-SUM(e.amount) FILTER (WHERE e.kind = 'ESCHEATED'), 0)::numeric(14,2)::text AS escheated
         FROM gift_card_entries e
         WHERE e.location_id = ${filters.locationId}
           AND e.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
-          AND e.kind IN ('CASHED_OUT', 'ADJUSTED')
+          AND e.kind IN ('CASHED_OUT', 'ADJUSTED', 'ESCHEATED')
         GROUP BY e.business_date
       `,
     ),
@@ -199,6 +200,7 @@ export async function loadJournalFacts(context: ReportContext): Promise<JournalD
         .map((row) => ({ tenderType: row.tender_type, amount: row.amount })),
       giftCardCashOuts: cardEntries.find((row) => row.business_date === date)?.cash_outs ?? "0.00",
       giftCardAdjustments: cardEntries.find((row) => row.business_date === date)?.adjustments ?? "0.00",
+      giftCardEscheated: cardEntries.find((row) => row.business_date === date)?.escheated ?? "0.00",
     };
   });
 }

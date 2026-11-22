@@ -59,9 +59,17 @@ test.describe("menu administration", () => {
     // A price.
     const pricing = page.getByRole("region", { name: "Pricing" });
 
-    await pricing.getByLabel("New price").fill("14.99");
-    await pricing.getByRole("button", { name: "Set new price" }).click();
-    await expect(pricing.getByText("$14.99 (current)")).toBeVisible();
+    // Phase 34 (D15): under `next dev` the item page shows before it hydrates, and a price
+    // typed and sent then is lost; fill and send again until the price is current.
+    await expect(async () => {
+      if (await pricing.getByText("$14.99 (current)").isVisible()) {
+        return;
+      }
+
+      await pricing.getByLabel("New price").fill("14.99");
+      await pricing.getByRole("button", { name: "Set new price" }).click();
+      await expect(pricing.getByText("$14.99 (current)")).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 60_000 });
 
     // A placement on the Main Menu.
     const placements = page.getByRole("region", { name: "Placements" });

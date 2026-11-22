@@ -7,6 +7,7 @@ import { requirePageActor } from "@/modules/auth/guards";
 import { actorHolds } from "@/modules/settlements/services/access";
 import { getDrawerSetting, listOpenSessionsForCash } from "@/modules/settlements/services/drawer-service";
 import { getGiftCardProgram, listGiftCards } from "@/modules/settlements/services/gift-card-service";
+import { listStockBatches } from "@/modules/settlements/services/gift-card-stock-service";
 import { TENDER_PERMISSIONS } from "@/modules/settlements/types";
 
 /**
@@ -21,14 +22,16 @@ export default async function GiftCardsPage() {
   const program = await getGiftCardProgram(database, actor);
   const manage = actorHolds(actor, "gift-cards.manage");
   const canSeeDrawers = actorHolds(actor, "drawers.view");
-  const [drawers, drawerSetting, recent] = await Promise.all([
+  const [drawers, drawerSetting, recent, stockBatches] = await Promise.all([
     canSeeDrawers ? listOpenSessionsForCash(database, actor) : Promise.resolve([]),
     canSeeDrawers ? getDrawerSetting(database, actor) : Promise.resolve({ required: false }),
     manage ? listGiftCards(database, actor, 20) : Promise.resolve([]),
+    manage ? listStockBatches(database, actor) : Promise.resolve([]),
   ]);
   const abilities = {
     sell: actorHolds(actor, "gift-cards.sell"),
     manage,
+    purchaserView: actorHolds(actor, "gift-cards.purchaser.view"),
     saleTenders: (["CASH", "EXTERNAL_CARD", "OTHER"] as const).filter((type) => actorHolds(actor, TENDER_PERMISSIONS[type])),
   };
 
@@ -57,6 +60,7 @@ export default async function GiftCardsPage() {
         drawers={drawers.map((entry) => ({ id: entry.id, label: `${entry.name} (${entry.code} · session ${entry.sessionNumber})` }))}
         drawerRequired={drawerSetting.required}
         recent={recent}
+        stockBatches={stockBatches}
       />
     </>
   );

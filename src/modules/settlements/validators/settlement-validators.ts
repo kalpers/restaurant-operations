@@ -137,7 +137,31 @@ export const giftCardProgramSchema = z.object({
   maxBalance: money,
   /** Phase 33 (policy 15): months without activity before a balance counts as unused. */
   dormancyMonths: z.int().min(12).max(120).optional(),
+  /** Phase 34 (policy 9): only registered supplier cards may be sold. */
+  supplierStockRequired: z.boolean().optional(),
   expectedVersion: z.int().nonnegative(),
+});
+
+/** Phase 34 (policy 3): optional purchaser details. Shape only; values are never logged. */
+const purchaserText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((value) => (value ? value : null));
+
+export const giftCardPurchaserSchema = z.object({
+  name: purchaserText(120),
+  email: purchaserText(254),
+  phone: purchaserText(40),
+  addressLine1: purchaserText(120),
+  addressLine2: purchaserText(120),
+  city: purchaserText(80),
+  region: purchaserText(80),
+  postalCode: purchaserText(20),
+  country: purchaserText(60),
 });
 
 export const sellGiftCardSchema = z.object({
@@ -162,6 +186,7 @@ export const sellGiftCardSchema = z.object({
   authorizationReference: noCardNumber(40),
   otherDescription: noCardNumber(200),
   cashDrawerSessionId: z.uuid().nullable().optional(),
+  purchaser: giftCardPurchaserSchema.nullable().optional(),
 });
 
 export const lookUpGiftCardSchema = z
@@ -200,3 +225,34 @@ export const giftCardStatusSchema = z.object({
 });
 
 export const replaceGiftCardCodeSchema = z.object({ reason: giftCardReason, expectedVersion, supplierCode: giftCardCode });
+
+// ------------------------------------------------------------ Phase 34 stock and unclaimed
+
+export const giftCardStockBatchParamsSchema = z.object({ batchId: z.uuid() });
+
+/** Policy 8: one code (or `serial,code`) per line; the codes are never echoed or logged. */
+export const registerStockBatchSchema = z.object({
+  idempotencyKey,
+  description: z.string().trim().min(1).max(80),
+  lines: z.array(z.string().max(100)).min(1).max(2000),
+});
+
+export const deactivateStockSchema = z.object({
+  reason: giftCardReason,
+  cardId: z.uuid().nullable().optional(),
+  expectedVersion: z.int().positive().nullable().optional(),
+});
+
+export const savePurchaserSchema = z.object({
+  details: giftCardPurchaserSchema,
+  expectedVersion: z.int().positive().nullable(),
+});
+
+export const clearPurchaserSchema = z.object({ expectedVersion });
+
+export const reportUnclaimedSchema = z.object({
+  state: z.string().trim().length(2),
+  filingReference: z.string().trim().min(1).max(60),
+  reportDate: z.iso.date(),
+  expectedVersion,
+});

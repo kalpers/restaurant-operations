@@ -29,7 +29,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await turnGiftCardsOff(setup);
-  await disableGuestsAccounts();
+  await disableGuestsAccounts(setup);
 });
 
 test("a card is sold with its code shown once, pays part of a check, and keeps the rest", async ({ browser }) => {
@@ -129,4 +129,93 @@ test("a pre-printed card is sold with its own code and found by it", async ({ br
   await lookup.getByLabel("Card code").fill(printed.toLowerCase().replaceAll("-", " "));
   await lookup.getByRole("button", { name: "Check balance" }).click();
   await expect(server.getByLabel("Gift card balance")).toHaveText("$20.00");
+});
+
+// Phase 34 (policies 3–10): printed card stock, purchaser details and an unclaimed report.
+test("printed cards are registered as stock and one is sold by its code", async ({ browser }) => {
+  test.setTimeout(150_000);
+
+  const code = (index: number) => `BOX${setup.suffix.toUpperCase()}${index}ZZ`;
+  const owner = await signedIn(browser, setup.owner);
+
+  await owner.goto("/gift-cards");
+
+  const stock = owner.getByRole("region", { name: "Card stock" });
+
+  await stock.getByLabel("Batch (supplier or box)").fill(`E2E box ${setup.suffix}`);
+  await stock.getByLabel(/^Codes/).fill(`S-1,${code(1)}\nS-2,${code(2)}`);
+  await stock.getByRole("button", { name: "Register cards" }).click();
+  await expect(stock.getByText(/Registered GCB-\d{6}: 2 cards/)).toBeVisible();
+  await expect(stock.getByRole("list", { name: "Stock batches" })).toContainText(`E2E box ${setup.suffix} · 2 registered, 0 sold, 2 unsold`);
+  // The codes aren't shown again.
+  await expect(owner.getByText(code(1))).toHaveCount(0);
+
+  const server = await signedIn(browser, setup.server);
+
+  await server.goto("/gift-cards");
+
+  const sell = server.getByRole("region", { name: "Sell or reload a gift card" });
+
+  await sell.getByLabel("Use the code printed on the card").check();
+  await sell.getByLabel(/^Printed code/).fill(code(1).toLowerCase());
+  await sell.getByLabel(/^Amount/).fill("30.00");
+  await sell.getByLabel("Guest paid by").selectOption("EXTERNAL_CARD");
+  await sell.getByRole("button", { name: "Sell card" }).click();
+  await expect(sell.getByText(/Sold GC-\d{6}: balance \$30\.00/)).toBeVisible();
+
+  await owner.reload();
+  await expect(owner.getByRole("list", { name: "Stock batches" })).toContainText(`E2E box ${setup.suffix} · 2 registered, 1 sold, 1 unsold`);
+});
+
+test("a card sold with purchaser details is reported as unclaimed", async ({ browser }) => {
+  test.setTimeout(150_000);
+
+  const server = await signedIn(browser, setup.server);
+
+  await server.goto("/gift-cards");
+
+  const sell = server.getByRole("region", { name: "Sell or reload a gift card" });
+
+  await sell.getByLabel(/^Amount/).fill("12.00");
+  await sell.getByLabel("Guest paid by").selectOption("EXTERNAL_CARD");
+  await sell.getByText("Purchaser details (optional)").click();
+  await sell.getByLabel("Name", { exact: true }).fill(`Robin Buyer ${setup.suffix}`);
+  await sell.getByLabel("City").fill("Lansing");
+  await sell.getByRole("button", { name: "Sell card" }).click();
+
+  const sold = sell.getByText(/Sold GC-\d{6}: balance \$12\.00/);
+
+  await expect(sold).toBeVisible();
+
+  const cardNumber = (await sold.textContent())!.match(/GC-\d{6}/)![0];
+
+  await server.getByRole("button", { name: "I've written it down" }).click();
+
+  const owner = await signedIn(browser, setup.owner);
+
+  await owner.goto("/gift-cards");
+  await owner.getByLabel("Card number (from the receipt)").fill(cardNumber);
+  await owner.getByRole("button", { name: "Find by number" }).click();
+
+  const card = owner.getByRole("region", { name: `Gift card ${cardNumber}` });
+  const purchaser = card.getByRole("region", { name: "Purchaser details" });
+
+  await purchaser.getByRole("button", { name: "Show purchaser details" }).click();
+  await expect(purchaser).toContainText(`Robin Buyer ${setup.suffix}`);
+  await expect(purchaser).toContainText("Lansing");
+
+  await card.getByRole("button", { name: "Report as unclaimed" }).click();
+  await card.getByLabel("State (two letters)").fill("mi");
+  await card.getByLabel("Filing reference").fill(`E2E-${setup.suffix}`);
+  await card.getByLabel("Date reported").fill("2026-11-01");
+  await card.getByRole("button", { name: "Confirm" }).click();
+
+  const reloaded = owner.getByRole("region", { name: `Gift card ${cardNumber}` });
+
+  await expect(reloaded.getByLabel("Gift card balance")).toHaveText("$0.00");
+  await expect(reloaded.getByRole("list", { name: "Card history" })).toContainText("Reported as unclaimed");
+
+  // The Owner can export the holder report.
+  await owner.goto("/reports/exports");
+  await expect(owner.getByRole("form", { name: "Holder report" })).toBeVisible();
 });

@@ -23,7 +23,7 @@ export default async function ExportsPage() {
         description={`${location.locationName}: CSV files to load into accounting and payroll software. No pay is calculated here.`}
       />
 
-      {!abilities.journal && !abilities.payroll ? (
+      {!abilities.journal && !abilities.payroll && !abilities.unclaimed ? (
         <EmptyState title="No exports available">
           The sales journal needs the sales and settlements reports; the payroll file needs the labor report.
         </EmptyState>
@@ -64,6 +64,26 @@ export default async function ExportsPage() {
               allLocations={abilities.payrollAllLocations}
               defaultFrom={defaults.payroll.from}
               defaultTo={defaults.payroll.to}
+            />
+          </Card>
+        ) : null}
+
+        {abilities.unclaimed ? (
+          <Card>
+            <CardTitle>Gift card holder report</CardTitle>
+            <p className="mb-3 text-sm text-neutral-700">
+              Every gift card with value left and no activity for the unused-balance period in the gift card settings, across
+              all locations, with the selling location&apos;s address and the purchaser&apos;s details where they were given
+              (UNKNOWN where not). It is the material for an unclaimed-property filing, not the filing: each state has its own
+              form and rules. No card codes.
+            </p>
+            <ExportDownload
+              kind="unclaimed"
+              label="Holder report"
+              locationId={location.locationId}
+              allLocations={false}
+              defaultFrom={defaults.journal.to}
+              defaultTo={defaults.journal.to}
             />
           </Card>
         ) : null}

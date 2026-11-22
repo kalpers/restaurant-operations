@@ -28,7 +28,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await turnLoyaltyOff(setup);
-  await disableGuestsAccounts();
+  await disableGuestsAccounts(setup);
 });
 
 test("a manager turns loyalty on, a visit earns at session end, and a reward is redeemed and posted at close", async ({

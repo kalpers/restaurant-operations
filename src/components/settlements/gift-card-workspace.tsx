@@ -11,6 +11,7 @@ import { buttonClass } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { INPUT_STYLE } from "@/components/ui/field";
 import type { GiftCardHistory, GiftCardProgramView, GiftCardView } from "@/modules/settlements/services/gift-card-service";
+import type { StockBatchView, StockCardView } from "@/modules/settlements/services/gift-card-stock-service";
 import { formatInstant } from "@/shared/time/format-instant";
 
 // Phase 31 gift cards (policies 4, 5, 11, 12, 17). Record only: selling a card records how the
@@ -24,7 +25,51 @@ export type GiftCardAbilities = {
   sell: boolean;
   manage: boolean;
   saleTenders: SaleTender[];
+  /** Phase 34 (policy 4): may read and change purchaser details. */
+  purchaserView: boolean;
 };
+
+/** Phase 34 (policy 3): the purchaser fields, in form order. */
+const PURCHASER_INPUTS = [
+  { key: "name", label: "Name", max: 120 },
+  { key: "email", label: "Email", max: 254 },
+  { key: "phone", label: "Phone", max: 40 },
+  { key: "addressLine1", label: "Address line 1", max: 120 },
+  { key: "addressLine2", label: "Address line 2", max: 120 },
+  { key: "city", label: "City", max: 80 },
+  { key: "region", label: "State or region", max: 80 },
+  { key: "postalCode", label: "Postal code", max: 20 },
+  { key: "country", label: "Country", max: 60 },
+] as const;
+
+type PurchaserKey = (typeof PURCHASER_INPUTS)[number]["key"];
+type PurchaserValues = Record<PurchaserKey, string>;
+
+const EMPTY_PURCHASER: PurchaserValues = Object.fromEntries(PURCHASER_INPUTS.map((field) => [field.key, ""])) as PurchaserValues;
+
+function PurchaserFields({ values, onChange }: { values: PurchaserValues; onChange: (values: PurchaserValues) => void }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {PURCHASER_INPUTS.map((field) => (
+        <label key={field.key} className={LABEL}>
+          {field.label}
+          <input
+            className={INPUT}
+            value={values[field.key]}
+            maxLength={field.max}
+            autoComplete="off"
+            onChange={(event) => onChange({ ...values, [field.key]: event.target.value })}
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+const purchaserBody = (values: PurchaserValues) =>
+  PURCHASER_INPUTS.some((field) => values[field.key].trim())
+    ? Object.fromEntries(PURCHASER_INPUTS.map((field) => [field.key, values[field.key].trim() || null]))
+    : null;
 
 const BUTTON = buttonClass("secondary");
 const PRIMARY = buttonClass("primary");
@@ -47,7 +92,10 @@ const ENTRY_LABELS: Record<string, string> = {
   REFUND_VOIDED: "Refund voided",
   ADJUSTED: "Adjusted",
   CASHED_OUT: "Cashed out",
+  ESCHEATED: "Reported as unclaimed",
 };
+
+const STATUS_LABELS: Record<string, string> = { ACTIVE: "Active", INACTIVE: "Inactive", STOCK: "Unsold stock" };
 
 function newKey(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -120,6 +168,8 @@ function SellForm({
   const [externalReference, setExternalReference] = useState("");
   const [shown, setShown] = useState<{ code: string; cardNumber: string } | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // Phase 34 (policy 3): who bought it, optional, for an unclaimed-property filing.
+  const [purchaser, setPurchaser] = useState<PurchaserValues>(EMPTY_PURCHASER);
   const key = useRef<string | null>(null);
   const isCash = tenderType === "CASH";
 
@@ -152,6 +202,7 @@ function SellForm({
         cashDrawerSessionId: isCash && drawerId ? drawerId : null,
         otherDescription: tenderType === "OTHER" ? otherDescription : null,
         externalReference: isCash ? null : externalReference || null,
+        purchaser: reload ? null : purchaserBody(purchaser),
       },
       { "Idempotency-Key": key.current },
     );
@@ -180,6 +231,7 @@ function SellForm({
       setReceived("");
       setOtherDescription("");
       setExternalReference("");
+      setPurchaser(EMPTY_PURCHASER);
       action.refresh();
     }
   }
@@ -300,6 +352,16 @@ function SellForm({
             <input className={INPUT} value={otherDescription} onChange={(event) => edited(setOtherDescription)(event.target.value)} required maxLength={200} />
           </label>
         )}
+        {!reload && (
+          <details className="rounded-md border border-neutral-200 p-2 text-sm">
+            <summary className="min-h-11 cursor-pointer content-center font-medium">Purchaser details (optional)</summary>
+            <p className="my-2 text-xs text-neutral-600">
+              Only if the guest is happy to give them: used only if the card is ever reported to the state as unclaimed. Never
+              for messages.
+            </p>
+            <PurchaserFields values={purchaser} onChange={edited(setPurchaser)} />
+          </details>
+        )}
         <button type="submit" className={PRIMARY} disabled={action.pending || abilities.saleTenders.length === 0}>
           {reload ? "Reload card" : "Sell card"}
         </button>
@@ -326,12 +388,16 @@ function ManagerActions({
   onChanged: (view: GiftCardView) => void;
 }) {
   const action = useAction();
-  const [mode, setMode] = useState<"adjust" | "cash-out" | "status" | "replace" | null>(null);
+  const [mode, setMode] = useState<"adjust" | "cash-out" | "status" | "replace" | "unclaimed" | null>(null);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [drawerId, setDrawerId] = useState(drawers[0]?.id ?? "");
   const [newCode, setNewCode] = useState<string | null>(null);
   const [replacement, setReplacement] = useState("");
+  // Phase 34 (policy 6): the filing the balance was reported in.
+  const [state, setState] = useState("");
+  const [filingReference, setFilingReference] = useState("");
+  const [reportDate, setReportDate] = useState("");
   const key = useRef<string | null>(null);
 
   function choose(next: typeof mode) {
@@ -339,6 +405,9 @@ function ManagerActions({
     setReason("");
     setAmount("");
     setReplacement("");
+    setState("");
+    setFilingReference("");
+    setReportDate("");
     key.current = null;
   }
 
@@ -358,6 +427,16 @@ function ManagerActions({
         { reason, expectedVersion: card.version, cashDrawerSessionId: drawerId || null },
         { "Idempotency-Key": key.current },
       );
+    } else if (mode === "unclaimed") {
+      result = await action.run("POST", `${base}/unclaimed`, { state, filingReference, reportDate, expectedVersion: card.version });
+
+      if (result.ok) {
+        choose(null);
+        onChanged(card);
+        action.refresh();
+      }
+
+      return;
     } else if (mode === "status") {
       result = await action.run<GiftCardView>("POST", `${base}/status`, {
         status: card.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
@@ -401,6 +480,9 @@ function ManagerActions({
         <button type="button" className={BUTTON} onClick={() => choose("replace")}>
           Replace code
         </button>
+        <button type="button" className={BUTTON} onClick={() => choose("unclaimed")} disabled={card.balance === "0.00"}>
+          Report as unclaimed
+        </button>
       </div>
       {mode && (
         <form onSubmit={submit} className="grid gap-2" aria-label={`Card ${mode}`}>
@@ -441,12 +523,33 @@ function ManagerActions({
               />
             </label>
           )}
-          <label className={LABEL}>
-            Reason
-            <input className={INPUT} value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={200} />
-          </label>
+          {mode === "unclaimed" ? (
+            <>
+              <p className="rounded-md border border-warning-300 bg-warning-50 p-2 text-sm text-warning-900">
+                Only after the balance, {formatMoney(card.balance)}, was reported and paid to the state. The card is
+                deactivated and its balance goes to zero for good; the guest then claims it from the state.
+              </p>
+              <label className={LABEL}>
+                State (two letters)
+                <input className={INPUT} value={state} onChange={(event) => setState(event.target.value.toUpperCase())} required maxLength={2} />
+              </label>
+              <label className={LABEL}>
+                Filing reference
+                <input className={INPUT} value={filingReference} onChange={(event) => setFilingReference(event.target.value)} required maxLength={60} />
+              </label>
+              <label className={LABEL}>
+                Date reported
+                <input className={INPUT} type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} required />
+              </label>
+            </>
+          ) : (
+            <label className={LABEL}>
+              Reason
+              <input className={INPUT} value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={200} />
+            </label>
+          )}
           <div className="flex flex-wrap gap-2">
-            <button type="submit" className={PRIMARY} disabled={action.pending || !reason.trim()}>
+            <button type="submit" className={PRIMARY} disabled={action.pending || (mode === "unclaimed" ? !filingReference.trim() : !reason.trim())}>
               Confirm
             </button>
             <button type="button" className={BUTTON} onClick={() => choose(null)}>
@@ -460,15 +563,132 @@ function ManagerActions({
   );
 }
 
+type PurchaserView = PurchaserValues & { cleared: boolean; version: number | null };
+
+/** Phase 34 (policies 3–4): who bought the card, for purchaser-permission holders only. */
+function PurchaserPanel({ cardId, canManage }: { cardId: string; canManage: boolean }) {
+  const action = useAction();
+  const [view, setView] = useState<PurchaserView | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [values, setValues] = useState<PurchaserValues>(EMPTY_PURCHASER);
+
+  async function load() {
+    const result = await action.run<Record<PurchaserKey, string | null> & { cleared: boolean; version: number | null }>(
+      "GET",
+      `/api/gift-cards/${cardId}/purchaser`,
+    );
+
+    if (result.ok) {
+      const data = result.data;
+      const loaded = Object.fromEntries(PURCHASER_INPUTS.map((field) => [field.key, data[field.key] ?? ""])) as PurchaserValues;
+
+      setView({ ...loaded, cleared: data.cleared, version: data.version });
+      setValues(loaded);
+    }
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+
+    const result = await action.run("PUT", `/api/gift-cards/${cardId}/purchaser`, {
+      details: purchaserBody(values) ?? {},
+      expectedVersion: view?.version ?? null,
+    });
+
+    if (result.ok) {
+      setEditing(false);
+      await load();
+    }
+  }
+
+  async function clear() {
+    const result = await action.run("POST", `/api/gift-cards/${cardId}/purchaser/clear`, { expectedVersion: view?.version });
+
+    if (result.ok) {
+      setClearing(false);
+      await load();
+    }
+  }
+
+  const given = view ? PURCHASER_INPUTS.filter((field) => view[field.key]) : [];
+
+  return (
+    <section aria-label="Purchaser details" className="mt-4 grid gap-2 text-sm">
+      <h3 className="font-semibold">Purchaser</h3>
+      {!view ? (
+        <button type="button" className={BUTTON} onClick={load} disabled={action.pending}>
+          Show purchaser details
+        </button>
+      ) : view.cleared ? (
+        <p>Purchaser details were cleared.</p>
+      ) : editing ? (
+        <form onSubmit={save} className="grid gap-2">
+          <PurchaserFields values={values} onChange={setValues} />
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className={PRIMARY} disabled={action.pending}>
+              Save purchaser
+            </button>
+            <button type="button" className={BUTTON} onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {given.length === 0 ? (
+            <p>None given.</p>
+          ) : (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              {given.map((field) => (
+                <div key={field.key} className="contents">
+                  <dt className="text-neutral-600">{field.label}</dt>
+                  <dd>{view[field.key]}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {canManage && (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={BUTTON} onClick={() => setEditing(true)}>
+                {given.length === 0 ? "Add purchaser" : "Change purchaser"}
+              </button>
+              {view.version !== null && !clearing && (
+                <button type="button" className={BUTTON} onClick={() => setClearing(true)}>
+                  Clear purchaser details
+                </button>
+              )}
+              {clearing && (
+                <>
+                  <span className="self-center">They can&apos;t be entered again.</span>
+                  <button type="button" className={buttonClass("danger")} onClick={clear} disabled={action.pending}>
+                    Clear for good
+                  </button>
+                  <button type="button" className={BUTTON} onClick={() => setClearing(false)}>
+                    Keep
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      <ApiErrorMessage error={action.error} className="flex" />
+    </section>
+  );
+}
+
 function CardDetail({
   history,
   canManage,
+  canViewPurchaser,
   drawers,
   drawerRequired,
   onReload,
 }: {
   history: GiftCardHistory;
   canManage: boolean;
+  canViewPurchaser: boolean;
   drawers: { id: string; label: string }[];
   drawerRequired: boolean;
   onReload: () => void;
@@ -494,14 +714,19 @@ function CardDetail({
   return (
     <Card aria-label={`Gift card ${card.cardNumber}`}>
       <CardTitle>
-        {card.cardNumber} <Badge tone={card.status === "ACTIVE" ? "success" : "neutral"}>{card.status === "ACTIVE" ? "Active" : "Inactive"}</Badge>
+        {card.cardNumber}{" "}
+        <Badge tone={card.status === "ACTIVE" ? "success" : "neutral"}>{STATUS_LABELS[card.status] ?? card.status}</Badge>
       </CardTitle>
       <p className="mb-1 text-sm text-neutral-700">Code ends {card.lastFour}</p>
       <p className="mb-3 text-lg">
         Balance <span aria-label="Gift card balance" className="tabular text-2xl font-bold">{formatMoney(card.balance)}</span>
       </p>
       {card.statusReason && card.status === "INACTIVE" && <p className="mb-3 text-sm">Deactivated: {card.statusReason}</p>}
-      {canManage && <ManagerActions card={card} drawers={drawers} drawerRequired={drawerRequired} onChanged={onReload} />}
+      {card.status === "STOCK" && <p className="mb-3 text-sm">Registered stock, not sold yet. Sell it with its printed code.</p>}
+      {canManage && card.issuedAt !== null && (
+        <ManagerActions card={card} drawers={drawers} drawerRequired={drawerRequired} onChanged={onReload} />
+      )}
+      {canViewPurchaser && card.issuedAt !== null && <PurchaserPanel cardId={card.id} canManage={canManage} />}
 
       <h3 className="mt-4 mb-2 font-semibold">History</h3>
       <ul className="grid gap-1 text-sm" aria-label="Card history">
@@ -566,6 +791,7 @@ function ProgramForm({ program }: { program: GiftCardProgramView }) {
   const [enabled, setEnabled] = useState(program.enabled);
   const [maxBalance, setMaxBalance] = useState(program.maxBalance);
   const [dormancyMonths, setDormancyMonths] = useState(String(program.dormancyMonths));
+  const [stockRequired, setStockRequired] = useState(program.supplierStockRequired);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -574,6 +800,7 @@ function ProgramForm({ program }: { program: GiftCardProgramView }) {
       enabled,
       maxBalance,
       dormancyMonths: Number(dormancyMonths),
+      supplierStockRequired: stockRequired,
       expectedVersion: program.version,
     });
 
@@ -606,6 +833,15 @@ function ProgramForm({ program }: { program: GiftCardProgramView }) {
             required
           />
         </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-5 accent-brand-700"
+            checked={stockRequired}
+            onChange={(event) => setStockRequired(event.target.checked)}
+          />
+          Only sell supplier-printed cards registered under Card stock (catches mistyped codes)
+        </label>
         <p className="text-xs text-neutral-600">
           While this is on, every gift card tender names one of these cards. Record other companies&apos; gift cards as
           &ldquo;Other&rdquo;. It can&apos;t be turned off while any card holds a balance.
@@ -619,18 +855,215 @@ function ProgramForm({ program }: { program: GiftCardProgramView }) {
   );
 }
 
+/** Phase 34 (policy 10): one batch's cards, to deactivate a lost or damaged one. */
+function StockBatchCards({ batch, onChanged }: { batch: StockBatchView; onChanged: () => void }) {
+  const action = useAction();
+  const [cards, setCards] = useState<StockCardView[] | null>(null);
+  const [target, setTarget] = useState<StockCardView | "REST" | null>(null);
+  const [reason, setReason] = useState("");
+
+  async function load() {
+    const result = await action.run<{ cards: StockCardView[] }>("GET", `/api/gift-cards/stock/${batch.id}`);
+
+    if (result.ok) {
+      setCards(result.data.cards);
+    }
+  }
+
+  async function deactivate(event: FormEvent) {
+    event.preventDefault();
+
+    const body =
+      target === "REST" ? { reason } : { reason, cardId: target!.id, expectedVersion: target!.version };
+    const result = await action.run("POST", `/api/gift-cards/stock/${batch.id}/deactivate`, body);
+
+    if (result.ok) {
+      setTarget(null);
+      setReason("");
+      onChanged();
+      await load();
+    }
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={BUTTON} onClick={load} disabled={action.pending}>
+          {cards ? "Refresh cards" : "Show cards"}
+        </button>
+        {batch.inStock > 0 && (
+          <button type="button" className={BUTTON} onClick={() => setTarget("REST")}>
+            Deactivate the {batch.inStock} unsold
+          </button>
+        )}
+      </div>
+      {cards && (
+        <ul className="grid gap-1" aria-label={`Cards in ${batch.batchNumber}`}>
+          {cards.map((card) => (
+            <li key={card.id} className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                {card.cardNumber} · ends {card.lastFour}
+                {card.printedSerial ? ` · serial ${card.printedSerial}` : ""}
+              </span>
+              <span className="flex items-center gap-2">
+                {card.sold ? "Sold" : STATUS_LABELS[card.status] ?? card.status}
+                {card.status === "STOCK" && (
+                  <button type="button" className={BUTTON} onClick={() => setTarget(card)}>
+                    Deactivate
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {target && (
+        <form onSubmit={deactivate} className="grid gap-2" aria-label="Deactivate stock">
+          <p>
+            {target === "REST"
+              ? `Deactivates every unsold card in ${batch.batchNumber}. They can't be sold afterwards.`
+              : `Deactivates ${target.cardNumber}. It can't be sold afterwards.`}
+          </p>
+          <label className={LABEL}>
+            Reason
+            <input className={INPUT} value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={200} />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" className={PRIMARY} disabled={action.pending || !reason.trim()}>
+              Confirm
+            </button>
+            <button type="button" className={BUTTON} onClick={() => setTarget(null)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      <ApiErrorMessage error={action.error} className="flex" />
+    </div>
+  );
+}
+
+/**
+ * Phase 34 (policies 7–10): register a box of supplier-printed cards before they are sold, by
+ * pasting the codes or choosing a CSV file. The file is read here, in the browser, and only
+ * its lines are sent; nothing shows the codes again.
+ */
+function CardStockPanel({ batches }: { batches: StockBatchView[] }) {
+  const action = useAction();
+  const [description, setDescription] = useState("");
+  const [codes, setCodes] = useState("");
+  const [done, setDone] = useState<string | null>(null);
+  const key = useRef<string | null>(null);
+
+  function edited(setter: (value: string) => void) {
+    return (value: string) => {
+      key.current = null;
+      setter(value);
+    };
+  }
+
+  async function readFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    key.current = null;
+    setCodes(await file.text());
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    key.current ??= newKey("gift-card-stock");
+
+    const result = await action.run<{ batchNumber: string; cardCount: number; firstCard: string; lastCard: string }>(
+      "POST",
+      "/api/gift-cards/stock",
+      { description, lines: codes.split(/\r?\n/) },
+      { "Idempotency-Key": key.current },
+    );
+
+    if (result.ok || (result.status >= 400 && result.status < 500)) {
+      key.current = null;
+    }
+
+    if (result.ok) {
+      setDone(`Registered ${result.data.batchNumber}: ${result.data.cardCount} cards, ${result.data.firstCard} to ${result.data.lastCard}.`);
+      setCodes("");
+      setDescription("");
+      action.refresh();
+    }
+  }
+
+  const lineCount = codes.split(/\r?\n/).filter((line) => line.trim()).length;
+
+  return (
+    <Card aria-label="Card stock">
+      <CardTitle>Card stock</CardTitle>
+      <form onSubmit={submit} className="grid gap-3">
+        <p className="text-sm text-neutral-700">
+          Register a box of supplier-printed cards before selling them: one code per line, or <code>serial,code</code>. Nothing
+          is registered if any line is wrong. The codes aren&apos;t shown again.
+        </p>
+        <label className={LABEL}>
+          Batch (supplier or box)
+          <input className={INPUT} value={description} onChange={(event) => edited(setDescription)(event.target.value)} required maxLength={80} />
+        </label>
+        <label className={LABEL}>
+          Codes ({lineCount} {lineCount === 1 ? "line" : "lines"}, up to 1,000)
+          <textarea
+            className={`${INPUT} min-h-32 font-mono`}
+            value={codes}
+            onChange={(event) => edited(setCodes)(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+        </label>
+        <label className={LABEL}>
+          Or choose a CSV file
+          <input className={INPUT} type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(event) => readFile(event.target.files?.[0])} />
+        </label>
+        <button type="submit" className={PRIMARY} disabled={action.pending || lineCount === 0 || !description.trim()}>
+          Register cards
+        </button>
+        {done && (
+          <p aria-live="polite" className="text-sm font-medium">
+            {done}
+          </p>
+        )}
+        <ApiErrorMessage error={action.error} className="flex" />
+      </form>
+      {batches.length > 0 && (
+        <ul className="mt-4 grid gap-3 text-sm" aria-label="Stock batches">
+          {batches.map((batch) => (
+            <li key={batch.id} className="grid gap-2 border-t border-neutral-100 pt-2">
+              <span>
+                <span className="font-medium">{batch.batchNumber}</span> · {batch.description} · {batch.cardCount} registered,{" "}
+                {batch.sold} sold, {batch.inStock} unsold, {batch.deactivated} deactivated
+              </span>
+              <StockBatchCards batch={batch} onChanged={action.refresh} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export function GiftCardWorkspace({
   program,
   abilities,
   drawers,
   drawerRequired,
   recent,
+  stockBatches = [],
 }: {
   program: GiftCardProgramView;
   abilities: GiftCardAbilities;
   drawers: { id: string; label: string }[];
   drawerRequired: boolean;
   recent: GiftCardView[];
+  stockBatches?: StockBatchView[];
 }) {
   const lookup = useAction();
   const [code, setCode] = useState("");
@@ -701,6 +1134,7 @@ export function GiftCardWorkspace({
           <ApiErrorMessage error={lookup.error} className="mt-2 flex" />
         </Card>
         {abilities.manage && <ProgramForm program={program} />}
+        {abilities.manage && program.enabled && <CardStockPanel batches={stockBatches} />}
       </div>
       <div className="grid content-start gap-6">
         {history && (
@@ -708,6 +1142,7 @@ export function GiftCardWorkspace({
             key={`${history.card.id}-${history.card.version}`}
             history={history}
             canManage={abilities.manage}
+            canViewPurchaser={abilities.purchaserView}
             drawers={drawers}
             drawerRequired={drawerRequired}
             onReload={() => load(history.card.id)}

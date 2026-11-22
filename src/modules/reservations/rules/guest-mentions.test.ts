@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { excerptAround, findMention, hasTerms, mentionTerms } from "./guest-mentions";
+import { excerptAround, findAllMentions, findMention, hasTerms, mentionTerms, REDACTION_MARK, redactMentions } from "./guest-mentions";
 
 // Phase 33 (policy 3): recognizing a guest in free text.
 
@@ -55,5 +55,26 @@ describe("finding a mention", () => {
 
     expect(text.slice(match.index, match.index + match.length)).toBe("Maria");
     expect(excerptAround(text, match)).toMatch(/^….*Maria called.*…$/);
+  });
+});
+
+// Phase 34 (policy 12): redacting word by word.
+describe("redacting mentions", () => {
+  it("replaces only the guest's words and keeps the rest", () => {
+    expect(redactMentions("No onion - Alvarez allergy", terms)).toBe("No onion - [redacted] allergy");
+    expect(redactMentions("Call Maria Alvarez-Ruiz on 555.123.4567 (cell)", terms)).toBe("Call [redacted] on [redacted] (cell)");
+    expect(redactMentions("maria.a@example.com asked for a booth", terms)).toBe("[redacted] asked for a booth");
+  });
+
+  it("merges overlapping matches and leaves unrelated text alone", () => {
+    expect(findAllMentions("Maria Alvarez-Ruiz and ALVAREZ", terms)).toHaveLength(2);
+    expect(redactMentions("Mariachi band, invoice 98761234567890", terms)).toBe("Mariachi band, invoice 98761234567890");
+  });
+
+  it("can be applied again without changing an already redacted text", () => {
+    const once = redactMentions("Alvarez at table 4", terms);
+
+    expect(redactMentions(once, terms)).toBe(once);
+    expect(once).toContain(REDACTION_MARK);
   });
 });

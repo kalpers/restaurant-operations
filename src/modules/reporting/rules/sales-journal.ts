@@ -18,6 +18,8 @@ import { addDecimals, compareDecimals, negateDecimal, subtractDecimals, toScale 
 //   Dr TENDER/<payment type>  Cr GIFT_CARD/ISSUED        a card sold or reloaded (voids reverse it)
 //   Dr GIFT_CARD/CASHED_OUT   Cr TENDER/CASH             a balance paid out in cash
 //   GIFT_CARD/ADJUSTED against GIFT_CARD_ADJUSTMENT/ADJUSTED for manager adjustments.
+// Phase 34 (policy 6): Dr GIFT_CARD/ESCHEATED  Cr UNCLAIMED_PROPERTY/PAYABLE for a balance
+// reported to a state as unclaimed; the liability moves from the card to the state.
 // Spending a card stays TENDER/GIFT_CARD; the bookkeeper maps it and GIFT_CARD/* to one
 // liability account. A card sale is never SALES.
 // Tenders equal total due plus tips, and total due = item subtotal - discounts - included tax
@@ -35,6 +37,7 @@ export const JOURNAL_LINE_TYPES = [
   "CASH_OVER_SHORT",
   "GIFT_CARD",
   "GIFT_CARD_ADJUSTMENT",
+  "UNCLAIMED_PROPERTY",
 ] as const;
 
 export type JournalLineType = (typeof JOURNAL_LINE_TYPES)[number];
@@ -59,6 +62,8 @@ export type JournalDayFacts = {
   giftCardCashOuts?: string;
   /** Phase 31: net manager adjustments to card balances on the date (signed). */
   giftCardAdjustments?: string;
+  /** Phase 34 (policy 6): card balances reported to a state as unclaimed on the date (positive). */
+  giftCardEscheated?: string;
 };
 
 export type JournalRow = {
@@ -91,6 +96,7 @@ const ORDER: Record<JournalLineType, number> = {
   CASH_OVER_SHORT: 8,
   GIFT_CARD: 9,
   GIFT_CARD_ADJUSTMENT: 10,
+  UNCLAIMED_PROPERTY: 11,
 };
 
 export function buildJournalDay(facts: JournalDayFacts): JournalRow[] {
@@ -154,6 +160,8 @@ export function buildJournalDay(facts: JournalDayFacts): JournalRow[] {
 
   post("GIFT_CARD", "CASHED_OUT", "debit", facts.giftCardCashOuts ?? "0");
   post("TENDER", "CASH", "credit", facts.giftCardCashOuts ?? "0");
+  post("GIFT_CARD", "ESCHEATED", "debit", facts.giftCardEscheated ?? "0");
+  post("UNCLAIMED_PROPERTY", "PAYABLE", "credit", facts.giftCardEscheated ?? "0");
 
   const adjustment = facts.giftCardAdjustments ?? "0";
 

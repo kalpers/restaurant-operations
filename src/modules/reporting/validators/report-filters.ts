@@ -52,4 +52,4 @@ export const exportFileQuerySchema = z.object({
   to: date,
 });
 
-export const exportKindParamsSchema = z.object({ kind: z.enum(["journal", "payroll"]) });
+export const exportKindParamsSchema = z.object({ kind: z.enum(["journal", "payroll", "unclaimed"]) });

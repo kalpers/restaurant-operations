@@ -651,7 +651,7 @@ export const AUDIT_ACTIONS = {
     category: "SETTLEMENTS",
     entityType: "gift_card_program",
     scope: "ORGANIZATION",
-    fields: ["enabled", "maxBalance", "dormancyMonths"],
+    fields: ["enabled", "maxBalance", "dormancyMonths", "supplierStockRequired"],
   },
   "settlements.gift-card-sold": {
     category: "SETTLEMENTS",
@@ -669,6 +669,8 @@ export const AUDIT_ACTIONS = {
       "businessDate",
       // Phase 33 (policy 13): GENERATED or SUPPLIER; never the code.
       "codeSource",
+      // Phase 34: sold from registered stock (policy 9).
+      "fromStock",
     ],
   },
   "settlements.gift-card-sale-voided": {
@@ -700,6 +702,32 @@ export const AUDIT_ACTIONS = {
     entityType: "gift_card",
     scope: "ORGANIZATION",
     fields: ["giftNumber", "reason", "codeSource"],
+  },
+  // Phase 34: card stock (policies 7–10), purchaser details (policy 4: field names only, never
+  // values) and balances reported as unclaimed (policy 6). Never a code or its last four.
+  "settlements.gift-card-stock-registered": {
+    category: "SETTLEMENTS",
+    entityType: "gift_card_stock_batch",
+    scope: "LOCATION",
+    fields: ["batchNumber", "cardsRegistered", "description", "firstGiftNumber", "lastGiftNumber"],
+  },
+  "settlements.gift-card-stock-deactivated": {
+    category: "SETTLEMENTS",
+    entityType: "gift_card_stock_batch",
+    scope: "ORGANIZATION",
+    fields: ["batchNumber", "cardsDeactivated", "reason"],
+  },
+  "settlements.gift-card-purchaser-changed": {
+    category: "SETTLEMENTS",
+    entityType: "gift_card",
+    scope: "ORGANIZATION",
+    fields: ["giftNumber", "change", "fields"],
+  },
+  "settlements.gift-card-reported-unclaimed": {
+    category: "SETTLEMENTS",
+    entityType: "gift_card",
+    scope: "LOCATION",
+    fields: ["giftNumber", "amount", "state", "filingReference", "reportDate", "balanceAfter", "businessDate"],
   },
   "drawers.drawer-created": {
     category: "SETTLEMENTS",
@@ -820,7 +848,7 @@ export const AUDIT_ACTIONS = {
     entityType: "guest_profile",
     scope: "ORGANIZATION",
     // Phase 33 (policy 2): how many log entries and notes were redacted with it.
-    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "pointsCleared", "reason", "logEntriesRedacted", "notesRedacted"],
+    fields: ["profileNumber", "partiesCleared", "mergedProfilesCleared", "pointsCleared", "reason", "logEntriesRedacted", "notesRedacted", "textRedacted", "ownNotesCleared"],
   },
   // Phase 30 guest loyalty (policy 14). Earning and posting at close are recorded by the ledger.
   "loyalty.program-changed": {
@@ -858,7 +886,7 @@ export const AUDIT_ACTIONS = {
     category: "GUESTS",
     entityType: "guest_party",
     scope: "LOCATION",
-    fields: ["guestPartyId", "reason", "logEntriesRedacted", "notesRedacted"],
+    fields: ["guestPartyId", "reason", "logEntriesRedacted", "notesRedacted", "textRedacted", "ownNotesCleared"],
   },
   // Phase 21 (policy 14): a server sent an item despite a conflict with recorded allergies.
   "orders.allergen-acknowledged": {

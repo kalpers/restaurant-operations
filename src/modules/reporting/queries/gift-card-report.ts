@@ -25,6 +25,7 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
     refunded: string;
     adjusted: string;
     cashed_out: string;
+    escheated: string;
   }>(
     context,
     sql`
@@ -36,7 +37,8 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
              COALESCE(SUM(e.amount) FILTER (WHERE e.kind = 'REDEMPTION_VOIDED'), 0)::numeric(14,2)::text AS redemption_voids,
              COALESCE(SUM(e.amount) FILTER (WHERE e.kind IN ('REFUNDED', 'REFUND_VOIDED')), 0)::numeric(14,2)::text AS refunded,
              COALESCE(SUM(e.amount) FILTER (WHERE e.kind = 'ADJUSTED'), 0)::numeric(14,2)::text AS adjusted,
-             COALESCE(-SUM(e.amount) FILTER (WHERE e.kind = 'CASHED_OUT'), 0)::numeric(14,2)::text AS cashed_out
+             COALESCE(-SUM(e.amount) FILTER (WHERE e.kind = 'CASHED_OUT'), 0)::numeric(14,2)::text AS cashed_out,
+             COALESCE(-SUM(e.amount) FILTER (WHERE e.kind = 'ESCHEATED'), 0)::numeric(14,2)::text AS escheated
       FROM gift_card_entries e
       WHERE e.location_id = ${filters.locationId}
         AND e.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
@@ -93,6 +95,7 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
         { key: "refunded", label: "Refunded to cards (net)", kind: "money" },
         { key: "adjusted", label: "Adjusted (net)", kind: "money" },
         { key: "cashedOut", label: "Cashed out", kind: "money" },
+        { key: "escheated", label: "Reported as unclaimed", kind: "money" },
       ],
       rows: byDate.map((row) => ({
         businessDate: row.business_date,
@@ -104,6 +107,7 @@ export async function giftCardSections(context: ReportContext): Promise<ReportSe
         refunded: row.refunded,
         adjusted: row.adjusted,
         cashedOut: row.cashed_out,
+        escheated: row.escheated,
       })),
     },
     {
@@ -197,7 +201,7 @@ async function unusedBalancesSection(context: ReportContext): Promise<ReportSect
   return {
     key: "giftCardUnused",
     title: "Unused gift card balances (all locations)",
-    description: `Cards with value left at the end of the range and no card activity for at least ${months} months (the gift card settings' period), across all locations. For unclaimed-property reporting: the app keeps no purchaser names or addresses, so this list supports a filing but isn't one.`,
+    description: `Cards with value left at the end of the range and no card activity for at least ${months} months (the gift card settings' period), across all locations. For unclaimed-property reporting: holders of the purchaser permission can export the holder report (Exports), with purchaser details where they were given. Neither is a filing.`,
     columns: [
       { key: "cardNumber", label: "Card", kind: "text" },
       { key: "firstSold", label: "First sold", kind: "date" },

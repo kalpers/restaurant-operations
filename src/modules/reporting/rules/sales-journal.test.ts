@@ -123,3 +123,18 @@ describe("buildJournalDay", () => {
     expect(buildJournalDay(facts())).toEqual([]);
   });
 });
+
+// Phase 34 (policy 6): a balance reported to a state as unclaimed moves from the card to a payable.
+describe("unclaimed gift card balances", () => {
+  it("debits GIFT_CARD/ESCHEATED and credits UNCLAIMED_PROPERTY/PAYABLE, and balances", () => {
+    const rows = buildJournalDay(facts({ giftCardEscheated: "42.50" }));
+
+    expect(line(rows, "GIFT_CARD", "ESCHEATED")).toMatchObject({ debit: "42.50", credit: "0.00" });
+    expect(line(rows, "UNCLAIMED_PROPERTY", "PAYABLE")).toMatchObject({ debit: "0.00", credit: "42.50" });
+    expect(rows.at(-1)!.lineType).toBe("UNCLAIMED_PROPERTY");
+  });
+
+  it("writes nothing for a day without one", () => {
+    expect(buildJournalDay(facts({ giftCardEscheated: "0.00" }))).toEqual([]);
+  });
+});

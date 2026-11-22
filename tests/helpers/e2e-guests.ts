@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { closeDatabase, getDatabase } from "../../src/db";
 import { allergens, guestParties, locations, locationSettings, restaurantAreas, users } from "../../src/db/schema";
@@ -177,15 +177,17 @@ export async function profileFor(setup: GuestsSetup, displayName: string) {
   });
 }
 
-export async function disableGuestsAccounts(): Promise<void> {
-  const database = getDatabase();
-  const accounts = await database.select({ id: users.id }).from(users).where(like(users.normalizedEmail, `%@${GUESTS_SCOPE.emailDomain}`));
+/**
+ * Disables the accounts of one setup. Phase 34 (D15): it used to disable every account on the
+ * guests e-mail domain, so a spec finishing in one worker signed out another spec's accounts
+ * still running in the other worker (a sign-in or location change then failed, and the serial
+ * file retried). Only the given setup's accounts are disabled now.
+ */
+export async function disableGuestsAccounts(setup: GuestsSetup | undefined): Promise<void> {
+  const ids = setup ? [setup.owner, setup.manager, setup.host, setup.server, setup.cook].map((entry) => entry.id) : [];
 
-  if (accounts.length > 0) {
-    await database
-      .update(users)
-      .set({ active: false, disabledAt: new Date() })
-      .where(inArray(users.id, accounts.map((row) => row.id)));
+  if (ids.length > 0) {
+    await getDatabase().update(users).set({ active: false, disabledAt: new Date() }).where(inArray(users.id, ids));
   }
 
   await closeDatabase();

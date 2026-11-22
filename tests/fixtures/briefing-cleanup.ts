@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "@/db";
 import {
   managerLogCategories,
+  freeTextRedactions,
   managerLogEntries,
   managerLogNumberCounters,
   preShiftNotePositions,
@@ -29,5 +30,9 @@ export async function clearBriefingData(database: Database): Promise<void> {
     await transaction.execute(sql`ALTER TABLE manager_log_categories ENABLE TRIGGER manager_log_categories_guard`);
     await transaction.delete(preShiftNotePositions);
     await transaction.delete(preShiftNotes);
+    // Phase 34: redaction records reference users and organizations and are append-only.
+    await transaction.execute(sql`ALTER TABLE free_text_redactions DISABLE TRIGGER free_text_redactions_append_only_trigger`);
+    await transaction.delete(freeTextRedactions);
+    await transaction.execute(sql`ALTER TABLE free_text_redactions ENABLE TRIGGER free_text_redactions_append_only_trigger`);
   });
 }

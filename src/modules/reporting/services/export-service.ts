@@ -11,6 +11,7 @@ import { addDays } from "@/shared/time/zoned-time";
 import { loadPayrollFacts, loadWeekStartDay } from "../queries/payroll-hours";
 import { loadLocationClock, loadReportContext } from "../queries/report-context";
 import { loadJournalFacts } from "../queries/sales-journal";
+import { loadHolderReport } from "../queries/unclaimed-holder-report";
 import { csvLine } from "../rules/csv";
 import { buildPayrollRows, MAXIMUM_PAYROLL_WEEKS, wholeWeeks, type PayrollRow } from "../rules/payroll-hours";
 import { assertValidRange } from "../rules/period";
@@ -23,12 +24,15 @@ import { crossLocationScope } from "./cross-location-service";
 // without retyping. Read-only (one REPEATABLE READ snapshot), permission-checked at every
 // included location, and audited as `reports.exported` in a short write afterwards; if the
 // audit can't be written, the export is refused. Never a wage, rate, contact detail or note.
+// Phase 34 (policy 5, amendment 2): a third file, the gift card holder report, which carries
+// purchaser details by design and so needs `gift-cards.purchaser.view`; organization-wide.
 
-export type ExportKind = "journal" | "payroll";
+export type ExportKind = "journal" | "payroll" | "unclaimed";
 
 export const EXPORT_PERMISSIONS: Record<ExportKind, readonly PermissionCode[]> = {
   journal: ["reports.view", "reports.export", "reports.sales", "reports.settlements"],
   payroll: ["reports.view", "reports.export", "reports.labor"],
+  unclaimed: ["reports.view", "reports.export", "reports.settlements", "gift-cards.purchaser.view"],
 };
 
 export const ALL_LOCATIONS = "ALL";
@@ -40,6 +44,10 @@ const holdsAll = (permissions: readonly string[], kind: ExportKind) =>
 
 /** The locations an export covers, each with an actor resolved there. */
 async function scopeOf(database: Database, auth: AuthContext, kind: ExportKind, locationId: string): Promise<Scope[]> {
+  if (locationId === ALL_LOCATIONS && kind === "unclaimed") {
+    throw new BusinessRuleError("EXPORT_ORGANIZATION_WIDE", "The holder report already covers all locations. Choose this location.");
+  }
+
   if (locationId === ALL_LOCATIONS) {
     const included = (await crossLocationScope(database, auth, kind === "journal" ? "sales" : "labor")).filter((entry) =>
       holdsAll(entry.location.permissions, kind),
@@ -229,6 +237,80 @@ export async function exportPayrollHours(
   };
 }
 
+const UNKNOWN = "UNKNOWN";
+const orUnknown = (value: string | null) => value?.trim() || UNKNOWN;
+
+/**
+ * Phase 34 (policy 5): the holder report: every unused balance as of `to`, organization-wide,
+ * with the selling location's address and the purchaser's details, or UNKNOWN for each one
+ * missing. Material for a filing, not a filing: no state's form or property codes.
+ */
+export async function exportHolderReport(
+  database: Database,
+  auth: AuthContext,
+  input: { locationId: string; from: string; to: string },
+): Promise<{ fileName: string; csv: string }> {
+  const scopes = await scopeOf(database, auth, "unclaimed", input.locationId);
+  const report = await withReadOnlySnapshot(database, async (tx) =>
+    loadHolderReport(await loadReportContext(tx, scopes[0]!.actor, { locationId: scopes[0]!.actor.locationId, from: input.to, to: input.to })),
+  );
+  const header = [
+    "card_number",
+    "first_sold_date",
+    "last_activity_date",
+    "balance",
+    "dormancy_months",
+    "sold_at_location_code",
+    "sold_at_location_name",
+    "sold_at_address_line1",
+    "sold_at_address_line2",
+    "sold_at_city",
+    "sold_at_state",
+    "sold_at_postal_code",
+    "sold_at_country",
+    "owner_name",
+    "owner_email",
+    "owner_phone",
+    "owner_address_line1",
+    "owner_address_line2",
+    "owner_city",
+    "owner_region",
+    "owner_postal_code",
+    "owner_country",
+  ];
+  const csv = toCsv(
+    header,
+    report.rows.map((row) => [
+      `GC-${String(row.cardNumber).padStart(6, "0")}`,
+      row.firstSold ?? "",
+      row.lastActivity,
+      row.balance,
+      String(report.dormancyMonths),
+      row.soldAtCode,
+      row.soldAtName,
+      row.soldAtAddress.line1 ?? "",
+      row.soldAtAddress.line2 ?? "",
+      row.soldAtAddress.city ?? "",
+      row.soldAtAddress.state ?? "",
+      row.soldAtAddress.postalCode ?? "",
+      row.soldAtAddress.country ?? "",
+      orUnknown(row.purchaser.name),
+      orUnknown(row.purchaser.email),
+      orUnknown(row.purchaser.phone),
+      orUnknown(row.purchaser.line1),
+      row.purchaser.line2 ?? "",
+      orUnknown(row.purchaser.city),
+      orUnknown(row.purchaser.region),
+      orUnknown(row.purchaser.postalCode),
+      orUnknown(row.purchaser.country),
+    ]),
+  );
+
+  await audit(scopes, "unclaimed", false, input.to, input.to, report.rows.length, database);
+
+  return { fileName: `gift-card-holder-report_${input.to}.csv`, csv };
+}
+
 /** What the Exports page may offer: which files, and whether "All my locations" applies. */
 export function exportAbilities(auth: AuthContext, locationId: string) {
   const here = auth.locations.find((entry) => entry.locationId === locationId);
@@ -237,6 +319,7 @@ export function exportAbilities(auth: AuthContext, locationId: string) {
   return {
     journal: here ? holdsAll(here.permissions, "journal") : false,
     payroll: here ? holdsAll(here.permissions, "payroll") : false,
+    unclaimed: here ? holdsAll(here.permissions, "unclaimed") : false,
     journalAllLocations: count("journal") >= 2,
     payrollAllLocations: count("payroll") >= 2,
   };

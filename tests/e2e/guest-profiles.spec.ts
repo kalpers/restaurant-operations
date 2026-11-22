@@ -36,7 +36,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await disableGuestsAccounts();
+  await disableGuestsAccounts(setup);
 });
 
 test("a host adds a walk-in with a new profile and a severe peanut allergy; the server must confirm before sending", async ({

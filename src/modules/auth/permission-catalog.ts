@@ -165,6 +165,8 @@ export const PERMISSION_CATALOG = [
     name: "Manage gift cards: settings, sale voids, cash-outs, adjustments, status and codes",
     category: "Settlements",
   },
+  // Phase 34: who bought a card, for unclaimed-property filings (policy 4).
+  { code: "gift-cards.purchaser.view", name: "View gift card purchaser names and addresses", category: "Settlements" },
   { code: "drawers.view", name: "View cash drawers", category: "Settlements" },
   { code: "drawers.operate", name: "Open, count and close cash drawers", category: "Settlements" },
   { code: "drawers.manage", name: "Set up cash drawers and the drawer requirement", category: "Settlements" },

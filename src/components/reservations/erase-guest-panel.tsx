@@ -9,14 +9,33 @@ import { apiFetch } from "@/components/forms/page-location";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, FieldHint, Input } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
-import type { MentionPreview } from "@/workflows/erase-guest/erase-guest";
+import type { GuestMention, MentionKind, MentionPreview } from "@/workflows/erase-guest/erase-guest";
 
 type Failure = Pick<ApiFailure, "code" | "message" | "requestId">;
+
+/** Phase 34 (amendment 6): how each kind of mention is headed in the list, in this order. */
+const KIND_HEADINGS: Record<MentionKind, string> = {
+  LOG_ENTRY: "Manager log",
+  NOTE: "Pre-shift notes",
+  PARTY_REQUEST: "Special requests on other visits",
+  RESERVATION_NOTE: "Reservation notes",
+  WAITLIST_NOTE: "Waitlist notes",
+  SESSION_NOTE: "Table notes",
+  TAKEOUT_NAME: "Takeout names",
+  ORDER_ITEM_INSTRUCTION: "Order item instructions (and kitchen tickets)",
+  SHIFT_NOTE: "Shift notes",
+  ASSIGNMENT_NOTE: "Shift assignment notes",
+  GIFT_CARD_PURCHASER: "Gift card purchasers",
+};
+
+const KIND_ORDER = Object.keys(KIND_HEADINGS) as MentionKind[];
 
 /**
  * Phase 33 (policies 2–4): an erase lists the manager log entries and pre-shift notes that may
  * mention the guest, all ticked. Ticked ones are redacted with the erase, in one step; the
  * rest stay as they are. Matching is only a suggestion, so read each one before confirming.
+ * Phase 34 (policies 11–14): every other place staff type free text is searched too; there
+ * only the guest's words are replaced with "[redacted]", and a gift card purchaser is cleared.
  */
 export function EraseGuestPanel({
   mentionsUrl,
@@ -86,6 +105,13 @@ export function EraseGuestPanel({
       reason,
       redactEntryIds: picked.filter((key) => key.startsWith("LOG_ENTRY:")).map((key) => key.slice("LOG_ENTRY:".length)),
       redactNoteIds: picked.filter((key) => key.startsWith("NOTE:")).map((key) => key.slice("NOTE:".length)),
+      redactMentions: picked
+        .map((key) => {
+          const [kind, id] = key.split(":") as [MentionKind, string];
+
+          return { kind, id };
+        })
+        .filter((mention) => mention.kind !== "LOG_ENTRY" && mention.kind !== "NOTE"),
     });
 
     setPending(false);
@@ -117,7 +143,7 @@ export function EraseGuestPanel({
     <form onSubmit={handleSubmit} aria-label="Erase guest details" className="grid gap-3">
       <p className="text-sm">{description}</p>
       <section aria-label="Possible mentions" className="grid gap-2">
-        <h3 className="font-semibold">Possible mentions in the manager log and pre-shift notes</h3>
+        <h3 className="font-semibold">Possible mentions in notes, orders and schedules</h3>
         {loadError && <ApiErrorMessage error={loadError} />}
         {!preview && !loadError && <p className="text-sm text-neutral-600">Searching…</p>}
         {preview && preview.mentions.length === 0 && (
@@ -126,39 +152,34 @@ export function EraseGuestPanel({
         {preview && preview.mentions.length > 0 && (
           <>
             <FieldHint>
-              Ticked ones are redacted with the erase, for good. Untick anything that isn&apos;t about this guest.
+              Ticked ones are redacted with the erase, for good: log entries and pre-shift notes are emptied; elsewhere only
+              the guest&apos;s name, email or phone is replaced with [redacted]. Untick anything that isn&apos;t about this guest.
             </FieldHint>
-            <ul className="grid gap-2">
-              {preview.mentions.map((mention) => {
-                const key = `${mention.kind}:${mention.id}`;
-
-                return (
-                  <li key={key} className="rounded border border-neutral-200 bg-surface p-2" data-testid="guest-mention">
-                    <Checkbox
-                      checked={chosen.has(key)}
-                      onChange={(event) => toggle(key, event.target.checked)}
-                      label={
-                        <span>
-                          <span className="font-medium">
-                            {mention.kind === "LOG_ENTRY" ? mention.label : `Pre-shift note "${mention.label}"`}
-                          </span>{" "}
-                          <span className="text-neutral-600">
-                            {mention.locationName}, {mention.businessDate}
-                          </span>
-                          <span className="block text-neutral-800">{mention.excerpt}</span>
-                        </span>
-                      }
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+            {KIND_ORDER.filter((kind) => preview.mentions.some((mention) => mention.kind === kind)).map((kind) => (
+              <div key={kind} className="grid gap-2" data-testid={`guest-mentions-${kind}`}>
+                <h4 className="text-sm font-semibold">{KIND_HEADINGS[kind]}</h4>
+                <ul className="grid gap-2">
+                  {preview.mentions
+                    .filter((mention) => mention.kind === kind)
+                    .map((mention) => (
+                      <MentionRow key={`${mention.kind}:${mention.id}`} mention={mention} chosen={chosen} onToggle={toggle} />
+                    ))}
+                </ul>
+              </div>
+            ))}
           </>
         )}
-        {preview && preview.locationsNotSearched > 0 && (
+        {preview && preview.notSearched.length > 0 && (
           <p className="text-sm text-neutral-700">
-            {preview.locationsNotSearched === 1 ? "1 other location wasn't" : `${preview.locationsNotSearched} other locations weren't`}{" "}
-            searched: you can&apos;t redact the manager log there.
+            Not searched, because you can&apos;t see them:{" "}
+            {preview.notSearched
+              .map((entry) =>
+                entry.kind === "GIFT_CARD_PURCHASER"
+                  ? "gift card purchasers"
+                  : `${KIND_HEADINGS[entry.kind].toLowerCase()} at ${entry.locations === 1 ? "1 location" : `${entry.locations} locations`}`,
+              )
+              .join("; ")}
+            .
           </p>
         )}
       </section>
@@ -178,5 +199,34 @@ export function EraseGuestPanel({
         )}
       </div>
     </form>
+  );
+}
+
+function MentionRow({
+  mention,
+  chosen,
+  onToggle,
+}: {
+  mention: GuestMention;
+  chosen: ReadonlySet<string>;
+  onToggle: (key: string, on: boolean) => void;
+}) {
+  const key = `${mention.kind}:${mention.id}`;
+  const where = [mention.locationName, mention.businessDate].filter(Boolean).join(", ");
+
+  return (
+    <li className="rounded border border-neutral-200 bg-surface p-2" data-testid="guest-mention">
+      <Checkbox
+        checked={chosen.has(key)}
+        onChange={(event) => onToggle(key, event.target.checked)}
+        label={
+          <span>
+            <span className="font-medium">{mention.kind === "NOTE" ? `Pre-shift note "${mention.label}"` : mention.label}</span>{" "}
+            {where && <span className="text-neutral-600">{where}</span>}
+            <span className="block text-neutral-800">{mention.excerpt}</span>
+          </span>
+        }
+      />
+    </li>
   );
 }

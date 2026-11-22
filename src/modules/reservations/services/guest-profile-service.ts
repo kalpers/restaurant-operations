@@ -800,7 +800,8 @@ export async function mergeGuestProfiles(
 }
 
 /** Phase 33 (policy 2): how many log entries and notes an erase redacted with it. */
-export type ErasedMentions = { logEntriesRedacted: number; notesRedacted: number };
+/** Phase 33–34: what the erase-guest workflow redacted or cleared alongside the erase, for the audit row. */
+export type ErasedMentions = { logEntriesRedacted: number; notesRedacted: number; textRedacted?: number; ownNotesCleared?: number };
 
 function eraseReason(raw: string): string {
   const reason = raw.trim();

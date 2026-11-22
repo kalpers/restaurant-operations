@@ -197,10 +197,24 @@ test.describe("host seating", () => {
 
     const seated = card(page, first.tableNumber);
 
-    await seated.getByText("Move or combine").click();
-    await seated.getByLabel("Combine with").selectOption({ label: extra.tableNumber });
-    await seated.getByRole("button", { name: "Combine table" }).click();
-    await expect(card(page, extra.tableNumber)).toContainText("Occupied");
+    // Phase 34 (D15): the floor refreshes after seating (live board), and under `next dev` that
+    // can reset the panel between choosing the table and combining; choose and combine again
+    // until the extra table shows as occupied.
+    await expect(async () => {
+      if (((await card(page, extra.tableNumber).textContent()) ?? "").includes("Occupied")) {
+        return;
+      }
+
+      const combine = seated.getByLabel("Combine with");
+
+      if (!(await combine.isVisible())) {
+        await seated.getByText("Move or combine").click();
+      }
+
+      await combine.selectOption({ label: extra.tableNumber }, { timeout: 5_000 });
+      await seated.getByRole("button", { name: "Combine table" }).click({ timeout: 5_000 });
+      await expect(card(page, extra.tableNumber)).toContainText("Occupied", { timeout: 5_000 });
+    }).toPass({ timeout: 60_000 });
 
     // The panel stays open across the refresh.
     await card(page, first.tableNumber)

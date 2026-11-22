@@ -55,10 +55,14 @@ const EXPECTED_TABLES = [
   "public.employee_scheduling_preferences",
   "public.employee_status_history",
   "public.employees",
+  "public.free_text_redactions",
   "public.gift_card_entries",
+  "public.gift_card_escheatments",
   "public.gift_card_number_counters",
   "public.gift_card_programs",
+  "public.gift_card_purchasers",
   "public.gift_card_sales",
+  "public.gift_card_stock_batches",
   "public.gift_cards",
   "public.guest_loyalty_balances",
   "public.guest_loyalty_entries",
@@ -651,6 +655,37 @@ describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () =>
     expect(
       await query("SELECT tgname FROM pg_trigger WHERE tgname IN ('manager_log_categories_guard', 'pre_shift_notes_redaction_guard') ORDER BY tgname"),
     ).toEqual([{ tgname: "manager_log_categories_guard" }, { tgname: "pre_shift_notes_redaction_guard" }]);
+  });
+
+  it("upgrades a Phase 33 database in place: sold cards stay valid, the new records start empty", async () => {
+    // 0000-0077 are Phase 33 and earlier; 0078-0079 are Phase 34.
+    await upgradeFromMigrationIndex(77, async () => {
+      await query(`
+        INSERT INTO gift_cards (organization_id, card_number, code_hash, code_last_four, issued_location_id, issued_by_user_id, issued_at)
+        SELECT l.organization_id, 1, repeat('a', 64), 'WXYZ', l.id, u.id, now()
+        FROM locations l, users u WHERE l.location_code = 'UPGRADE' AND u.email = 'upgrade@example.test'
+      `);
+    });
+
+    expect(await query("SELECT status, code_source, stock_batch_id, issued_at IS NOT NULL AS issued FROM gift_cards")).toEqual([
+      { status: "ACTIVE", code_source: "GENERATED", stock_batch_id: null, issued: true },
+    ]);
+
+    for (const table of ["gift_card_stock_batches", "gift_card_purchasers", "gift_card_escheatments", "free_text_redactions"]) {
+      expect(await query(`SELECT * FROM ${table}`)).toEqual([]);
+    }
+
+    expect(await query("SELECT supplier_stock_required FROM gift_card_programs")).toEqual([]);
+    expect(
+      await query(
+        "SELECT tgname FROM pg_trigger WHERE tgname IN ('free_text_redactions_append_only_trigger', 'gift_card_purchasers_guard_trigger', 'gift_card_escheatments_append_only_trigger', 'gift_card_stock_batches_append_only_trigger') ORDER BY tgname",
+      ),
+    ).toEqual([
+      { tgname: "free_text_redactions_append_only_trigger" },
+      { tgname: "gift_card_escheatments_append_only_trigger" },
+      { tgname: "gift_card_purchasers_guard_trigger" },
+      { tgname: "gift_card_stock_batches_append_only_trigger" },
+    ]);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number, beforeUpgrade?: () => Promise<void>): Promise<void> {

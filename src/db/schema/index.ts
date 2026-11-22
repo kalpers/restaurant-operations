@@ -22,6 +22,7 @@ export * from "./online-booking";
 export * from "./orders";
 export * from "./organization";
 export * from "./price-periods";
+export * from "./privacy";
 export * from "./recipes";
 export * from "./reservations";
 export * from "./restaurant";

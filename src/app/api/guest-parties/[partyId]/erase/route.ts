@@ -2,7 +2,7 @@ import { getDatabase } from "@/db";
 import { requireApiActor, requireCurrentUser } from "@/modules/auth/guards";
 import { eraseGuestVisitSchema, guestPartyIdParamsSchema } from "@/modules/reservations/validators/reservation-validators";
 import { apiRoute, parseJsonBody, parseWith } from "@/shared/http/api-route";
-import { eraseGuestVisitWithMentions, redactableLocationIds } from "@/workflows/erase-guest/erase-guest";
+import { eraseGuestVisitWithMentions, eraseSearchScope } from "@/workflows/erase-guest/erase-guest";
 
 /**
  * Erase one unlinked visit's personal data (Phase 22, policy 17), with the log entries and
@@ -17,7 +17,7 @@ export const POST = apiRoute<{ partyId: string }>(
     const body = await parseJsonBody(request, eraseGuestVisitSchema);
 
     return {
-      body: await eraseGuestVisitWithMentions(getDatabase(), actor, partyId, body, redactableLocationIds(auth, actor)),
+      body: await eraseGuestVisitWithMentions(getDatabase(), actor, partyId, body, eraseSearchScope(auth, actor)),
     };
   },
 );

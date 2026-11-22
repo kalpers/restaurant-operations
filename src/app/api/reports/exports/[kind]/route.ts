@@ -1,6 +1,6 @@
 import { getDatabase } from "@/db";
 import { requireCurrentUser } from "@/modules/auth/guards";
-import { exportPayrollHours, exportSalesJournal } from "@/modules/reporting/services/export-service";
+import { exportHolderReport, exportPayrollHours, exportSalesJournal } from "@/modules/reporting/services/export-service";
 import {
   exportFileQuerySchema,
   exportKindParamsSchema,
@@ -21,7 +21,9 @@ export const GET = apiRoute<{ kind: string }>(
     const { fileName, csv } =
       kind === "journal"
         ? await exportSalesJournal(getDatabase(), auth, query)
-        : await exportPayrollHours(getDatabase(), auth, query);
+        : kind === "payroll"
+          ? await exportPayrollHours(getDatabase(), auth, query)
+          : await exportHolderReport(getDatabase(), auth, query);
 
     return {
       response: new Response(csv, {

@@ -1,4 +1,4 @@
-﻿import { asc, eq, sql } from "drizzle-orm";
+﻿import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/db";
@@ -226,7 +226,7 @@ describe("gift cards (Phase 31)", () => {
       const [soldAudit] = await database()
         .select()
         .from(auditEvents)
-        .where(eq(auditEvents.action, "settlements.gift-card-sold"))
+        .where(and(eq(auditEvents.action, "settlements.gift-card-sold"), eq(auditEvents.entityId, sold.card.id)))
         .orderBy(asc(auditEvents.occurredAt));
 
       expect(soldAudit!.after).toMatchObject({ giftNumber: sold.card.cardNumber, amount: "50.00", kind: "ISSUED" });

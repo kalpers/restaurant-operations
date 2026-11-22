@@ -229,6 +229,26 @@ export const mergeGuestProfilesSchema = z.object({
 const chosenMentions = {
   redactEntryIds: z.array(z.uuid()).max(500).default([]),
   redactNoteIds: z.array(z.uuid()).max(500).default([]),
+  /** Phase 34 (amendment 6): the other kinds of mention, by kind and row. */
+  redactMentions: z
+    .array(
+      z.object({
+        kind: z.enum([
+          "PARTY_REQUEST",
+          "RESERVATION_NOTE",
+          "WAITLIST_NOTE",
+          "SESSION_NOTE",
+          "TAKEOUT_NAME",
+          "ORDER_ITEM_INSTRUCTION",
+          "SHIFT_NOTE",
+          "ASSIGNMENT_NOTE",
+          "GIFT_CARD_PURCHASER",
+        ]),
+        id: z.uuid(),
+      }),
+    )
+    .max(500)
+    .default([]),
 };
 
 export const eraseGuestProfileSchema = z.object({ expectedVersion, reason: requiredText(200), ...chosenMentions });

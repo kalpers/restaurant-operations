@@ -23,7 +23,8 @@ export type GiftCardEntryKind =
   | "REFUNDED"
   | "REFUND_VOIDED"
   | "ADJUSTED"
-  | "CASHED_OUT";
+  | "CASHED_OUT"
+  | "ESCHEATED";
 
 export type GiftCardEntryInput = {
   kind: GiftCardEntryKind;
@@ -44,6 +45,11 @@ export function giftCardNotFound(): BusinessRuleError {
   return new BusinessRuleError("GIFT_CARD_NOT_FOUND", "No gift card has that code. Check it and try again.");
 }
 
+/** Phase 34 (amendment 9): a registered supplier card that hasn't been sold yet. */
+export function giftCardNotSold(): BusinessRuleError {
+  return new BusinessRuleError("GIFT_CARD_NOT_SOLD", "This card hasn't been sold yet. Sell it first.");
+}
+
 /** The organization's program, or the default (off) when none has been saved. */
 export async function readGiftCardProgram(executor: DatabaseExecutor, organizationId: string): Promise<GiftCardProgram> {
   const [row] = await executor.select().from(giftCardPrograms).where(eq(giftCardPrograms.organizationId, organizationId));
@@ -54,6 +60,7 @@ export async function readGiftCardProgram(executor: DatabaseExecutor, organizati
       enabled: false,
       maxBalance: "500.00",
       dormancyMonths: 36,
+      supplierStockRequired: false,
       enabledAt: null,
       updatedByUserId: null,
       createdAt: new Date(0),
@@ -117,6 +124,11 @@ export async function lockGiftCardByCode(transaction: DatabaseTransaction, actor
 }
 
 export function assertCardActive(card: GiftCardRow): void {
+  // Phase 34 (amendment 9): registered stock holds nothing until it is sold.
+  if (card.status === "STOCK") {
+    throw giftCardNotSold();
+  }
+
   if (card.status !== "ACTIVE") {
     throw new BusinessRuleError("GIFT_CARD_INACTIVE", `Gift card ${formatGiftCardNumber(card.cardNumber)} is inactive.`);
   }

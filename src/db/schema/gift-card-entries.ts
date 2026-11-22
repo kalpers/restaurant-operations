@@ -24,6 +24,8 @@ export const GIFT_CARD_ENTRY_KINDS = [
   "REFUND_VOIDED",
   "ADJUSTED",
   "CASHED_OUT",
+  // Phase 34 (policy 6): the balance reported and paid over to a state as unclaimed property.
+  "ESCHEATED",
 ] as const;
 
 export const giftCardEntries = pgTable(
@@ -85,14 +87,14 @@ export const giftCardEntries = pgTable(
     check(
       "gift_card_entries_kind_valid",
       sql`${table.kind} IN ('ISSUED', 'RELOADED', 'SALE_VOIDED', 'REDEEMED', 'REDEMPTION_VOIDED',
-        'REFUNDED', 'REFUND_VOIDED', 'ADJUSTED', 'CASHED_OUT')`,
+        'REFUNDED', 'REFUND_VOIDED', 'ADJUSTED', 'CASHED_OUT', 'ESCHEATED')`,
     ),
     check("gift_card_entries_amount_nonzero", sql`${table.amount} <> 0`),
     check("gift_card_entries_balance_non_negative", sql`${table.balanceAfter} >= 0`),
     check(
       "gift_card_entries_sign_valid",
       sql`(${table.kind} IN ('ISSUED', 'RELOADED', 'REDEMPTION_VOIDED', 'REFUNDED') AND ${table.amount} > 0)
-        OR (${table.kind} IN ('SALE_VOIDED', 'REDEEMED', 'REFUND_VOIDED', 'CASHED_OUT') AND ${table.amount} < 0)
+        OR (${table.kind} IN ('SALE_VOIDED', 'REDEEMED', 'REFUND_VOIDED', 'CASHED_OUT', 'ESCHEATED') AND ${table.amount} < 0)
         OR ${table.kind} = 'ADJUSTED'`,
     ),
     check(
@@ -104,7 +106,7 @@ export const giftCardEntries = pgTable(
     ),
     check(
       "gift_card_entries_reason",
-      sql`(${table.kind} NOT IN ('SALE_VOIDED', 'ADJUSTED', 'CASHED_OUT')
+      sql`(${table.kind} NOT IN ('SALE_VOIDED', 'ADJUSTED', 'CASHED_OUT', 'ESCHEATED')
           OR length(trim(coalesce(${table.reason}, ''))) > 0)
         AND (${table.reason} IS NULL OR ${table.reason} !~ '[0-9]{13,}')`,
     ),

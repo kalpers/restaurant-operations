@@ -27,6 +27,7 @@ import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
 import { seedDemoGiftCards } from "./demo-gift-cards";
 import { seedDemoBriefings } from "./demo-briefings";
 import { seedDemoFollowUps } from "./demo-follow-ups";
+import { seedDemoPhase34 } from "./demo-phase-34";
 import { seedDemoLoyalty, seedDemoRedemption } from "./demo-loyalty";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -335,6 +336,12 @@ async function main(): Promise<void> {
     for (const card of followUps.codes) {
       console.log(`  ${card.cardNumber}  ${card.code}  balance ${card.balance} (shown once, not stored)`);
     }
+
+    // Phase 34 (policy 17): card stock, purchaser details, an unclaimed report, and a guest
+    // named in a takeout check and a shift note for trying an erase.
+    const phase34 = await seedDemoPhase34(database, await mainOwnerActor("gift-cards.manage"));
+
+    console.log(`Demo Phase 34: ${phase34.join("; ")}.`);
   } finally {
     await closeDatabase();
   }

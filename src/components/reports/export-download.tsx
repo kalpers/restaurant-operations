@@ -14,7 +14,8 @@ import { useToast } from "@/components/ui/toast";
 // (an unbalanced day, open time entries, a range that isn't whole weeks) shows beside the form.
 
 type Props = {
-  kind: "journal" | "payroll";
+  /** Phase 34: `unclaimed` is the gift card holder report, as of one date. */
+  kind: "journal" | "payroll" | "unclaimed";
   label: string;
   locationId: string;
   allLocations: boolean;
@@ -37,7 +38,7 @@ export function ExportDownload({ kind, label, locationId, allLocations, defaultF
     setError(null);
 
     try {
-      const query = new URLSearchParams({ locationId: scope, from, to });
+      const query = new URLSearchParams({ locationId: scope, from: kind === "unclaimed" ? to : from, to });
       const response = await apiFetch(`/api/reports/exports/${kind}?${query.toString()}`);
 
       if (response.status === 401) {
@@ -71,10 +72,14 @@ export function ExportDownload({ kind, label, locationId, allLocations, defaultF
   return (
     <form onSubmit={download} aria-label={label} className="grid gap-3">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label={kind === "payroll" ? "First day (start of a work week)" : "From business date"}>
-          <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} required />
-        </Field>
-        <Field label={kind === "payroll" ? "Last day (end of a work week)" : "To business date"}>
+        {kind !== "unclaimed" ? (
+          <Field label={kind === "payroll" ? "First day (start of a work week)" : "From business date"}>
+            <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} required />
+          </Field>
+        ) : null}
+        <Field
+          label={kind === "payroll" ? "Last day (end of a work week)" : kind === "unclaimed" ? "As of business date" : "To business date"}
+        >
           <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} required />
         </Field>
         {allLocations ? (
