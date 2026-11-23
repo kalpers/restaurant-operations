@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import { checkSupplierCode } from "./gift-card-code";
 import { formatStockBatchNumber, MAX_STOCK_BATCH, parseStockList } from "./gift-card-stock";
 
+const KEY = "k".repeat(32);
+
 // Phase 34 (policies 7–8): reading a batch of supplier cards.
 
 describe("parsing a stock list", () => {
   it("reads bare codes and serial,code lines, skipping a header and blank lines", () => {
-    const result = parseStockList(["serial,code", "SN-001,ABCD-EFGH-1234", "", "  WXYZ5678QRST  ", '"SN-003";"MNOP 9876 KLMN"']);
+    const result = parseStockList(["serial,code", "SN-001,ABCD-EFGH-1234", "", "  WXYZ5678QRST  ", '"SN-003";"MNOP 9876 KLMN"'], KEY);
 
     expect(result.ok).toBe(true);
 
@@ -20,11 +22,11 @@ describe("parsing a stock list", () => {
       [4, null, "QRST"],
       [5, "SN-003", "KLMN"],
     ]);
-    expect(result.cards[0]!.codeHash).toBe((checkSupplierCode("ABCDEFGH1234") as { codeHash: string }).codeHash);
+    expect(result.cards[0]!.codeHash).toBe((checkSupplierCode("ABCDEFGH1234", KEY) as { codeHash: string }).codeHash);
   });
 
   it("reports every problem by line number and never the code", () => {
-    const result = parseStockList(["ABCDEFGH1234", "abcd-efgh-1234", "SHORT", "4111111111111111", "a,b,c", `${"9".repeat(13)},ZZZZ9999YYYY`]);
+    const result = parseStockList(["ABCDEFGH1234", "abcd-efgh-1234", "SHORT", "4111111111111111", "a,b,c", `${"9".repeat(13)},ZZZZ9999YYYY`], KEY);
 
     expect(result).toEqual({
       ok: false,
@@ -41,11 +43,11 @@ describe("parsing a stock list", () => {
   });
 
   it("refuses an empty list and more than the limit", () => {
-    expect(parseStockList(["", "  "])).toEqual({ ok: false, reason: "EMPTY" });
+    expect(parseStockList(["", "  "], KEY)).toEqual({ ok: false, reason: "EMPTY" });
 
     const many = Array.from({ length: MAX_STOCK_BATCH + 1 }, (_, index) => `CODE${String(index).padStart(6, "0")}AB`);
 
-    expect(parseStockList(many)).toEqual({ ok: false, reason: "TOO_MANY" });
+    expect(parseStockList(many, KEY)).toEqual({ ok: false, reason: "TOO_MANY" });
   });
 
   it("numbers batches as GCB-000012", () => {

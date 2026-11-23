@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import { getEnv } from "@/config/env";
 import type { Database } from "@/db";
 import { queueDueReminders } from "@/modules/reservations/services/guest-message-service";
+import { rekeyLegacyGiftCardCodes } from "@/modules/settlements/services/gift-card-rekey-service";
 import { notifyTimeBasedSignals } from "@/workflows/notify-time-based-signals/notify-time-based-signals";
 
 // Retention (Phase 16 policies 15-17). Purges only:
@@ -17,6 +18,9 @@ import { notifyTimeBasedSignals } from "@/workflows/notify-time-based-signals/no
 // Phase 22 (policies 14 and 18): the run also queues due reservation reminders, clears the
 // address and body of guest messages older than MESSAGE_RETENTION_DAYS (never one still
 // waiting to send), and deletes expired manage links and public throttle windows.
+// Phase 35 (policy 7): the run also moves gift card code hashes still in the plain SHA-256
+// form to the keyed form, so an environment where nobody ran `db:rekey-gift-cards` doesn't
+// keep them.
 
 export const MAINTENANCE_BATCH_SIZE = 1000;
 
@@ -45,6 +49,8 @@ export type MaintenanceResult =
       messagesErased: number;
       manageLinksDeleted: number;
       publicThrottlesDeleted: number;
+      /** Phase 35. */
+      giftCardCodesRekeyed: number;
     };
 
 export async function runMaintenance(
@@ -145,6 +151,8 @@ export async function runMaintenance(
           )`,
       );
 
+      const { rekeyed: giftCardCodesRekeyed } = await rekeyLegacyGiftCardCodes(database);
+
       const { notificationsCreated } =
         options.notify === false ? { notificationsCreated: 0 } : await notifyTimeBasedSignals(database, now);
       const remindersQueued = options.notify === false ? 0 : await queueDueReminders(database, now);
@@ -158,6 +166,7 @@ export async function runMaintenance(
         messagesErased,
         manageLinksDeleted,
         publicThrottlesDeleted,
+        giftCardCodesRekeyed,
       };
     } finally {
       await connection`SELECT pg_advisory_unlock(${MAINTENANCE_LOCK_KEY})`;

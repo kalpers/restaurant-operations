@@ -8,7 +8,8 @@ import { looksLikeCardNumber } from "./settlement-math";
 export const MAX_STOCK_BATCH = 1000;
 export const MAX_SERIAL_LENGTH = 40;
 
-export type StockLine = { line: number; serial: string | null; codeHash: string; lastFour: string };
+/** `codeHash` is the keyed hash; `legacyCodeHash` matches rows not yet re-keyed (Phase 35). */
+export type StockLine = { line: number; serial: string | null; codeHash: string; legacyCodeHash: string; lastFour: string };
 
 export type StockLineProblem =
   | "INVALID_CODE"
@@ -28,7 +29,7 @@ const HEADER = /^\s*(?:"?(?:serial|printed serial)"?\s*[,;\t]\s*)?"?(?:code|card
 const unquote = (value: string) => value.trim().replace(/^"(.*)"$/, "$1").trim();
 
 /** Reads the lines into cards, or every problem with its line number (1-based). */
-export function parseStockList(lines: readonly string[]): StockListResult {
+export function parseStockList(lines: readonly string[], key: string): StockListResult {
   const cards: StockLine[] = [];
   const problems: { line: number; problem: StockLineProblem }[] = [];
   const seen = new Map<string, number>();
@@ -58,7 +59,7 @@ export function parseStockList(lines: readonly string[]): StockListResult {
       return;
     }
 
-    const checked = checkSupplierCode(code);
+    const checked = checkSupplierCode(code, key);
 
     if (!checked.ok) {
       problems.push({ line, problem: checked.reason === "LOOKS_LIKE_CARD_NUMBER" ? "LOOKS_LIKE_CARD_NUMBER" : "INVALID_CODE" });
@@ -73,7 +74,7 @@ export function parseStockList(lines: readonly string[]): StockListResult {
     }
 
     seen.set(checked.codeHash, line);
-    cards.push({ line, serial, codeHash: checked.codeHash, lastFour: checked.lastFour });
+    cards.push({ line, serial, codeHash: checked.codeHash, legacyCodeHash: checked.legacyCodeHash, lastFour: checked.lastFour });
   });
 
   if (problems.length > 0) {

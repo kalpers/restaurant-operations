@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:rekey-gift-cards": "tsx scripts/rekey-gift-cards.ts",
     "db:reset": "tsx scripts/reset-db.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:demo": "tsx scripts/seed-demo.ts",

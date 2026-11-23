@@ -43,6 +43,7 @@ All are validated in `src/config/env.ts`. The app refuses to start sign-in witho
 | `MESSAGING_SMTP_URL`, `MESSAGING_FROM_EMAIL` | With `smtp`: the provider's `smtps://` URL (from the secret store; it holds a password) and the sending address. Any SMTP service works (SES, Azure Communication Services, SendGrid, Mailgun, Postmark). Set up SPF, DKIM and DMARC for the sending domain. |
 | `MESSAGING_TWILIO_ACCOUNT_SID`, `MESSAGING_TWILIO_AUTH_TOKEN`, `MESSAGING_TWILIO_FROM` | With `twilio`: the account, its token (secret store) and a sending number registered for business texting (US A2P 10DLC or toll-free verification). Keep Twilio's built-in STOP handling on. |
 | `MESSAGING_SUPPRESSION_KEY` | Required with a real provider: 32+ random characters from the secret store. **Never rotate it**: the opt-out list is keyed with it. |
+| `GIFT_CARD_CODE_KEY` | Phase 35: **required**; the server refuses to start without it. 32+ random characters from the secret store. **Never rotate it and back it up**: gift card codes are stored only as hashes keyed with it, so losing it makes every card unusable. After upgrading a database from before Phase 35, run `npm run db:rekey-gift-cards` (the hourly maintenance run also does it). |
 | `MESSAGE_DISPATCH_INTERVAL_MS`, `MESSAGE_MAX_ATTEMPTS`, `MESSAGE_RETENTION_DAYS` | Optional; defaults 2000, 8 and 90. |
 | `PUBLIC_BOOKING_IP_THRESHOLD`, `PUBLIC_BOOKING_CONTACT_THRESHOLD` | Optional; public booking attempts per hour (30 per IP behind `AUTH_CLIENT_IP_HEADER`, 5 per contact). |
 
@@ -78,7 +79,7 @@ These are code changes. They belong in the deployment phase's plan and need the 
    CREATE EXTENSION IF NOT EXISTS btree_gist;
    ```
 3. **Create the database and app user.** Use a dedicated `restaurant_app` login that owns `restaurant_ops`, not the provider's admin account.
-4. **Store secrets** (`NEXTAUTH_SECRET`, the DB password or the whole `DATABASE_URL`) in the provider's secret store, and inject them into the process environment at start.
+4. **Store secrets** (`NEXTAUTH_SECRET`, `GIFT_CARD_CODE_KEY`, the DB password or the whole `DATABASE_URL`) in the provider's secret store, and inject them into the process environment at start.
 5. **Build:** `npm ci` then `npm run build` on a machine with Node 26 and internet access. That is either the app host or CI, shipping the built `.next/` with `node_modules`.
 6. **Migrate:** `npm run db:migrate` against the cloud DB. Review the pending migrations first; never use schema push.
 7. **Seed:** `npm run db:seed`. It is idempotent, keyed on `seed_runs`. **Never** run `db:seed:demo` or `db:seed:validation`; both refuse a non-loopback database anyway. `db:reset` also refuses non-loopback hosts.

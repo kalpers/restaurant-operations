@@ -116,6 +116,12 @@ const envObject = z.object({
     emptyAsUnset,
     z.string({ error: "must be a string" }).min(32, { error: "must be at least 32 characters" }).optional(),
   ),
+  // Phase 35: keys gift card code hashes (HMAC-SHA256). Never rotate it and back it up:
+  // without it no stored code can be matched. Required in production at server start.
+  GIFT_CARD_CODE_KEY: z.preprocess(
+    emptyAsUnset,
+    z.string({ error: "must be a string" }).min(32, { error: "must be at least 32 characters" }).optional(),
+  ),
   // Phase 22 public booking throttles (policy 10), per hour. The IP count applies only behind
   // AUTH_CLIENT_IP_HEADER; the contact count always applies.
   PUBLIC_BOOKING_IP_THRESHOLD: wholeNumber({ min: 1, max: 10_000, default: 30 }),

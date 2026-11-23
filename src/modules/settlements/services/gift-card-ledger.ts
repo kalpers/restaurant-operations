@@ -1,4 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql, type SQL } from "drizzle-orm";
+
+import { getGiftCardCodeKey } from "@/config/gift-card-env";
 
 import { giftCardEntries, giftCardPrograms, giftCards } from "@/db/schema";
 import type { DatabaseExecutor, DatabaseTransaction } from "@/db/transactions/transaction-context";
@@ -7,7 +9,7 @@ import { readOrderLocation } from "@/modules/orders/repositories/order-repositor
 import { addDecimals, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
-import { canonicalGiftCardCode, formatGiftCardNumber, hashGiftCardCode } from "../rules/gift-card-code";
+import { canonicalGiftCardCode, formatGiftCardNumber, giftCardCodeHashes } from "../rules/gift-card-code";
 import { assertCardCovers } from "../rules/gift-card-math";
 
 // Phase 31 (policy 7, amendment 3): the one place gift card entries are written. Every entry
@@ -70,6 +72,26 @@ export async function readGiftCardProgram(executor: DatabaseExecutor, organizati
   );
 }
 
+/** Phase 35: both stored forms of one code's hash. */
+export type GiftCardCodeHashes = { keyed: string; legacy: string };
+
+/** Phase 35 (policy 3): a canonical code's hashes under the configured key. */
+export function codeHashesOf(canonical: string): GiftCardCodeHashes {
+  return giftCardCodeHashes(canonical, getGiftCardCodeKey());
+}
+
+/**
+ * Phase 35 (policy 5): the one condition that matches a card by its code, in either stored
+ * form: keyed, or the plain SHA-256 of a row not yet re-keyed. Each form only matches rows
+ * marked with its scheme.
+ */
+export function codeHashMatches(hashes: GiftCardCodeHashes): SQL {
+  return or(
+    and(eq(giftCards.codeHash, hashes.keyed), eq(giftCards.codeHashScheme, "HMAC_SHA256")),
+    and(eq(giftCards.codeHash, hashes.legacy), eq(giftCards.codeHashScheme, "SHA256")),
+  )!;
+}
+
 /** The card's id for a typed or scanned code, or null. Never logs or returns the code. */
 export async function findGiftCardIdByCode(
   executor: DatabaseExecutor,
@@ -85,16 +107,19 @@ export async function findGiftCardIdByCode(
   const [row] = await executor
     .select({ id: giftCards.id })
     .from(giftCards)
-    .where(and(eq(giftCards.codeHash, hashGiftCardCode(normalized)), eq(giftCards.organizationId, organizationId)));
+    .where(and(codeHashMatches(codeHashesOf(normalized)), eq(giftCards.organizationId, organizationId)));
 
   return row?.id ?? null;
 }
 
-/** The SHA-256 of a code for idempotency fingerprints (amendment 1); null if it can't be one. */
+/**
+ * The keyed hash of a code for idempotency fingerprints (amendment 1; Phase 35 policy 8);
+ * null if it can't be one.
+ */
 export function codeFingerprint(code: string | null | undefined): string | null {
   const normalized = code ? canonicalGiftCardCode(code) : null;
 
-  return normalized ? hashGiftCardCode(normalized) : null;
+  return normalized ? codeHashesOf(normalized).keyed : null;
 }
 
 /** Locks a card of the actor's organization (any location: cards are organization-wide). */

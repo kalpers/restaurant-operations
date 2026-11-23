@@ -688,6 +688,36 @@ describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () =>
     ]);
   });
 
+  it("upgrades a Phase 34 database in place: existing code hashes are marked SHA256 and new rows must name a scheme", async () => {
+    // 0000-0079 are Phase 34 and earlier; 0080 is Phase 35.
+    await upgradeFromMigrationIndex(79, async () => {
+      await query(`
+        INSERT INTO gift_cards (organization_id, card_number, code_hash, code_last_four, issued_location_id, issued_by_user_id, issued_at)
+        SELECT l.organization_id, 1, repeat('b', 64), 'WXYZ', l.id, u.id, now()
+        FROM locations l, users u WHERE l.location_code = 'UPGRADE' AND u.email = 'upgrade@example.test'
+      `);
+    });
+
+    expect(await query("SELECT code_hash, code_hash_scheme FROM gift_cards")).toEqual([
+      { code_hash: "b".repeat(64), code_hash_scheme: "SHA256" },
+    ]);
+    expect(
+      await query(
+        "SELECT column_default FROM information_schema.columns WHERE table_name = 'gift_cards' AND column_name = 'code_hash_scheme'",
+      ),
+    ).toEqual([{ column_default: null }]);
+
+    for (const scheme of [null, "'PLAIN'"]) {
+      await expect(
+        query(`
+          INSERT INTO gift_cards (organization_id, card_number, code_hash, code_last_four, issued_location_id, issued_by_user_id, issued_at${scheme ? ", code_hash_scheme" : ""})
+          SELECT l.organization_id, 2, repeat('c', 64), 'WXYZ', l.id, u.id, now()${scheme ? `, ${scheme}` : ""}
+          FROM locations l, users u WHERE l.location_code = 'UPGRADE' AND u.email = 'upgrade@example.test'
+        `),
+      ).rejects.toThrow(scheme ? /gift_cards_code_hash_scheme_valid/ : /code_hash_scheme/);
+    }
+  });
+
   async function upgradeFromMigrationIndex(lastIndex: number, beforeUpgrade?: () => Promise<void>): Promise<void> {
     // Apply only the migrations Phase 5 shipped, from a copy with a shortened journal.
     const oldFolder = mkdtempSync(path.join(tmpdir(), "old-migrations-"));

@@ -23,7 +23,7 @@ import { locations, organizations } from "./organization";
 
 // Phase 31 gift cards, owned by Settlements (policy 3). The restaurant's own stored-value
 // cards, record only: nothing here charges a card or contacts a provider. A card's code is a
-// bearer secret, so only its SHA-256 hash and last four characters are kept (policy 5). The
+// bearer secret, so only its hash (keyed since Phase 35) and last four characters are kept. The
 // ledger (`gift_card_entries`, guarded by migration 0073) lives in gift-card-entries.ts so
 // that settlements.ts can reference cards without an import cycle.
 
@@ -142,8 +142,13 @@ export const giftCards = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "restrict" }),
     cardNumber: integer("card_number").notNull(),
-    /** SHA-256 (hex) of the normalized code. The code itself is never stored. */
+    /**
+     * Phase 35: HMAC-SHA256 (hex, `GIFT_CARD_CODE_KEY`) of the code's SHA-256, or, until the
+     * row is re-keyed, that SHA-256 alone. The code itself is never stored.
+     */
     codeHash: text("code_hash").notNull(),
+    /** Phase 35 (policy 4): `HMAC_SHA256` (keyed) or `SHA256` (not yet re-keyed). No default. */
+    codeHashScheme: text("code_hash_scheme").notNull(),
     /** The code's last four characters, for staff to tell cards apart. Never audited. */
     codeLastFour: text("code_last_four").notNull(),
     /** Phase 33 (policy 13): `GENERATED` by the app or printed by a `SUPPLIER`. */
@@ -182,6 +187,7 @@ export const giftCards = pgTable(
     check("gift_cards_number_positive", sql`${table.cardNumber} > 0`),
     check("gift_cards_code_hash_valid", sql`${table.codeHash} ~ '^[0-9a-f]{64}$'`),
     check("gift_cards_code_last_four_valid", sql`${table.codeLastFour} ~ '^[0-9A-Z]{4}$'`),
+    check("gift_cards_code_hash_scheme_valid", sql`${table.codeHashScheme} IN ('SHA256', 'HMAC_SHA256')`),
     check("gift_cards_code_source_valid", sql`${table.codeSource} IN ('GENERATED', 'SUPPLIER')`),
     check("gift_cards_status_valid", sql`${table.status} IN ('ACTIVE', 'INACTIVE', 'STOCK')`),
     check(

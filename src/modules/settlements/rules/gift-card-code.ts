@@ -1,10 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 
 import { looksLikeCardNumber } from "./settlement-math";
 
 // Phase 31 (policy 5): gift card codes. A code is 16 Crockford base32 characters (80 random
 // bits) shown as four groups, e.g. `7KQ2-M9XD-4TPA-W3HR`. It works like cash, so only its
-// SHA-256 and last four characters are kept. Pure apart from the random source.
+// keyed hash and last four characters are kept. Pure apart from the random source; the key
+// is always passed in (Phase 35: read only in src/config/gift-card-env.ts).
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH = 16;
@@ -12,6 +13,7 @@ const CODE_LENGTH = 16;
 export type IssuedCode = {
   /** Shown once, never stored. */
   code: string;
+  /** The keyed hash (Phase 35). */
   codeHash: string;
   lastFour: string;
 };
@@ -79,11 +81,14 @@ export function canonicalGiftCardCode(input: string): string | null {
 }
 
 export type SupplierCodeCheck =
-  | { ok: true; codeHash: string; lastFour: string }
+  | { ok: true; codeHash: string; legacyCodeHash: string; lastFour: string }
   | { ok: false; reason: "INVALID" | "LOOKS_LIKE_CARD_NUMBER" };
 
-/** Phase 33 (policy 13): whether a supplier's printed code can be used, and its hash. */
-export function checkSupplierCode(input: string): SupplierCodeCheck {
+/**
+ * Phase 33 (policy 13): whether a supplier's printed code can be used, with its keyed hash
+ * and (Phase 35, for rows not yet re-keyed) its legacy hash.
+ */
+export function checkSupplierCode(input: string, key: string): SupplierCodeCheck {
   const cleaned = input.toUpperCase().replace(/[\s-]/g, "");
 
   if (/[0-9]{13,}/.test(cleaned)) {
@@ -96,20 +101,46 @@ export function checkSupplierCode(input: string): SupplierCodeCheck {
     return { ok: false, reason: "INVALID" };
   }
 
-  return { ok: true, codeHash: hashGiftCardCode(canonical), lastFour: canonical.slice(-4) };
+  const hashes = giftCardCodeHashes(canonical, key);
+
+  return { ok: true, codeHash: hashes.keyed, legacyCodeHash: hashes.legacy, lastFour: canonical.slice(-4) };
 }
 
-export function hashGiftCardCode(normalized: string): string {
+/** Phase 35 (policy 4): which form a stored `code_hash` is in. */
+export type GiftCardCodeHashScheme = "SHA256" | "HMAC_SHA256";
+
+/** The form before Phase 35: an unkeyed SHA-256. Only for matching rows not yet re-keyed. */
+export function legacyGiftCardCodeHash(normalized: string): string {
   return createHash("sha256").update(`gift-card:${normalized}`).digest("hex");
 }
 
-/** A new random code with its hash and last four. Never 13 digits in a row. */
-export function generateGiftCardCode(random: (size: number) => Buffer = randomBytes): IssuedCode {
+/**
+ * Phase 35 (policy 3): the keyed form of a legacy hash. Wrapping the old digest, rather than
+ * hashing the code afresh, is what lets a stored row be re-keyed without its code.
+ */
+export function rekeyLegacyHash(legacyHash: string, key: string): string {
+  return createHmac("sha256", key).update(legacyHash).digest("hex");
+}
+
+/** Phase 35 (policy 3): the stored hash of a code, HMAC-SHA256 with the server key. */
+export function keyedGiftCardCodeHash(normalized: string, key: string): string {
+  return rekeyLegacyHash(legacyGiftCardCodeHash(normalized), key);
+}
+
+/** Both forms of a code's hash, for lookups that must also find rows not yet re-keyed. */
+export function giftCardCodeHashes(normalized: string, key: string): { keyed: string; legacy: string } {
+  const legacy = legacyGiftCardCodeHash(normalized);
+
+  return { keyed: rekeyLegacyHash(legacy, key), legacy };
+}
+
+/** A new random code with its keyed hash and last four. Never 13 digits in a row. */
+export function generateGiftCardCode(key: string, random: (size: number) => Buffer = randomBytes): IssuedCode {
   for (;;) {
     const normalized = encode(random(10));
 
     if (!looksLikeCardNumber(normalized)) {
-      return { code: formatGiftCardCode(normalized), codeHash: hashGiftCardCode(normalized), lastFour: normalized.slice(-4) };
+      return { code: formatGiftCardCode(normalized), codeHash: keyedGiftCardCodeHash(normalized, key), lastFour: normalized.slice(-4) };
     }
   }
 }

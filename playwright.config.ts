@@ -59,6 +59,8 @@ export default defineConfig({
       TEST_DATABASE_URL: requireTestDatabaseUrl(),
       // Generated per run, so tests never depend on a developer's or a known secret.
       NEXTAUTH_SECRET: randomBytes(32).toString("base64url"),
+      // Phase 35: CI mode is a production build, which needs the gift card code key.
+      GIFT_CARD_CODE_KEY: randomBytes(32).toString("base64url"),
       EMPLOYEE_DOCUMENT_STORAGE_PATH: E2E_DOCUMENT_STORAGE_PATH,
       // Phase 22: guest messages are captured to files, never sent. CI mode serves a
       // production build (`next start`), which allows capture only with this switch.

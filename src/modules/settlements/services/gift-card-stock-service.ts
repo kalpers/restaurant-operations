@@ -1,5 +1,6 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
+import { getGiftCardCodeKey } from "@/config/gift-card-env";
 import type { Database } from "@/db";
 import { giftCardNumberCounters, giftCardStockBatches, giftCards } from "@/db/schema";
 import { readConstraintName } from "@/db/helpers/database-errors";
@@ -82,7 +83,7 @@ export async function registerStockBatch(
     throw new BusinessRuleError("STOCK_LIST_TOO_LONG", `A batch is up to ${MAX_STOCK_BATCH} cards.`);
   }
 
-  const parsed = parseStockList(input.lines);
+  const parsed = parseStockList(input.lines, getGiftCardCodeKey());
 
   if (!parsed.ok) {
     if (parsed.reason === "LINES") {
@@ -115,19 +116,32 @@ export async function registerStockBatch(
             throw new BusinessRuleError("GIFT_CARDS_NOT_ENABLED", "Gift cards aren't turned on. A manager can turn them on.");
           }
 
+          // Phase 35 (policy 5): a code is taken in either stored form.
           const existing = await transaction
             .select({ codeHash: giftCards.codeHash })
             .from(giftCards)
-            .where(inArray(giftCards.codeHash, cards.map((card) => card.codeHash)));
+            .where(
+              or(
+                and(
+                  eq(giftCards.codeHashScheme, "HMAC_SHA256"),
+                  inArray(giftCards.codeHash, cards.map((card) => card.codeHash)),
+                ),
+                and(
+                  eq(giftCards.codeHashScheme, "SHA256"),
+                  inArray(giftCards.codeHash, cards.map((card) => card.legacyCodeHash)),
+                ),
+              ),
+            );
 
           if (existing.length > 0) {
             const taken = new Set(existing.map((row) => row.codeHash));
+            const takenLines = cards.filter((card) => taken.has(card.codeHash) || taken.has(card.legacyCodeHash)).map((card) => card.line);
 
             throw new ConflictError(
               "GIFT_CARD_CODE_IN_USE",
-              `Nothing was registered: line${existing.length === 1 ? "" : "s"} ${describeLines(
-                cards.filter((card) => taken.has(card.codeHash)).map((card) => card.line),
-              )} ${existing.length === 1 ? "is" : "are"} already on a gift card.`,
+              `Nothing was registered: line${takenLines.length === 1 ? "" : "s"} ${describeLines(takenLines)} ${
+                takenLines.length === 1 ? "is" : "are"
+              } already on a gift card.`,
             );
           }
 
@@ -166,6 +180,7 @@ export async function registerStockBatch(
                 organizationId: actor.organizationId,
                 cardNumber: firstNumber + start + offset,
                 codeHash: card.codeHash,
+                codeHashScheme: "HMAC_SHA256",
                 codeLastFour: card.lastFour,
                 codeSource: "SUPPLIER",
                 status: "STOCK",

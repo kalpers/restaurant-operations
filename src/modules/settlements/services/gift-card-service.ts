@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
-
 import { and, asc, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
 
+import { getGiftCardCodeKey } from "@/config/gift-card-env";
 import type { Database } from "@/db";
 import { giftCardEntries, giftCardNumberCounters, giftCardPrograms, giftCardSales, giftCards } from "@/db/schema";
 import { withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
@@ -13,7 +12,13 @@ import { compareDecimals, subtractDecimals, toScale } from "@/shared/decimal/dec
 import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors/app-error";
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
-import { checkSupplierCode, formatGiftCardNumber, generateGiftCardCode, parseGiftCardNumber } from "../rules/gift-card-code";
+import {
+  checkSupplierCode,
+  formatGiftCardNumber,
+  generateGiftCardCode,
+  keyedGiftCardCodeHash,
+  parseGiftCardNumber,
+} from "../rules/gift-card-code";
 import {
   assertAdjustmentWithinLimits,
   assertCanCashOut,
@@ -29,6 +34,7 @@ import { resolveCashDrawerSession } from "./drawer-service";
 import {
   assertCardActive,
   codeFingerprint,
+  codeHashMatches,
   findGiftCardIdByCode,
   giftCardNotFound,
   giftCardNotSold,
@@ -358,7 +364,7 @@ export async function sellGiftCard(
         let kind: "ISSUED" | "RELOADED";
         let fromStock = false;
         // Phase 34 (policy 9): a supplier code may be a card registered as stock.
-        const stocked = supplier ? await lockCardByHash(transaction, actor, supplier.codeHash) : null;
+        const stocked = supplier ? await lockCardByHash(transaction, actor, supplier) : null;
 
         if (supplier && !stocked && program.supplierStockRequired) {
           throw notRegisteredStock();
@@ -377,6 +383,9 @@ export async function sellGiftCard(
             .update(giftCards)
             .set({
               status: "ACTIVE",
+              // Phase 35: a stock card still in the legacy form is keyed now its code is known.
+              codeHash: supplier!.codeHash,
+              codeHashScheme: "HMAC_SHA256",
               issuedLocationId: actor.locationId,
               issuedByUserId: actor.userId,
               issuedAt: now,
@@ -400,11 +409,11 @@ export async function sellGiftCard(
             .set({ lastNumber: sql`${giftCardNumberCounters.lastNumber} + 1` })
             .where(eq(giftCardNumberCounters.organizationId, actor.organizationId))
             .returning({ lastNumber: giftCardNumberCounters.lastNumber });
-          const generated = supplier ? null : generateGiftCardCode();
+          const generated = supplier ? null : generateGiftCardCode(getGiftCardCodeKey());
           const issued = supplier ?? generated!;
 
           if (supplier) {
-            await assertCodeUnused(transaction, supplier.codeHash);
+            await assertCodeUnused(transaction, supplier);
           }
 
           const [created] = await transaction
@@ -413,6 +422,7 @@ export async function sellGiftCard(
               organizationId: actor.organizationId,
               cardNumber: counter!.lastNumber,
               codeHash: issued.codeHash,
+              codeHashScheme: "HMAC_SHA256",
               codeLastFour: issued.lastFour,
               codeSource: supplier ? "SUPPLIER" : "GENERATED",
               issuedLocationId: actor.locationId,
@@ -898,14 +908,14 @@ export async function replaceGiftCardCode(
       throw giftCardNotSold();
     }
 
-    const generated = supplier ? null : generateGiftCardCode();
+    const generated = supplier ? null : generateGiftCardCode(getGiftCardCodeKey());
     const issued = supplier ?? generated!;
     const now = new Date();
 
     if (supplier) {
       // Phase 34 (policy 9): the new code may come from an unsold stock card, which gives it up
       // and is deactivated; with the stock setting on, it has to.
-      const stocked = await lockCardByHash(transaction, actor, supplier.codeHash);
+      const stocked = await lockCardByHash(transaction, actor, supplier);
       const program = await readGiftCardProgram(transaction, actor.organizationId);
 
       if (stocked && stocked.status !== "STOCK") {
@@ -921,6 +931,7 @@ export async function replaceGiftCardCode(
           .update(giftCards)
           .set({
             codeHash: retiredCodeHash(stocked.id),
+            codeHashScheme: "HMAC_SHA256",
             status: "INACTIVE",
             statusReason: `Code moved to ${formatGiftCardNumber(card.cardNumber)}`,
             updatedAt: now,
@@ -934,6 +945,7 @@ export async function replaceGiftCardCode(
       .update(giftCards)
       .set({
         codeHash: issued.codeHash,
+        codeHashScheme: "HMAC_SHA256",
         codeLastFour: issued.lastFour,
         codeSource: supplier ? "SUPPLIER" : "GENERATED",
         codeReplacedAt: now,
@@ -956,9 +968,11 @@ export async function replaceGiftCardCode(
 
 // ------------------------------------------------------------- Supplier codes (Phase 33)
 
-/** Policy 13: a usable supplier code's hash and last four, or a refusal that says why. */
-function supplierCodeOrRefuse(code: string): { codeHash: string; lastFour: string } {
-  const checked = checkSupplierCode(code);
+type SupplierCode = { codeHash: string; legacyCodeHash: string; lastFour: string };
+
+/** Policy 13: a usable supplier code's hashes and last four, or a refusal that says why. */
+function supplierCodeOrRefuse(code: string): SupplierCode {
+  const checked = checkSupplierCode(code, getGiftCardCodeKey());
 
   if (!checked.ok) {
     throw checked.reason === "LOOKS_LIKE_CARD_NUMBER"
@@ -969,15 +983,19 @@ function supplierCodeOrRefuse(code: string): { codeHash: string; lastFour: strin
       : new BusinessRuleError("INVALID_SUPPLIER_CODE", "A printed code is 8 to 24 letters and digits.");
   }
 
-  return { codeHash: checked.codeHash, lastFour: checked.lastFour };
+  return { codeHash: checked.codeHash, legacyCodeHash: checked.legacyCodeHash, lastFour: checked.lastFour };
 }
 
 /**
  * Phase 34 (policy 9): the card that already holds a code, locked, or null when none does. A
  * code on another organization's card is refused as in use, like any taken code.
  */
-async function lockCardByHash(transaction: DatabaseTransaction, actor: Actor, codeHash: string): Promise<GiftCardRow | null> {
-  const [row] = await transaction.select().from(giftCards).where(eq(giftCards.codeHash, codeHash)).for("update");
+async function lockCardByHash(transaction: DatabaseTransaction, actor: Actor, code: SupplierCode): Promise<GiftCardRow | null> {
+  const [row] = await transaction
+    .select()
+    .from(giftCards)
+    .where(codeHashMatches({ keyed: code.codeHash, legacy: code.legacyCodeHash }))
+    .for("update");
 
   if (row && row.organizationId !== actor.organizationId) {
     throw new ConflictError("GIFT_CARD_CODE_IN_USE", "That code is already on another gift card.");
@@ -995,12 +1013,16 @@ function notRegisteredStock(): BusinessRuleError {
 
 /** A code no person can type: what an unsold stock card keeps after giving its code away. */
 function retiredCodeHash(cardId: string): string {
-  return createHash("sha256").update(`retired-gift-card:${cardId}`).digest("hex");
+  return keyedGiftCardCodeHash(`retired-gift-card:${cardId}`, getGiftCardCodeKey());
 }
 
 /** Policy 13: a code already on a card (any organization's) can't be used again. */
-async function assertCodeUnused(executor: DatabaseExecutor, codeHash: string): Promise<void> {
-  const [existing] = await executor.select({ id: giftCards.id }).from(giftCards).where(eq(giftCards.codeHash, codeHash)).limit(1);
+async function assertCodeUnused(executor: DatabaseExecutor, code: SupplierCode): Promise<void> {
+  const [existing] = await executor
+    .select({ id: giftCards.id })
+    .from(giftCards)
+    .where(codeHashMatches({ keyed: code.codeHash, legacy: code.legacyCodeHash }))
+    .limit(1);
 
   if (existing) {
     throw new ConflictError("GIFT_CARD_CODE_IN_USE", "That code is already on another gift card.");

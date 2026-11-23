@@ -703,6 +703,13 @@ export const AUDIT_ACTIONS = {
     scope: "ORGANIZATION",
     fields: ["giftNumber", "reason", "codeSource"],
   },
+  // Phase 35 (policy 6): stored code hashes moved to the keyed form. A count only.
+  "settlements.gift-card-codes-rekeyed": {
+    category: "SYSTEM",
+    entityType: "gift_card",
+    scope: "ORGANIZATION",
+    fields: ["cardsRekeyed"],
+  },
   // Phase 34: card stock (policies 7–10), purchaser details (policy 4: field names only, never
   // values) and balances reported as unclaimed (policy 6). Never a code or its last four.
   "settlements.gift-card-stock-registered": {

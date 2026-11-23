@@ -9,10 +9,13 @@
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { getGiftCardCodeKey } = await import("./config/gift-card-env");
     const { startOutboxProcessor } = await import("./infrastructure/outbox/outbox-runner");
     const { startMaintenanceRunner } = await import("./infrastructure/maintenance/maintenance-runner");
     const { startMessageDispatcher } = await import("./infrastructure/messaging/message-dispatcher");
 
+    // Phase 35 (policy 2): production refuses to start without the gift card code key.
+    getGiftCardCodeKey();
     startOutboxProcessor();
     startMaintenanceRunner();
     startMessageDispatcher();

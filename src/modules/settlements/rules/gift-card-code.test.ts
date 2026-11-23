@@ -1,3 +1,5 @@
+import { createHash, createHmac } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,19 +7,24 @@ import {
   checkSupplierCode,
   formatGiftCardNumber,
   generateGiftCardCode,
-  hashGiftCardCode,
+  giftCardCodeHashes,
+  keyedGiftCardCodeHash,
+  legacyGiftCardCodeHash,
   normalizeGiftCardCode,
   parseGiftCardNumber,
+  rekeyLegacyHash,
 } from "./gift-card-code";
 import { looksLikeCardNumber } from "./settlement-math";
 
+const KEY = "k".repeat(32);
+
 describe("gift card codes", () => {
-  it("makes 16 Crockford characters in four groups, with the hash of the normalized code", () => {
-    const issued = generateGiftCardCode();
+  it("makes 16 Crockford characters in four groups, with the keyed hash of the normalized code", () => {
+    const issued = generateGiftCardCode(KEY);
 
     expect(issued.code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/);
     expect(issued.codeHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(issued.codeHash).toBe(hashGiftCardCode(normalizeGiftCardCode(issued.code)!));
+    expect(issued.codeHash).toBe(keyedGiftCardCodeHash(normalizeGiftCardCode(issued.code)!, KEY));
     expect(issued.lastFour).toBe(issued.code.slice(-4));
   });
 
@@ -25,7 +32,7 @@ describe("gift card codes", () => {
     let calls = 0;
     // All-zero bytes encode to sixteen "0" characters, which would look like a card number.
     const random = (size: number) => (calls++ === 0 ? Buffer.alloc(size, 0) : Buffer.alloc(size, 0xff));
-    const issued = generateGiftCardCode(random);
+    const issued = generateGiftCardCode(KEY, random);
 
     expect(calls).toBe(2);
     expect(looksLikeCardNumber(issued.code.replace(/-/g, ""))).toBe(false);
@@ -33,7 +40,7 @@ describe("gift card codes", () => {
   });
 
   it("gives distinct codes", () => {
-    const codes = new Set(Array.from({ length: 200 }, () => generateGiftCardCode().code));
+    const codes = new Set(Array.from({ length: 200 }, () => generateGiftCardCode(KEY).code));
 
     expect(codes.size).toBe(200);
   });
@@ -70,23 +77,50 @@ describe("supplier codes", () => {
   });
 
   it("refuses codes that are too short or long, or hold other characters", () => {
-    expect(checkSupplierCode("ABC1234")).toEqual({ ok: false, reason: "INVALID" });
-    expect(checkSupplierCode("A".repeat(25))).toEqual({ ok: false, reason: "INVALID" });
-    expect(checkSupplierCode("ABCD_1234")).toEqual({ ok: false, reason: "INVALID" });
+    expect(checkSupplierCode("ABC1234", KEY)).toEqual({ ok: false, reason: "INVALID" });
+    expect(checkSupplierCode("A".repeat(25), KEY)).toEqual({ ok: false, reason: "INVALID" });
+    expect(checkSupplierCode("ABCD_1234", KEY)).toEqual({ ok: false, reason: "INVALID" });
     expect(canonicalGiftCardCode("short")).toBeNull();
   });
 
   it("refuses 13 or more digits in a row, which could be a payment card", () => {
-    expect(checkSupplierCode("4111 1111 1111 1111")).toEqual({ ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" });
-    expect(checkSupplierCode("GC1234567890123")).toEqual({ ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" });
+    expect(checkSupplierCode("4111 1111 1111 1111", KEY)).toEqual({ ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" });
+    expect(checkSupplierCode("GC1234567890123", KEY)).toEqual({ ok: false, reason: "LOOKS_LIKE_CARD_NUMBER" });
     expect(canonicalGiftCardCode("4111111111111111")).toBeNull();
   });
 
   it("stores the same hash however the code is typed, and its last four", () => {
-    const typed = checkSupplierCode("demo-prnt-2026");
-    const again = checkSupplierCode("DEMO PRNT 2026");
+    const typed = checkSupplierCode("demo-prnt-2026", KEY);
+    const again = checkSupplierCode("DEMO PRNT 2026", KEY);
 
     expect(typed).toEqual(again);
-    expect(typed).toMatchObject({ ok: true, lastFour: "2026", codeHash: hashGiftCardCode("DEMOPRNT2026") });
+    expect(typed).toMatchObject({
+      ok: true,
+      lastFour: "2026",
+      codeHash: keyedGiftCardCodeHash("DEMOPRNT2026", KEY),
+      legacyCodeHash: legacyGiftCardCodeHash("DEMOPRNT2026"),
+    });
+  });
+});
+
+// Phase 35 (policies 3 and 6): keyed hashes.
+describe("keyed code hashes", () => {
+  it("is HMAC-SHA256 with the key over the old SHA-256, as 64 lowercase hex", () => {
+    const legacy = createHash("sha256").update("gift-card:DEMOPRNT2026").digest("hex");
+
+    expect(legacyGiftCardCodeHash("DEMOPRNT2026")).toBe(legacy);
+    expect(keyedGiftCardCodeHash("DEMOPRNT2026", KEY)).toBe(createHmac("sha256", KEY).update(legacy).digest("hex"));
+    expect(keyedGiftCardCodeHash("DEMOPRNT2026", KEY)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("re-keys a stored legacy hash to exactly what a newly written row holds", () => {
+    const { keyed, legacy } = giftCardCodeHashes("7KQ2M9XD4TPAW3HR", KEY);
+
+    expect(rekeyLegacyHash(legacy, KEY)).toBe(keyed);
+    expect(keyed).not.toBe(legacy);
+  });
+
+  it("gives a different hash under a different key", () => {
+    expect(keyedGiftCardCodeHash("DEMOPRNT2026", KEY)).not.toBe(keyedGiftCardCodeHash("DEMOPRNT2026", "j".repeat(32)));
   });
 });
