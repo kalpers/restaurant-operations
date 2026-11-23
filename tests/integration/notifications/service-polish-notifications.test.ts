@@ -11,6 +11,7 @@ import {
   denyTimeOff,
   requestTimeOffForEmployee,
 } from "@/modules/scheduling/services/time-off-service";
+import { businessDateOf } from "@/shared/time/business-date-service";
 import { addDays, localDateOf } from "@/shared/time/zoned-time";
 import { notifyTimeBasedSignals } from "@/workflows/notify-time-based-signals/notify-time-based-signals";
 
@@ -188,7 +189,7 @@ describe("Phase 20 notifications", () => {
   it("warns once a week when someone on the clock nears overtime", async () => {
     const linked = await createLinkedEmployee(database(), scenario, SELF);
     const manager = await actorWith(database(), scenario, ["timeclock.manage", "timeclock.view"]);
-    const today = localDateOf(new Date(), FIXTURE_TIME_ZONE);
+    const today = businessDateOf(new Date(), { timeZone: FIXTURE_TIME_ZONE, businessDayCutoff: "04:00" });
     const hour = 3600_000;
 
     // 37 closed hours this business date plus 2 open ones: within 4 hours of 40.

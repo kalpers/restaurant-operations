@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/db";
@@ -123,7 +123,7 @@ describe("order voids and discounts", () => {
       expect(after).toMatchObject({ status: "VOIDED", voidReason: "Guest changed mind", lineTotalSnapshot: "17.49" });
       expect((await orderRow(database(), orderId)).subtotal).toBe("3.00");
       expect(
-        (await database().select().from(orderItemStatusHistory).where(eq(orderItemStatusHistory.orderItemId, burgerItem.id))).map((row) => row.status),
+        (await database().select().from(orderItemStatusHistory).where(eq(orderItemStatusHistory.orderItemId, burgerItem.id)).orderBy(asc(orderItemStatusHistory.occurredAt))).map((row) => row.status),
       ).toEqual(["SUBMITTED", "VOIDED"]);
     });
 
