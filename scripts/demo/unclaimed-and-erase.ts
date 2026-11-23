@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, ilike, isNotNull, isNull, like, lt } from "drizzle-orm";
 
-import type { Database } from "../src/db";
+import type { Database } from "../../src/db";
 import {
   giftCardEscheatments,
   giftCardPurchasers,
@@ -13,21 +13,21 @@ import {
   orders,
   schedulePeriods,
   shifts,
-} from "../src/db/schema";
-import type { Actor } from "../src/modules/auth/types";
-import { addDraftItem } from "../src/modules/orders/services/draft-item-service";
-import { createOrder } from "../src/modules/orders/services/order-service";
-import { createGuestProfile } from "../src/modules/reservations/services/guest-profile-service";
-import { createShift } from "../src/modules/scheduling/services/schedule-service";
-import { savePurchaser } from "../src/modules/settlements/services/gift-card-purchaser-service";
-import { getGiftCardProgram, sellGiftCard } from "../src/modules/settlements/services/gift-card-service";
-import { deactivateStock, registerStockBatch } from "../src/modules/settlements/services/gift-card-stock-service";
-import { reportGiftCardUnclaimed } from "../src/modules/settlements/services/gift-card-unclaimed-service";
-import { openSettlement } from "../src/modules/settlements/services/settlement-service";
-import { completeSettlement } from "../src/workflows/close-order/complete-settlement";
-import { sendOrderItems } from "../src/workflows/submit-order/submit-order";
-import { voidOrderItem } from "../src/workflows/void-order-item/void-order-item";
-import { installShiftedClock, restoreClock, setClock } from "./demo-forecast-history";
+} from "../../src/db/schema";
+import type { Actor } from "../../src/modules/auth/types";
+import { addDraftItem } from "../../src/modules/orders/services/draft-item-service";
+import { createOrder } from "../../src/modules/orders/services/order-service";
+import { createGuestProfile } from "../../src/modules/reservations/services/guest-profile-service";
+import { createShift } from "../../src/modules/scheduling/services/schedule-service";
+import { savePurchaser } from "../../src/modules/settlements/services/gift-card-purchaser-service";
+import { getGiftCardProgram, sellGiftCard } from "../../src/modules/settlements/services/gift-card-service";
+import { deactivateStock, registerStockBatch } from "../../src/modules/settlements/services/gift-card-stock-service";
+import { reportGiftCardUnclaimed } from "../../src/modules/settlements/services/gift-card-unclaimed-service";
+import { openSettlement } from "../../src/modules/settlements/services/settlement-service";
+import { completeSettlement } from "../../src/workflows/close-order/complete-settlement";
+import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
+import { voidOrderItem } from "../../src/workflows/void-order-item/void-order-item";
+import { installShiftedClock, restoreClock, setClock } from "./clock";
 
 // Phase 34 (policy 17): a registered box of supplier cards (two sold, one deactivated),
 // purchaser details on the old unused card, one card reported as unclaimed, and a demo guest
@@ -197,22 +197,22 @@ async function seedTakeoutMention(database: Database, owner: Actor): Promise<str
     return "takeout mention already there";
   }
 
-  const [tacos] = await database
+  const [knots] = await database
     .select({ id: menuItems.id })
     .from(menuItems)
-    .where(and(eq(menuItems.organizationId, owner.organizationId), eq(menuItems.code, "FISH_TACOS")));
+    .where(and(eq(menuItems.organizationId, owner.organizationId), eq(menuItems.code, "GARLIC_KNOTS")));
 
-  if (!tacos) {
-    return "takeout mention skipped (no Fish Tacos on the demo menu)";
+  if (!knots) {
+    return "takeout mention skipped (no Garlic Knots on the demo menu)";
   }
 
   const order = await createOrder(database, owner, { orderType: "TAKEOUT", customerName: "D. Whitfield" });
   const added = await addDraftItem(database, owner, order.id, {
     expectedVersion: order.version,
-    menuItemId: tacos.id,
+    menuItemId: knots.id,
     quantity: 1,
     selections: [],
-    specialInstructions: "Whitfield: no cilantro, call 555-010-4477 when ready",
+    specialInstructions: "Whitfield: extra marinara, call 555-010-4477 when ready",
   });
   const sent = await sendOrderItems(database, owner, order.id, { expectedVersion: added.orderVersion, idempotencyKey: randomUUID() });
   const voided = await voidOrderItem(database, owner, order.id, added.itemId, {
@@ -259,7 +259,7 @@ async function seedShiftMention(database: Database, owner: Actor): Promise<strin
     endTime: "22:00",
     requiredEmployeeCount: 1,
     courseOrStationNote: null,
-    notes: "Whitfield party of 8 at 7, extra server on the patio",
+    notes: "Whitfield party of 8 at 7, extra server in the back room",
     priority: 0,
     expectedPeriodVersion: draft.version,
   });

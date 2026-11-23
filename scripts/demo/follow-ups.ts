@@ -2,18 +2,18 @@ import { randomUUID } from "node:crypto";
 
 import { and, eq, inArray, lt } from "drizzle-orm";
 
-import type { Database } from "../src/db";
+import type { Database } from "../../src/db";
 import {
   giftCards,
   guestLoyaltyEntries,
   guestLoyaltyRedemptions,
   guestProfiles,
   orderRefunds,
-} from "../src/db/schema";
-import type { Actor } from "../src/modules/auth/types";
-import { getGiftCardProgram, sellGiftCard } from "../src/modules/settlements/services/gift-card-service";
-import { recordRefund } from "../src/workflows/record-refund/record-refund";
-import { installShiftedClock, restoreClock, setClock } from "./demo-forecast-history";
+} from "../../src/db/schema";
+import type { Actor } from "../../src/modules/auth/types";
+import { getGiftCardProgram, sellGiftCard } from "../../src/modules/settlements/services/gift-card-service";
+import { recordRefund } from "../../src/workflows/record-refund/record-refund";
+import { installShiftedClock, restoreClock, setClock } from "./clock";
 
 // Phase 33 (policy 19): one gift card sold with a supplier's printed code, one card sold long
 // enough ago to show under "Unused gift card balances", and a partial refund on the demo
@@ -25,7 +25,8 @@ import { installShiftedClock, restoreClock, setClock } from "./demo-forecast-his
 const DEMO_SUPPLIER_CODE = "DEMO-PRNT-2026";
 /** Older than the default 36-month unused-balance period. */
 const UNUSED_MONTHS_AGO = 40;
-const DEMO_REFUND = { amount: "5.00", taxAmount: "0.00", reason: "Demo: beer refunded" } as const;
+/** $3.00 back on the lager plus its 6% tax. */
+const DEMO_REFUND = { amount: "3.18", taxAmount: "0.18", reason: "Demo: the lager was flat" } as const;
 const REDEMPTION_GUEST = "Demo Guest Peanut";
 
 export type FollowUpDemo = { lines: string[]; codes: { cardNumber: string; code: string; balance: string }[] };

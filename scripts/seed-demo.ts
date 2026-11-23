@@ -1,114 +1,37 @@
-import { eq, like } from "drizzle-orm";
+import { and, eq, inArray, max } from "drizzle-orm";
 
 import { loadLocalEnv } from "../src/config/tooling-env";
 import { closeDatabase, getDatabase } from "../src/db";
-import {
-  DEMO_AVAILABILITY,
-  DEMO_EMPLOYEES,
-  DEMO_POSITIONS,
-} from "../src/db/demo/demo-employees";
-import { employeeAvailability, employees, positions } from "../src/db/schema";
-import type { Actor } from "../src/modules/auth/types";
-import { assignPosition } from "../src/modules/employees/services/assignment-service";
-import { changeCompensation } from "../src/modules/employees/services/compensation-service";
-import { createEmployee } from "../src/modules/employees/services/employee-service";
-import { updatePersonalContact } from "../src/modules/employees/services/personal-service";
-import { createPosition } from "../src/modules/employees/services/reference-service";
+import { PIZZA_GUESTS } from "../src/db/demo/pizza/guests";
+import { locations, menuItems, recipes, recipeVersions } from "../src/db/schema";
 import { findLocationClockSettings } from "../src/modules/scheduling/repositories/forecast-repository";
-import { addRecurringAvailability } from "../src/modules/scheduling/services/availability-service";
+import { businessDateOf } from "../src/shared/time/business-date-service";
+import { addDays, dayOfWeek, localToInstant } from "../src/shared/time/zoned-time";
 
-import { seedDeclaredAllergens, seedGuestProfiles, seedIngredientAllergens, type DemoProfile } from "./demo-guests-allergens";
-import { seedDemoForecastHistory } from "./demo-forecast-history";
-import { seedDemoKitchen } from "./demo-kitchen";
-import { seedDemoPrepHistory } from "./demo-prep-history";
-import { seedDemoServiceHistory } from "./demo-service-history";
-import { seedDemoLocationsAndLots } from "./demo-locations-lots";
-import { seedDemoPricingAndNutrition } from "./demo-pricing-nutrition";
-import { seedDemoGiftCards } from "./demo-gift-cards";
-import { seedDemoBriefings } from "./demo-briefings";
-import { seedDemoFollowUps } from "./demo-follow-ups";
-import { seedDemoPhase34 } from "./demo-phase-34";
-import { seedDemoLoyalty, seedDemoRedemption } from "./demo-loyalty";
+import { seedGuestProfiles } from "./demo-guests-allergens";
+import { seedDemoBriefings } from "./demo/briefings";
+import { installShiftedClock, restoreClock, setClock } from "./demo/clock";
+import { seedDemoFollowUps } from "./demo/follow-ups";
+import { seedDemoGiftCards } from "./demo/gift-cards";
+import { seedRunTracker } from "./demo/helpers";
+import { HISTORY_DAYS, seedPizzaHistory } from "./demo/history";
+import { seedHappyHour, seedPizzaLive } from "./demo/live";
+import { seedDemoLoyalty, seedDemoRedemption } from "./demo/loyalty";
+import { seedPizzaMenu } from "./demo/menu";
+import { seedPizzaRestaurant } from "./demo/restaurant";
+import { seedPizzaStaff, seedPizzaTimeOff } from "./demo/staff";
+import { seedDemoPhase34 } from "./demo/unclaimed-and-erase";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
-async function versionOf(employeeId: string): Promise<number> {
-  const [row] = await getDatabase()
-    .select({ version: employees.version })
-    .from(employees)
-    .where(eq(employees.id, employeeId));
+// `npm run db:seed:demo`: a pizza restaurant ("Demo Pizza Co.") at MAIN with sandwiches,
+// appetizers and a full bar, its staff and their availability, six weeks of service history
+// and today's service in progress. Local dev database only, after `bootstrap:owner`. Everything
+// goes through the real services; every step skips what is already there, so running it twice
+// adds nothing. See docs/Demo-Data.md for what it builds and where to look.
 
-  return row!.version;
-}
-
-/**
- * Gives each demo employee the demo availability, through the Scheduling service a manager
- * would use. An employee who already has any recurring availability (from an earlier run or
- * edited by hand) is left alone, so reruns add nothing and manual edits survive.
- */
-async function seedDemoAvailability(actor: Actor): Promise<{ employees: number; windows: number }> {
-  const database = getDatabase();
-  const demoEmployees = await database
-    .select({ id: employees.id, hireDate: employees.hireDate })
-    .from(employees)
-    .where(like(employees.employeeNumber, "DEMO-%"));
-  const configured = new Set(
-    (
-      await database
-        .select({ employeeId: employeeAvailability.employeeId })
-        .from(employeeAvailability)
-        .innerJoin(employees, eq(employees.id, employeeAvailability.employeeId))
-        .where(like(employees.employeeNumber, "DEMO-%"))
-    ).map((row) => row.employeeId),
-  );
-  let added = 0;
-  let windows = 0;
-
-  for (const employee of demoEmployees) {
-    if (configured.has(employee.id)) {
-      continue;
-    }
-
-    for (const dayOfWeek of DEMO_AVAILABILITY.daysOfWeek) {
-      await addRecurringAvailability(
-        database,
-        actor,
-        { kind: "employee", employeeId: employee.id },
-        {
-          dayOfWeek,
-          startTime: DEMO_AVAILABILITY.startTime,
-          endTime: DEMO_AVAILABILITY.endTime,
-          availabilityType: "AVAILABLE",
-          effectiveFrom: employee.hireDate,
-          effectiveTo: null,
-          thisLocationOnly: false,
-        },
-      );
-      windows += 1;
-    }
-
-    added += 1;
-  }
-
-  return { employees: added, windows };
-}
-
-/** Phase 21 demo guests (added in Phase 22, policy 24). */
-const DEMO_PROFILES: readonly DemoProfile[] = [
-  {
-    displayName: "Demo Guest Peanut",
-    vip: true,
-    vipReason: "Regular",
-    preferences: "Window table",
-    allergies: [{ allergen: "PEANUTS", severity: "SEVERE" }],
-  },
-  {
-    displayName: "Demo Guest Milk",
-    vip: false,
-    vipReason: null,
-    preferences: null,
-    allergies: [{ allergen: "MILK", severity: "ALLERGY" }],
-  },
-];
+/** Menu items only the old burger demo made; their presence means the dev DB needs a reset. */
+const OLD_DEMO_ITEMS = ["FISH_TACOS", "MAC_AND_CHEESE", "VEGGIE_BURGER", "DEMO_FORECAST_PLATE"];
+const TIME_ZONE_FALLBACK = "America/Detroit";
 
 async function main(): Promise<void> {
   loadLocalEnv();
@@ -117,231 +40,127 @@ async function main(): Promise<void> {
   const database = getDatabase();
 
   try {
-    const actor = await mainOwnerActor("employees.create");
-    const positionRows = await database
-      .select({ id: positions.id, code: positions.code })
-      .from(positions)
-      .where(eq(positions.organizationId, actor.organizationId));
-    const positionIds = new Map(positionRows.map((row) => [row.code, row.id]));
-    let addedPositions = 0;
+    const owner = await mainOwnerActor("employees.create");
+    const old = await database
+      .select({ code: menuItems.code })
+      .from(menuItems)
+      .where(and(eq(menuItems.organizationId, owner.organizationId), inArray(menuItems.code, OLD_DEMO_ITEMS)));
+    const [uptown] = await database
+      .select({ id: locations.id })
+      .from(locations)
+      .where(and(eq(locations.organizationId, owner.organizationId), eq(locations.locationCode, "UPTOWN")));
 
-    for (const position of DEMO_POSITIONS) {
-      if (!positionIds.has(position.code)) {
-        const created = await createPosition(database, actor, position);
-
-        positionIds.set(position.code, created.id);
-        addedPositions += 1;
-      }
+    if (old.length > 0 || uptown) {
+      throw new Error(
+        "This database has the earlier burger demo. Start from an empty one: `npm run db:reset`, `npm run db:seed`, `npm run bootstrap:owner`, then `npm run db:seed:demo`.",
+      );
     }
 
-    const existing = new Set(
-      (
-        await database
-          .select({ employeeNumber: employees.employeeNumber })
-          .from(employees)
-          .where(like(employees.employeeNumber, "DEMO-%"))
-      ).map((row) => row.employeeNumber),
-    );
-    let created = 0;
+    const clock = await findLocationClockSettings(database, owner.locationId);
+    const timeZone = clock?.timeZone ?? TIME_ZONE_FALLBACK;
+    const today = businessDateOf(new Date(), { timeZone, businessDayCutoff: clock?.businessDayCutoff ?? "04:00" });
+    let first = addDays(today, -HISTORY_DAYS);
 
-    for (const demo of DEMO_EMPLOYEES) {
-      if (existing.has(demo.employeeNumber)) {
-        continue;
-      }
-
-      const positionId = positionIds.get(demo.position.code);
-
-      if (!positionId) {
-        throw new Error(`Position ${demo.position.code} does not exist.`);
-      }
-
-      const employee = await createEmployee(database, actor, {
-        employeeNumber: demo.employeeNumber,
-        firstName: demo.firstName,
-        middleName: null,
-        lastName: demo.lastName,
-        preferredName: demo.preferredName ?? null,
-        workEmail: `${demo.firstName}.${demo.lastName}`
-          .normalize("NFD")
-          .replace(/[^\w.]/g, "")
-          .toLowerCase()
-          .concat("@demo.example.test"),
-        hireDate: demo.hireDate,
-        employmentType: demo.employmentType,
-        positionId,
-      });
-
-      await updatePersonalContact(database, actor, employee.id, {
-        personalEmail: null,
-        phone: demo.phone,
-        expectedVersion: employee.version,
-      });
-
-      const wage = (code: string, effectiveFrom: string, pay: typeof demo.position.wage) =>
-        changeCompensation(database, actor, {
-          employeeId: employee.id,
-          positionId: positionIds.get(code)!,
-          compensationType: pay.type,
-          hourlyRate: pay.type === "HOURLY" ? pay.hourlyRate : null,
-          annualSalary: pay.type === "SALARY" ? pay.annualSalary : null,
-          effectiveFrom,
-          changeReason: "Demo data",
-        });
-
-      await wage(demo.position.code, demo.hireDate, demo.position.wage);
-
-      if (demo.secondary) {
-        await assignPosition(database, actor, actor, {
-          employeeId: employee.id,
-          positionId: positionIds.get(demo.secondary.code)!,
-          primaryPosition: false,
-          effectiveFrom: demo.secondary.effectiveFrom,
-          expectedVersion: await versionOf(employee.id),
-        });
-        await wage(
-          demo.secondary.code,
-          demo.secondary.effectiveFrom,
-          demo.secondary.wage,
-        );
-      }
-
-      created += 1;
+    while (dayOfWeek(first) !== 0) {
+      first = addDays(first, -1);
     }
 
-    console.log(
-      `Demo data: ${created} employees added, ${DEMO_EMPLOYEES.length - created} already present, ${addedPositions} positions added.`,
-    );
+    const at = (date: string, time: string) => localToInstant(date, time, timeZone)!;
+    const setupAt = at(addDays(first, -3), "09:00");
+    const tracker = await seedRunTracker(database);
+    const [location] = await database.select({ code: locations.locationCode }).from(locations).where(eq(locations.id, owner.locationId));
 
-    const availability = await seedDemoAvailability(actor);
+    // ------------------------------------- setup, dated before the history
+    installShiftedClock();
 
-    console.log(
-      `Demo availability: ${availability.employees} employees given ${DEMO_AVAILABILITY.startTime}-${DEMO_AVAILABILITY.endTime} every day (${availability.windows} windows); employees with availability already were left alone.`,
-    );
+    try {
+      setClock(setupAt);
 
-    const kitchen = await seedDemoKitchen(database, actor);
+      const restaurant = await seedPizzaRestaurant(database, owner);
 
-    console.log(
-      `Demo kitchen: ${kitchen.inventoryItems} inventory items, ${kitchen.supplierItems} supplier items, ${kitchen.orders} purchase orders, ${kitchen.menuItems} menu items, ${kitchen.recipes} recipes, ${kitchen.modifiers} modifiers added.`,
-    );
+      console.log(
+        `Restaurant: ${restaurant.renamed ? "MAIN renamed Demo Pizza Co., " : ""}${restaurant.tables} tables, ${restaurant.sections} sections, ${restaurant.stations} prep stations, ${restaurant.categories} categories added; 6% sales tax ${restaurant.taxTurnedOn ? "turned on" : "already on"}.`,
+      );
 
-    // Phase 21 data (added in Phase 22): allergen tags and guest profiles, skipped where present.
-    const allergenActor = await mainOwnerActor("recipes.allergens.manage");
-    const tagged = await seedIngredientAllergens(database, allergenActor);
-    const declared = await seedDeclaredAllergens(database, allergenActor);
-    const profiles = await seedGuestProfiles(database, await mainOwnerActor("guests.manage"), DEMO_PROFILES);
+      const staff = await seedPizzaStaff(database, owner, today);
 
-    console.log(
-      `Demo guests and allergens: ${tagged} ingredients tagged, ${declared} declared allergen(s), ${profiles} guest profiles added; existing ones were left alone.`,
-    );
+      console.log(
+        `Staff: ${staff.employees} employees, ${staff.positions} positions, ${staff.availabilityWindows} availability windows, ${staff.certifications} certifications added; template ${staff.templateCreated ? "created" : "already there"}, ${staff.ratios} staffing ratios, tip pool ${staff.tipPool ? "set up" : "already set"}.`,
+      );
 
-    // Phase 23 (D17): a second location, lot-tracked cheese and a received transfer.
-    const places = await seedDemoLocationsAndLots(database, await mainOwnerActor("locations.lifecycle"));
+      // After every recipe already published (a rerun skips the steps above in seconds, so it
+      // would otherwise run before the first run's recipes and fail the modifier-effect checks).
+      const [published] = await database
+        .select({ latest: max(recipeVersions.effectiveFrom) })
+        .from(recipeVersions)
+        .innerJoin(recipes, eq(recipes.id, recipeVersions.recipeId))
+        .where(eq(recipes.organizationId, owner.organizationId));
+      const menuAt = new Date(Math.max(setupAt.getTime() + 3_600_000, (published?.latest?.getTime() ?? 0) + 60_000));
 
-    console.log(
-      `Demo locations and lots: Uptown ${places.locationOpened ? "opened from MAIN" : "already open"}, ${places.staffAdded} employees added there, ${places.lotItems} items lot tracked, ${places.lots} dated lots, ${places.transfers} transfer(s) received.`,
-    );
+      setClock(menuAt);
 
-    // Phase 24 (D11): six weeks of fake closed checks at MAIN and staffing ratios.
-    const forecastOwner = await mainOwnerActor("schedule.rules.manage");
-    const clock = await findLocationClockSettings(database, forecastOwner.locationId);
-    const history = await seedDemoForecastHistory(database, forecastOwner, {
-      timeZone: clock?.timeZone ?? null,
-      businessDayCutoff: clock?.businessDayCutoff ?? "04:00",
-    });
+      const menu = await seedPizzaMenu(database, owner, restaurant.taxCategoryId, menuAt);
 
-    console.log(
-      `Demo forecast history: ${history.checks} closed checks added over the last six weeks (${history.datesAlreadyPresent} dates already had them, ${history.skipped} skipped for want of a free table), ${history.ratios} staffing ratios added.`,
-    );
+      console.log(
+        `Menu: burger kitchen (${menu.burgerKitchen}); ${menu.menuItems} pizza-place items, ${menu.ingredients} ingredients, ${menu.groups} modifier groups, ${menu.effects} modifier effects, ${menu.allergenTags} ingredients tagged with allergens, ${menu.nutrition} given nutrition; ${menu.taxed} items moved onto the sales tax.`,
+      );
 
-    // Phase 25 (D11): item history with recipes and modifiers for the prep and purchasing forecast.
-    const prepOwner = await mainOwnerActor("purchasing.manage");
-    const prep = await seedDemoPrepHistory(database, prepOwner, {
-      timeZone: clock?.timeZone ?? null,
-      businessDayCutoff: clock?.businessDayCutoff ?? "04:00",
-    });
+      const happyHour = await seedHappyHour(database, owner);
+      const profiles = await seedGuestProfiles(database, owner, PIZZA_GUESTS);
 
-    console.log(
-      `Demo prep history: ${prep.checks} closed takeout checks added (${prep.datesAlreadyPresent} dates already had them), ${prep.stockAdded} ingredients topped up first.`,
-    );
+      console.log(`Happy hour ${happyHour ? "added (weekdays 15:00-18:00)" : "already there"}; ${profiles} guest profiles added.`);
+    } finally {
+      restoreClock();
+    }
 
-    // Service, labor, tips and front-of-house history on a larger menu.
-    const serviceOwner = await mainOwnerActor("orders.submit");
-    const service = await seedDemoServiceHistory(database, serviceOwner, {
-      timeZone: clock?.timeZone ?? null,
-      businessDayCutoff: clock?.businessDayCutoff ?? "04:00",
-    });
+    const timeOff = await seedPizzaTimeOff(database, owner, today);
+
+    console.log(`Time off: ${timeOff} requests for next week added (one approved, one waiting).`);
+
+    // ------------------------------------------------------- six weeks back
+    const history = await seedPizzaHistory(database, owner, { today, first, at, ...tracker });
 
     console.log(
-      `Demo service history: ${service.menuItems} menu items, ${service.periods} schedule weeks, ${service.purchaseOrders} weekly purchase orders, ${service.checks} closed checks, ${service.punches} shifts punched, ${service.tipDays} tip days finalized, ${service.upcomingReservations} upcoming reservations, ${service.waitlist} waitlist parties added.`,
+      `History: ${history.periods} schedule weeks (${history.unfilledShifts} shift slots left open), ${history.checks} closed checks, ${history.purchaseOrders} purchase orders received, ${history.counts} counts, ${history.wasteDays} waste days, ${history.punches} shifts punched, ${history.declarations} cash tip declarations, ${history.tipDays} tip days finalized.`,
     );
 
-    // Phase 28 (D17): a weekday bar happy hour at MAIN and nutrition for a few dishes' ingredients.
-    const extras = await seedDemoPricingAndNutrition(
-      database,
-      await mainOwnerActor("menu.pricing.edit"),
-      await mainOwnerActor("recipes.edit"),
-    );
+    // ------------------------------------------------------------- today
+    const live = await seedPizzaLive(database, owner, { ...tracker, today, timeZone, locationCode: location!.code });
 
     console.log(
-      `Demo pricing and nutrition: ${extras.periods} happy hour added (weekdays 16:00-18:00, bar), ${extras.facts} ingredients given nutrition facts; existing ones were left alone.`,
+      `Today: ${live.deliveries} deliveries received, ${live.lots} dated mozzarella lots, ${live.outages} items 86'd, ${live.reservations} upcoming reservations, ${live.waitlist} waitlist parties, ${live.openTables} tables mid-meal, ${live.dirtyTables} to clean; shift swap ${live.swap}.`,
     );
 
-    // Phase 30 (policy 16): the loyalty program, two rewards and starting points for the demo guests.
-    const loyalty = await seedDemoLoyalty(
-      database,
-      await mainOwnerActor("loyalty.manage"),
-      await mainOwnerActor("loyalty.adjust"),
-    );
+    // ---------------------------------------- guests, loyalty, gift cards, log
+    const loyalty = await seedDemoLoyalty(database, owner, owner);
 
     console.log(
-      `Demo loyalty: program ${loyalty.programEnabled ? "turned on (1 point per $1, 5 per visit)" : "left as it was"}, ${loyalty.rewards} rewards added, ${loyalty.profiles} demo guests given starting points.`,
+      `Loyalty: program ${loyalty.programEnabled ? "turned on (1 point per $1, 5 per visit)" : "left as it was"}, ${loyalty.rewards} rewards added, ${loyalty.profiles} guests given starting points; redemption ${await seedDemoRedemption(database, owner)}.`,
     );
 
-    // One finished visit where a demo guest redeems a reward.
-    const redemption = await seedDemoRedemption(database, await mainOwnerActor("loyalty.redeem"));
+    const giftCards = await seedDemoGiftCards(database, owner, owner);
 
-    console.log(`Demo loyalty redemption: ${redemption}.`);
+    console.log(`Gift cards: ${giftCards.summary}.`);
 
-    // Phase 31 (policy 17): gift cards on, three cards sold, one reloaded, one spent on a check.
-    const giftCards = await seedDemoGiftCards(
-      database,
-      await mainOwnerActor("gift-cards.manage"),
-      await mainOwnerActor("gift-cards.sell"),
-    );
+    const followUps = await seedDemoFollowUps(database, owner);
 
-    console.log(`Demo gift cards: ${giftCards.summary}.`);
+    console.log(`Follow-ups: ${followUps.lines.join("; ")}.`);
+    console.log(`Unclaimed property and erase: ${(await seedDemoPhase34(database, owner)).join("; ")}.`);
 
-    if (giftCards.codes.length > 0) {
+    const briefings = await seedDemoBriefings(database, owner);
+
+    console.log(`Manager log and pre-shift: ${briefings.entries} log entries and ${briefings.notes} notes added.`);
+
+    const codes = [...giftCards.codes, ...followUps.codes];
+
+    if (codes.length > 0) {
       // Shown once, here, like the sale screen; the database keeps only each code's hash.
       console.log("Demo gift card codes (shown once, not stored):");
 
-      for (const card of giftCards.codes) {
+      for (const card of codes) {
         console.log(`  ${card.cardNumber}  ${card.code}  balance ${card.balance}`);
       }
     }
-
-    // Phase 32 (policy 13): manager log entries (one correction) and pre-shift notes at MAIN.
-    const briefings = await seedDemoBriefings(database, await mainOwnerActor("manager-log.write"));
-
-    console.log(
-      `Demo manager log and pre-shift: ${briefings.entries} log entries and ${briefings.notes} pre-shift notes added; existing ones were left alone.`,
-    );
-
-    // Phase 33 (policy 19): a supplier-coded card, an unused old balance and a refund that
-    // takes back loyalty points.
-    const followUps = await seedDemoFollowUps(database, await mainOwnerActor("settlements.refund"));
-
-    console.log(`Demo follow-ups: ${followUps.lines.join("; ")}.`);
-
-    for (const card of followUps.codes) {
-      console.log(`  ${card.cardNumber}  ${card.code}  balance ${card.balance} (shown once, not stored)`);
-    }
-
-    // Phase 34 (policy 17): card stock, purchaser details, an unclaimed report, and a guest
-    // named in a takeout check and a shift note for trying an erase.
-    const phase34 = await seedDemoPhase34(database, await mainOwnerActor("gift-cards.manage"));
-
-    console.log(`Demo Phase 34: ${phase34.join("; ")}.`);
   } finally {
     await closeDatabase();
   }

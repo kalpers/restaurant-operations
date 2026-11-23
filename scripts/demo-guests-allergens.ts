@@ -15,7 +15,9 @@ import { createGuestProfile, mergeGuestProfiles } from "../src/modules/reservati
 
 // Phase 22 (policy 24): the Phase 21 leftover. Allergen tags, a declared MAY_CONTAIN and guest
 // profiles for the demo and validation data, all through the services a manager would use.
-// Each step skips what already exists, so a rerun adds nothing and hand edits survive.
+// Each step skips what already exists, so a rerun adds nothing and hand edits survive. The
+// defaults cover the burger kitchen (used by the validation fixture); the pizza demo passes its
+// own tags and declarations as well.
 
 /** The allergens of the demo kitchen's ingredients (src/db/demo/demo-kitchen.ts). */
 export const DEMO_INGREDIENT_ALLERGENS: Readonly<Record<string, readonly string[]>> = {
@@ -73,13 +75,17 @@ function idsFor(byCode: Map<string, string>, codes: readonly string[]): string[]
 }
 
 /** Tags and reviews each demo ingredient that has no review yet. Returns how many it tagged. */
-export async function seedIngredientAllergens(database: Database, actor: Actor): Promise<number> {
+export async function seedIngredientAllergens(
+  database: Database,
+  actor: Actor,
+  tags: Readonly<Record<string, readonly string[]>> = DEMO_INGREDIENT_ALLERGENS,
+): Promise<number> {
   const byCode = await allergenIds(database, actor.organizationId);
   const items = await database
     .select({ id: inventoryItems.id, code: inventoryItems.code })
     .from(inventoryItems)
     .where(
-      and(eq(inventoryItems.organizationId, actor.organizationId), inArray(inventoryItems.code, Object.keys(DEMO_INGREDIENT_ALLERGENS))),
+      and(eq(inventoryItems.organizationId, actor.organizationId), inArray(inventoryItems.code, Object.keys(tags))),
     );
 
   if (items.length === 0) {
@@ -103,7 +109,7 @@ export async function seedIngredientAllergens(database: Database, actor: Actor):
 
     await setIngredientAllergens(database, actor, {
       inventoryItemId: item.id,
-      allergenIds: idsFor(byCode, DEMO_INGREDIENT_ALLERGENS[item.code] ?? []),
+      allergenIds: idsFor(byCode, tags[item.code] ?? []),
       expectedReviewVersion: null,
     });
     tagged += 1;
@@ -113,11 +119,15 @@ export async function seedIngredientAllergens(database: Database, actor: Actor):
 }
 
 /** Declares the demo MAY_CONTAIN allergens on menu items not yet reviewed. */
-export async function seedDeclaredAllergens(database: Database, actor: Actor): Promise<number> {
+export async function seedDeclaredAllergens(
+  database: Database,
+  actor: Actor,
+  entries: readonly { menuItem: string; allergen: string; kind: "CONTAINS" | "MAY_CONTAIN" }[] = DEMO_DECLARED_ALLERGENS,
+): Promise<number> {
   const byCode = await allergenIds(database, actor.organizationId);
   let declared = 0;
 
-  for (const entry of DEMO_DECLARED_ALLERGENS) {
+  for (const entry of entries) {
     const [item] = await database
       .select({ id: menuItems.id })
       .from(menuItems)

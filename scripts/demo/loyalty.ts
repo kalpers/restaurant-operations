@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { Database } from "../src/db";
+import type { Database } from "../../src/db";
 import {
   guestLoyaltyEntries,
   guestLoyaltyPrograms,
@@ -14,24 +14,24 @@ import {
   orderItems,
   settlements,
   tableSessions,
-} from "../src/db/schema";
-import type { Actor } from "../src/modules/auth/types";
-import { transitionTicketItem } from "../src/modules/kitchen/services/fulfillment-service";
-import { addDraftItem } from "../src/modules/orders/services/draft-item-service";
-import { createOrder } from "../src/modules/orders/services/order-service";
+} from "../../src/db/schema";
+import type { Actor } from "../../src/modules/auth/types";
+import { transitionTicketItem } from "../../src/modules/kitchen/services/fulfillment-service";
+import { addDraftItem } from "../../src/modules/orders/services/draft-item-service";
+import { createOrder } from "../../src/modules/orders/services/order-service";
 import {
   adjustLoyaltyPoints,
   createLoyaltyReward,
   updateLoyaltyProgram,
-} from "../src/modules/reservations/services/loyalty-service";
-import { getFloorStatus } from "../src/modules/restaurant/services/floor-service";
-import { cleanTable } from "../src/modules/restaurant/services/table-service";
-import { openSettlement, recordTender } from "../src/modules/settlements/services/settlement-service";
-import { completeSettlement } from "../src/workflows/close-order/complete-settlement";
-import { completeTableSession } from "../src/workflows/end-table-session/end-table-session";
-import { redeemLoyaltyReward } from "../src/workflows/redeem-loyalty-reward/redeem-loyalty-reward";
-import { seatWalkIn } from "../src/workflows/seat-guest-party/seat-guest-party";
-import { sendOrderItems } from "../src/workflows/submit-order/submit-order";
+} from "../../src/modules/reservations/services/loyalty-service";
+import { getFloorStatus } from "../../src/modules/restaurant/services/floor-service";
+import { cleanTable } from "../../src/modules/restaurant/services/table-service";
+import { openSettlement, recordTender } from "../../src/modules/settlements/services/settlement-service";
+import { completeSettlement } from "../../src/workflows/close-order/complete-settlement";
+import { completeTableSession } from "../../src/workflows/end-table-session/end-table-session";
+import { redeemLoyaltyReward } from "../../src/workflows/redeem-loyalty-reward/redeem-loyalty-reward";
+import { seatWalkIn } from "../../src/workflows/seat-guest-party/seat-guest-party";
+import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
 
 // Phase 30 (policy 16): turns the loyalty program on with two rewards, gives the demo guest
 // profiles starting points, and runs one visit where a reward is redeemed, through the services
@@ -39,21 +39,22 @@ import { sendOrderItems } from "../src/workflows/submit-order/submit-order";
 // survive. Local dev DB only.
 
 const DEMO_REWARDS = [
-  { name: "Free fries", pointsCost: 50, scope: "ITEM" as const, discountType: "PERCENTAGE" as const, value: "100" },
+  { name: "Free garlic knots", pointsCost: 50, scope: "ITEM" as const, discountType: "PERCENTAGE" as const, value: "100" },
   { name: "$10 off the check", pointsCost: 150, scope: "ORDER" as const, discountType: "FIXED_AMOUNT" as const, value: "10.00" },
 ];
 
 const DEMO_STARTING_POINTS: Readonly<Record<string, number>> = {
   "Demo Guest Peanut": 180,
   "Demo Guest Milk": 40,
+  "Demo Guest Gluten": 95,
 };
 
 /** The demo visit with a reward: this guest, these items, and the item the reward is for. */
 const DEMO_REDEMPTION = {
   guest: "Demo Guest Peanut",
-  reward: "Free fries",
-  items: ["FRENCH_FRIES", "HOUSE_IPA"],
-  rewardItem: "FRENCH_FRIES",
+  reward: "Free garlic knots",
+  items: ["GARLIC_KNOTS", "DRAFT_LAGER"],
+  rewardItem: "GARLIC_KNOTS",
 } as const;
 
 export async function seedDemoLoyalty(
@@ -123,8 +124,8 @@ export async function seedDemoLoyalty(
 }
 
 /**
- * One finished visit at the actor's location where the demo guest redeems "Free fries": a
- * walk-in linked to the profile, fries and a beer sent, the reward redeemed on the fries, the
+ * One finished visit at the actor's location where the demo guest redeems "Free garlic knots":
+ * a walk-in linked to the profile, knots and a lager sent, the reward redeemed on the knots, the
  * kitchen and bar work completed, the check settled by external card (so no cash drawer is
  * needed), the guests leave (the visit earns its points) and the table is cleaned. Skipped once
  * the guest has any redemption, and when the program is off, the guest or reward is missing, or
@@ -187,7 +188,7 @@ export async function seedDemoRedemption(database: Database, actor: Actor): Prom
   const itemId = new Map(items.map((row) => [row.code, row.id]));
 
   if (DEMO_REDEMPTION.items.some((code) => !itemId.has(code))) {
-    return "skipped (the demo kitchen's fries or beer are missing)";
+    return "skipped (the garlic knots or draft lager are missing)";
   }
 
   const table = (await getFloorStatus(database, actor)).find(
@@ -198,7 +199,7 @@ export async function seedDemoRedemption(database: Database, actor: Actor): Prom
     return "skipped (no clean, free dining table)";
   }
 
-  // Seated, linked to the profile (its allergies come onto the visit), fries and a beer sent.
+  // Seated, linked to the profile (its allergies come onto the visit), knots and a lager sent.
   const seated = await seatWalkIn(database, actor, {
     guestName: DEMO_REDEMPTION.guest,
     partySize: 2,
@@ -223,15 +224,15 @@ export async function seedDemoRedemption(database: Database, actor: Actor): Prom
   version = (await sendOrderItems(database, actor, order.id, { expectedVersion: version, idempotencyKey: randomUUID() }))
     .orderVersion;
 
-  // The reward goes on the fries.
-  const [fries] = await database
+  // The reward goes on the knots.
+  const [knots] = await database
     .select({ id: orderItems.id })
     .from(orderItems)
     .where(and(eq(orderItems.orderId, order.id), eq(orderItems.menuItemId, itemId.get(DEMO_REDEMPTION.rewardItem)!)));
 
   await redeemLoyaltyReward(database, actor, order.id, {
     rewardId: reward.id,
-    orderItemId: fries!.id,
+    orderItemId: knots!.id,
     expectedVersion: version,
     idempotencyKey: randomUUID(),
   });

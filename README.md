@@ -1903,6 +1903,8 @@ It also checks that changing the price, the recipe, a modifier effect and a wage
 
 **Playwright.** `tests/e2e/restaurant-day.spec.ts` runs the same day on screen, with one browser per role: publish, reservation, seating, three sends, bar and kitchen, notifications, a split settlement, dirty and clean, reports with CSV export, and audit. Its setup uses services, and its cleanup only disables its accounts, which takes no table lock.
 
+**Opt-in demo data.** `npm run db:seed:demo` builds a pizza restaurant at MAIN ("Demo Pizza Co.": pizza, sandwiches, appetizers and a full bar, with the burger kitchen's canonical Bacon Cheeseburger on the menu), 31 staff with varied availability, six weeks of service history and today's service, through the services as the bootstrapped Owner, on a local development database only. `docs/Demo-Data.md` describes what it builds. It replaced the burger demo on 2026-11-22; the "Demo data" notes in the phase sections below describe the demo as it was in each phase.
+
 **Opt-in validation data.** `npm run db:seed:validation` (`scripts/seed-validation.ts`) loads the fixture in `docs/Phase-13-Validation-Seed-Data.md` into a local development database only (loopback `DATABASE_URL`, non-production `NODE_ENV`), acting as the bootstrapped Owner through the services. It is not in the default seed list, so it never reaches a shared or cloud database. It records `phase13.validation-fixtures` in `seed_runs` when done; a rerun changes nothing.
 
 **Fix.** The settlements report's all-tenders row showed a blank amount on a day with no tenders; it now shows `0.00`, so it reconciles exactly with net sales.

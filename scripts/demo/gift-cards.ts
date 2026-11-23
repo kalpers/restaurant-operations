@@ -2,17 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { Database } from "../src/db";
-import { giftCards, kitchenTicketItems, menuItems } from "../src/db/schema";
-import type { Actor } from "../src/modules/auth/types";
-import { transitionTicketItem } from "../src/modules/kitchen/services/fulfillment-service";
-import { addDraftItem } from "../src/modules/orders/services/draft-item-service";
-import { createOrder } from "../src/modules/orders/services/order-service";
-import { getGiftCardProgram, sellGiftCard, updateGiftCardProgram } from "../src/modules/settlements/services/gift-card-service";
-import { openSettlement, recordTender, type RecordTenderInput } from "../src/modules/settlements/services/settlement-service";
-import { compareDecimals, subtractDecimals } from "../src/shared/decimal/decimal";
-import { completeSettlement } from "../src/workflows/close-order/complete-settlement";
-import { sendOrderItems } from "../src/workflows/submit-order/submit-order";
+import type { Database } from "../../src/db";
+import { giftCards, kitchenTicketItems, menuItems } from "../../src/db/schema";
+import type { Actor } from "../../src/modules/auth/types";
+import { transitionTicketItem } from "../../src/modules/kitchen/services/fulfillment-service";
+import { addDraftItem } from "../../src/modules/orders/services/draft-item-service";
+import { createOrder } from "../../src/modules/orders/services/order-service";
+import { getGiftCardProgram, sellGiftCard, updateGiftCardProgram } from "../../src/modules/settlements/services/gift-card-service";
+import { openSettlement, recordTender, type RecordTenderInput } from "../../src/modules/settlements/services/settlement-service";
+import { compareDecimals, subtractDecimals } from "../../src/shared/decimal/decimal";
+import { completeSettlement } from "../../src/workflows/close-order/complete-settlement";
+import { sendOrderItems } from "../../src/workflows/submit-order/submit-order";
 
 // Phase 31 (policy 17): turns gift cards on, sells three cards (paid on the external terminal,
 // so no drawer is needed), reloads one, and spends one on a closed takeout check, through the
@@ -22,7 +22,7 @@ import { sendOrderItems } from "../src/workflows/submit-order/submit-order";
 
 const DEMO_CARDS = ["25.00", "50.00", "100.00"] as const;
 const DEMO_RELOAD = "25.00";
-const DEMO_CHECK_ITEMS = ["FRENCH_FRIES", "HOUSE_IPA"] as const;
+const DEMO_CHECK_ITEMS = ["CHEESY_BREAD", "LEMONADE"] as const;
 
 const CARD_TENDER: Omit<RecordTenderInput, "expectedVersion" | "idempotencyKey" | "tenderType" | "amount"> = {
   outcome: "RECORDED",
@@ -85,7 +85,7 @@ export async function seedDemoGiftCards(
 
   sold[0]!.balance = reloaded.card.balance;
 
-  // The second card pays part of a takeout check of fries and a beer; the rest goes on a card.
+  // The second card pays part of a takeout check of cheesy bread and a lemonade; the rest goes on a card.
   const items = await database
     .select({ id: menuItems.id, code: menuItems.code })
     .from(menuItems)
@@ -93,7 +93,7 @@ export async function seedDemoGiftCards(
   const itemId = new Map(items.map((row) => [row.code, row.id]));
 
   if (DEMO_CHECK_ITEMS.some((code) => !itemId.has(code))) {
-    return { summary: "3 cards sold and 1 reloaded; no check paid (the demo kitchen's fries or beer are missing)", codes: sold };
+    return { summary: "3 cards sold and 1 reloaded; no check paid (the cheesy bread or lemonade are missing)", codes: sold };
   }
 
   const order = await createOrder(database, server, { orderType: "TAKEOUT", customerName: "Gift card demo" });
