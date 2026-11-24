@@ -157,15 +157,36 @@ export async function moveItemsInTransaction(
   await assertNoOpenSettlement(transaction, source.id);
   await assertNoOpenSettlement(transaction, target.id);
 
-  const rows = await transaction
-    .select({ id: orderItems.id, status: orderItems.status })
+  const chosen = await transaction
+    .select({ id: orderItems.id, status: orderItems.status, bundleParentOrderItemId: orderItems.bundleParentOrderItemId })
     .from(orderItems)
     .where(and(eq(orderItems.orderId, source.id), inArray(orderItems.id, itemIds)))
     .for("update");
 
-  if (rows.length !== itemIds.length) {
+  if (chosen.length !== itemIds.length) {
     throw new NotFoundError("order item");
   }
+
+  // Phase 36 (policy 9): a bundle moves with its components; a component alone doesn't move.
+  const selected = new Set(itemIds);
+
+  if (chosen.some((row) => row.bundleParentOrderItemId && !selected.has(row.bundleParentOrderItemId))) {
+    throw new BusinessRuleError("BUNDLE_COMPONENT", "This is part of a bundle; move the whole bundle instead.");
+  }
+
+  const components = await transaction
+    .select({ id: orderItems.id, status: orderItems.status, bundleParentOrderItemId: orderItems.bundleParentOrderItemId })
+    .from(orderItems)
+    .where(and(eq(orderItems.orderId, source.id), inArray(orderItems.bundleParentOrderItemId, itemIds)))
+    .for("update");
+
+  if (components.some((row) => row.status === "VOIDED")) {
+    throw new BusinessRuleError("BUNDLE_HAS_VOIDED_COMPONENT", "A bundle with a voided course stays on its check.");
+  }
+
+  const rows = [...chosen, ...components.filter((row) => !selected.has(row.id))];
+
+  itemIds = rows.map((row) => row.id);
 
   if (rows.some((row) => row.status === "VOIDED")) {
     throw new BusinessRuleError("ITEM_VOIDED", "A voided item can't be moved.");

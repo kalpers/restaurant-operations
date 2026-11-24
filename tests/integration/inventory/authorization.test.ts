@@ -122,7 +122,7 @@ describe("inventory module boundaries", () => {
       const checks = (text.match(/assert(Any)?Permission\(/g) ?? []).length;
       // Called inside an authorized caller's transaction, by design.
       const internal = (
-        text.match(/export (async )?function (postInventoryTransaction|lockBalance|latestSequence|readPostingSettings|postConsumption|postOrderConsumption|postRemakeConsumption|postSaleReversal|requireSupplier|receivedByLine|lockOrder|bumpOrder|applyStockAlert|copyStockedItems|findOpenInventoryWork|formatTransferNumber|formatLotNumber|createLot|postLotMovements|findLotsNeedingWarning)\b/g) ?? []
+        text.match(/export (async )?function (postInventoryTransaction|lockBalance|latestSequence|readPostingSettings|postConsumption|postOrderConsumption|postRemakeConsumption|postSaleReversal|requireSupplier|receivedByLine|lockOrder|bumpOrder|applyStockAlert|copyStockedItems|findOpenInventoryWork|formatTransferNumber|formatLotNumber|createLot|postLotMovements|findLotsNeedingWarning|findInvoiceNoteCandidates|redactInvoiceNote)\b/g) ?? []
       ).length;
 
       expect(`${file}: ${checks >= exported - internal}`).toBe(`${file}: true`);

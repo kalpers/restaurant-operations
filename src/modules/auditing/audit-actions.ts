@@ -377,6 +377,51 @@ export const AUDIT_ACTIONS = {
     scope: "LOCATION",
     fields: ["locationId", "businessDate", "reasonLength"],
   },
+  // Phase 36 (policy 9): a bundle's courses saved, or the item made ordinary again. Counts only.
+  "menu.bundle-saved": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "courseCount", "choiceCount", "wasBundle"],
+  },
+  "menu.bundle-cleared": {
+    category: "MENU",
+    entityType: "menu_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode"],
+  },
+  // Phase 36 (policy 8): supplier invoices. Numbers, totals and counts; never notes or reasons.
+  "inventory.invoice-approved": {
+    category: "INVENTORY",
+    entityType: "supplier_invoice",
+    scope: "LOCATION",
+    fields: ["invoiceNumber", "supplierId", "statedTotal", "lineCount", "linesOutsideTolerance"],
+  },
+  "inventory.invoice-disputed": {
+    category: "INVENTORY",
+    entityType: "supplier_invoice",
+    scope: "LOCATION",
+    fields: ["invoiceNumber", "supplierId", "reasonLength"],
+  },
+  "inventory.invoice-voided": {
+    category: "INVENTORY",
+    entityType: "supplier_invoice",
+    scope: "LOCATION",
+    fields: ["invoiceNumber", "supplierId", "fromStatus", "reasonLength"],
+  },
+  // Phase 36 (policy 5): a checklist completed, and signed off. Names and counts, never notes.
+  "restaurant.checklist-completed": {
+    category: "ORGANIZATION",
+    entityType: "checklist_run",
+    scope: "LOCATION",
+    fields: ["templateName", "kind", "businessDate", "itemsDone", "itemsSkipped", "employeeId"],
+  },
+  "restaurant.checklist-signed-off": {
+    category: "ORGANIZATION",
+    entityType: "checklist_run",
+    scope: "LOCATION",
+    fields: ["templateName", "kind", "businessDate", "employeeId"],
+  },
   // Phase 23 (policy 27): opening, closing and reopening a location. Codes and counts only.
   "locations.created": {
     category: "ORGANIZATION",
@@ -412,6 +457,9 @@ export const AUDIT_ACTIONS = {
       "schedulingEnabled",
       "kitchenDisplayEnabled",
       "lotExpiryWarningDays",
+      "temperatureUnit",
+      "invoicePriceTolerancePercent",
+      "invoicePriceToleranceAmount",
     ],
   },
   // Phase 17 tax configuration. The rate percentage is configuration, not pay.
@@ -901,6 +949,27 @@ export const AUDIT_ACTIONS = {
     entityType: "order",
     scope: "LOCATION",
     fields: ["orderNumber", "orderItemId", "itemCode", "allergenCodes", "severity", "incompleteLabel"],
+  },
+
+  // Phase 36 (policy 7): events. Numbers, statuses, scope and field names only; never the
+  // contact, notes or deposit reference.
+  "reservations.event-created": {
+    category: "GUESTS",
+    entityType: "event_booking",
+    scope: "LOCATION",
+    fields: ["eventNumber", "status", "spaceScope", "businessDate", "guestCount"],
+  },
+  "reservations.event-updated": {
+    category: "GUESTS",
+    entityType: "event_booking",
+    scope: "LOCATION",
+    fields: ["eventNumber", "changedFields"],
+  },
+  "reservations.event-status-changed": {
+    category: "GUESTS",
+    entityType: "event_booking",
+    scope: "LOCATION",
+    fields: ["eventNumber", "fromStatus", "toStatus", "reasonLength"],
   },
 
   // Phase 22 guest messaging (policy 20). Channels, kinds and reasons only: never an address,

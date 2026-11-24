@@ -29,6 +29,7 @@ import { securityGiftCardPermissionsSeed } from "@/db/seeds/gift-card-permission
 import { securityManagerLogPermissionsSeed } from "@/db/seeds/manager-log-permissions";
 import { securityLoyaltyPermissionsSeed } from "@/db/seeds/loyalty-permissions";
 import { securityGiftCardPurchaserPermissionsSeed } from "@/db/seeds/gift-card-purchaser-permissions";
+import { securityPhase36PermissionsSeed } from "@/db/seeds/phase-36-permissions";
 import { seeds } from "@/db/seeds/registry";
 import { runSeeds } from "@/db/seeds/run-seeds";
 import { securityInventoryPermissionsSeed } from "@/db/seeds/inventory-foundation";
@@ -92,12 +93,12 @@ describe("foundation seeds, on a fresh database", () => {
     locationSettings: 1,
     restaurantAreas: 3,
     roles: 9,
-    permissions: 162,
+    permissions: 172,
     rolePermissions: ROLE_CATALOG.reduce(
       (sum, role) => sum + role.permissions.length,
       0,
     ),
-    seedRuns: 33,
+    seedRuns: 34,
     users: 0,
     positions: 8,
     certificationTypes: 2,
@@ -157,6 +158,7 @@ describe("foundation seeds, on a fresh database", () => {
       "security.manager-log-category-permissions",
       "restaurant.manager-log-categories",
       "security.gift-card-purchaser-permissions",
+      "security.phase-36-permissions",
     ]);
     expect(await totals()).toEqual(expectedTotals);
   });
@@ -165,7 +167,7 @@ describe("foundation seeds, on a fresh database", () => {
     const result = await runSeeds(database, seeds);
 
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toHaveLength(33);
+    expect(result.skipped).toHaveLength(34);
     expect(await totals()).toEqual(expectedTotals);
   });
 
@@ -257,13 +259,13 @@ describe("foundation seeds, on a fresh database", () => {
         );
 
       // The Phase 4 codes stay, because this test only rewinds Phase 3.
-      expect(await countPermissions()).toBe(142);
+      expect(await countPermissions()).toBe(152);
 
       await database.transaction((transaction) =>
         securityHrPermissionsSeed.run(transaction),
       );
 
-      expect(await countPermissions()).toBe(162);
+      expect(await countPermissions()).toBe(172);
 
       const expected = ROLE_CATALOG.find((role) => role.code === "MANAGER")!
         .permissions.filter((code) => code !== "menu.edit")
@@ -874,12 +876,12 @@ describe("foundation seeds, on a fresh database", () => {
           ),
         );
 
-      expect(await countPermissions()).toBe(153);
+      expect(await countPermissions()).toBe(163);
 
       await database.transaction((transaction) => securitySettlementPermissionsSeed.run(transaction));
       await database.transaction((transaction) => securitySettlementPermissionsSeed.run(transaction));
 
-      expect(await countPermissions()).toBe(162);
+      expect(await countPermissions()).toBe(172);
 
       for (const code of ["OWNER", "GENERAL_MANAGER", "MANAGER", "BARTENDER"]) {
         expect(await grantsOf(code)).toEqual([...ROLE_CATALOG.find((role) => role.code === code)!.permissions].sort());
@@ -924,12 +926,12 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 15.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, ids));
       await database.delete(permissions).where(inArray(permissions.id, ids));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 160 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 170 }]);
 
       await database.transaction((transaction) => securitySystemPermissionsSeed.run(transaction));
       await database.transaction((transaction) => securitySystemPermissionsSeed.run(transaction));
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
       expect(await grantsOf("OWNER")).toEqual([...PHASE_16].sort());
       expect(await grantsOf("GENERAL_MANAGER")).toEqual([...PHASE_16].sort());
 
@@ -974,12 +976,12 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 16.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, ids));
       await database.delete(permissions).where(inArray(permissions.id, ids));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 153 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 163 }]);
 
       await database.transaction((transaction) => securityChecksCloseoutPermissionsSeed.run(transaction));
       await database.transaction((transaction) => securityChecksCloseoutPermissionsSeed.run(transaction));
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       for (const role of ROLE_CATALOG) {
         expect(await grantsOf(role.code)).toEqual(role.permissions.filter((code) => PHASE_17.includes(code)).sort());
@@ -1015,12 +1017,12 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 17.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, ids));
       await database.delete(permissions).where(inArray(permissions.id, ids));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 157 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 167 }]);
 
       await database.transaction((transaction) => securityLaborTipsPermissionsSeed.run(transaction));
       await database.transaction((transaction) => securityLaborTipsPermissionsSeed.run(transaction));
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       for (const role of ROLE_CATALOG) {
         expect(await grantsOf(role.code)).toEqual(role.permissions.filter((code) => PHASE_18.includes(code)).sort());
@@ -1044,12 +1046,12 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 18.
       await database.delete(rolePermissions).where(eq(rolePermissions.permissionId, code!.id));
       await database.delete(permissions).where(eq(permissions.id, code!.id));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 161 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 171 }]);
 
       await database.transaction((transaction) => securityMenuStockPermissionsSeed.run(transaction));
       await database.transaction((transaction) => securityMenuStockPermissionsSeed.run(transaction));
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = (
         await database
@@ -1073,12 +1075,12 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 19.
       await database.delete(rolePermissions).where(eq(rolePermissions.permissionId, code!.id));
       await database.delete(permissions).where(eq(permissions.id, code!.id));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 161 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 171 }]);
 
       await database.transaction((transaction) => securityServicePolishPermissionsSeed.run(transaction));
       await database.transaction((transaction) => securityServicePolishPermissionsSeed.run(transaction));
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = (
         await database
@@ -1103,13 +1105,13 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 21.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, rows.map((row) => row.id)));
       await database.delete(permissions).where(inArray(permissions.id, rows.map((row) => row.id)));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 159 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 169 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityGuestMessagingPermissionsSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = async (code: string) =>
         (
@@ -1137,13 +1139,13 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 30.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, rows.map((row) => row.id)));
       await database.delete(permissions).where(inArray(permissions.code, codes));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 159 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 169 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityGiftCardPermissionsSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = async (code: string) =>
         (
@@ -1171,13 +1173,13 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 31.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, rows.map((row) => row.id)));
       await database.delete(permissions).where(inArray(permissions.code, codes));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 157 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 167 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityManagerLogPermissionsSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = async (code: string) =>
         (
@@ -1217,13 +1219,13 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 29.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, rows.map((row) => row.id)));
       await database.delete(permissions).where(inArray(permissions.code, codes));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 159 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 169 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityLoyaltyPermissionsSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = async (code: string) =>
         (
@@ -1250,13 +1252,13 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 22.
       await database.delete(rolePermissions).where(eq(rolePermissions.permissionId, row!.id));
       await database.delete(permissions).where(eq(permissions.id, row!.id));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 161 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 171 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityLocationsLotsPermissionsSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = (
         await database
@@ -1280,13 +1282,13 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 33.
       await database.delete(rolePermissions).where(eq(rolePermissions.permissionId, row!.id));
       await database.delete(permissions).where(eq(permissions.id, row!.id));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 161 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 171 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityGiftCardPurchaserPermissionsSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
 
       const holders = (
         await database
@@ -1300,6 +1302,61 @@ describe("foundation seeds, on a fresh database", () => {
         .sort();
 
       expect(holders).toEqual(["GENERAL_MANAGER", "OWNER"]);
+    });
+  });
+
+  describe("upgrading a Phase 35 database", () => {
+    it("adds the Phase 36 permissions with the catalog's grants, once", async () => {
+      const codes = [
+        "checklists.view",
+        "checklists.complete",
+        "checklists.manage",
+        "food-safety.view",
+        "food-safety.record",
+        "food-safety.manage",
+        "events.view",
+        "events.manage",
+        "purchasing.invoices.record",
+        "purchasing.invoices.approve",
+      ];
+      const rows = await database.select({ id: permissions.id }).from(permissions).where(inArray(permissions.code, codes));
+
+      // Rewind to Phase 35.
+      await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, rows.map((row) => row.id)));
+      await database.delete(permissions).where(inArray(permissions.id, rows.map((row) => row.id)));
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+
+      for (let run = 0; run < 2; run += 1) {
+        await database.transaction((transaction) => securityPhase36PermissionsSeed.run(transaction));
+      }
+
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
+
+      const holders = async (code: string) =>
+        (
+          await database
+            .select({ role: roles.code })
+            .from(rolePermissions)
+            .innerJoin(roles, eq(roles.id, rolePermissions.roleId))
+            .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+            .where(eq(permissions.code, code))
+        )
+          .map((entry) => entry.role)
+          .sort();
+
+      expect(await holders("checklists.complete")).toEqual([
+        "BARTENDER", "COOK", "GENERAL_MANAGER", "HOST", "MANAGER", "OWNER", "SERVER", "WAIT_STAFF",
+      ]);
+      expect(await holders("checklists.manage")).toEqual(["GENERAL_MANAGER", "MANAGER", "OWNER"]);
+      expect(await holders("food-safety.record")).toEqual(["BARTENDER", "COOK", "GENERAL_MANAGER", "MANAGER", "OWNER"]);
+      expect(await holders("food-safety.view")).toEqual([
+        "COOK", "GENERAL_MANAGER", "INVENTORY_MANAGER", "MANAGER", "OWNER",
+      ]);
+      expect(await holders("events.manage")).toEqual(["GENERAL_MANAGER", "MANAGER", "OWNER"]);
+      expect(await holders("purchasing.invoices.record")).toEqual([
+        "GENERAL_MANAGER", "INVENTORY_MANAGER", "MANAGER", "OWNER",
+      ]);
+      expect(await holders("purchasing.invoices.approve")).toEqual(["GENERAL_MANAGER", "OWNER"]);
     });
   });
 
@@ -1318,14 +1375,14 @@ describe("foundation seeds, on a fresh database", () => {
       // Rewind to Phase 20.
       await database.delete(rolePermissions).where(inArray(rolePermissions.permissionId, rows.map((row) => row.id)));
       await database.delete(permissions).where(inArray(permissions.id, rows.map((row) => row.id)));
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 156 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 166 }]);
 
       for (let run = 0; run < 2; run += 1) {
         await database.transaction((transaction) => securityGuestProfilesPermissionsSeed.run(transaction));
         await database.transaction((transaction) => recipesAllergenFoundationSeed.run(transaction));
       }
 
-      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 162 }]);
+      expect(await database.select({ total: count() }).from(permissions)).toEqual([{ total: 172 }]);
       expect(await database.select({ total: count() }).from(schema.allergens)).toEqual([{ total: 9 }]);
 
       const holders = async (code: string) =>

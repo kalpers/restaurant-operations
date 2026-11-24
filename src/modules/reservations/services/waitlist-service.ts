@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { assertNoEventBlock } from "./event-holds";
 import { attachProfileToParty } from "./guest-profile-service";
 import {
   cancelQueuedMessages,
@@ -365,6 +366,17 @@ export async function assignWaitlistTables(
         `This party of ${party.partySize} is over the chosen capacity of ${combinedCapacity(tables)}.`,
       );
     }
+
+    // Phase 36 (policy 7): a table an event holds now, or within one turn, isn't free for the queue.
+    const context = await readReservationContext(transaction, actor.locationId);
+
+    await assertNoEventBlock(transaction, {
+      locationId: actor.locationId,
+      timeZone: context.timeZone,
+      interval: { start: now, end: new Date(now.getTime() + context.defaultTableTurnMinutes * 60_000) },
+      tableIds,
+      buyouts: "exclude",
+    });
 
     const status = waitlistEntry.status as WaitlistStatus;
     const next: WaitlistStatus =

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import { orderItemModifiers, orderItems } from "@/db/schema";
@@ -12,6 +12,7 @@ import type { ProposedSelection } from "@/modules/menu/rules/modifier-selection"
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
 import { lockOrder, recomputeAndBumpOrder } from "../repositories/order-repository";
+import { assertNotBundleComponent } from "../rules/bundle-lines";
 import { assertItemIsDraft, assertOrderOpen } from "../rules/order-lifecycle";
 import { calculateLineAmounts } from "../rules/order-totals";
 import { assertSeatAllowed, validateSeat } from "../rules/seats";
@@ -65,6 +66,12 @@ export function modifierRows(orderItemId: string, sellable: SellableItem) {
     preparationInstructionSnapshot: selection.modifier.preparationInstruction,
     sortOrder: index,
   }));
+}
+
+async function hasComponents(transaction: DatabaseTransaction, itemId: string): Promise<boolean> {
+  const [row] = await transaction.select({ id: orderItems.id }).from(orderItems).where(eq(orderItems.bundleParentOrderItemId, itemId)).limit(1);
+
+  return row !== undefined;
 }
 
 async function lockDraftItem(transaction: DatabaseTransaction, orderId: string, itemId: string) {
@@ -122,6 +129,12 @@ export async function addDraftItem(
       at: new Date(),
       orderType: order.orderType,
     });
+
+    // Phase 36 (policy 9): a bundle is added with its choices, through the bundle draft service.
+    if (sellable.item.itemKind === "BUNDLE") {
+      throw new BusinessRuleError("BUNDLE_CHOICES_REQUIRED", "Choose this bundle's courses to add it.");
+    }
+
     const [item] = await transaction
       .insert(orderItems)
       .values({
@@ -161,6 +174,14 @@ export async function updateDraftItem(
     assertOrderOpen(order.status);
 
     const item = await lockDraftItem(transaction, orderId, itemId);
+
+    // Phase 36 (policy 9): a bundle is changed by removing it and adding it again.
+    assertNotBundleComponent(item, "change");
+
+    if (await hasComponents(transaction, itemId)) {
+      throw new BusinessRuleError("BUNDLE_COMPONENT", "Remove this bundle and add it again to change its choices.");
+    }
+
     const entry = normalize({ ...input, menuItemId: item.menuItemId });
     const sellable = await resolveSellableItem(transaction, actor, {
       menuItemId: item.menuItemId,
@@ -207,7 +228,24 @@ export async function removeDraftItem(
     const order = await lockOrder(transaction, actor, orderId, input.expectedVersion);
 
     assertOrderOpen(order.status);
-    await lockDraftItem(transaction, orderId, itemId);
+
+    const item = await lockDraftItem(transaction, orderId, itemId);
+
+    // Phase 36 (policy 9): a component goes only with its bundle, which takes its components.
+    assertNotBundleComponent(item, "remove");
+
+    const components = await transaction
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(eq(orderItems.bundleParentOrderItemId, itemId));
+
+    if (components.length > 0) {
+      const ids = components.map((component) => component.id);
+
+      await transaction.delete(orderItemModifiers).where(inArray(orderItemModifiers.orderItemId, ids));
+      await transaction.delete(orderItems).where(inArray(orderItems.id, ids));
+    }
+
     await transaction.delete(orderItemModifiers).where(eq(orderItemModifiers.orderItemId, itemId));
     await transaction.delete(orderItems).where(eq(orderItems.id, itemId));
 

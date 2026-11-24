@@ -61,6 +61,25 @@ async function send(url: string, init: RequestInit): Promise<ApiRequestResult> {
   }
 }
 
+/** Like `sendApiRequest`, but returns the response body when it succeeds. */
+export async function sendApiJson<Data>(
+  method: string,
+  url: string,
+  body?: unknown,
+): Promise<{ ok: true; data: Data } | ApiFailure> {
+  try {
+    const response = await apiFetch(url, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+    return response.ok ? { ok: true, data: (await response.json()) as Data } : await readFailure(response);
+  } catch {
+    return { ok: false, status: 0, code: "NETWORK", message: NETWORK_FAILURE_MESSAGE };
+  }
+}
+
 /** True when the record changed under the user and a reload shows the latest. */
 export function isStaleConflict(failure: Pick<ApiFailure, "code">): boolean {
   return failure.code === "CONCURRENCY_CONFLICT" || failure.code === "LOCATION_CHANGED";

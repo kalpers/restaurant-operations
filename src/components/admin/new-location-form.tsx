@@ -22,6 +22,8 @@ const GROUPS = [
   { value: "SCHEDULING_RULES", label: "Scheduling rules" },
   { value: "TIP_POOL_RULES", label: "Tip pool rule" },
   { value: "BOOKING_HOURS", label: "Online booking settings and hours (booking stays off)" },
+  { value: "CHECKLISTS", label: "Checklist templates (no checklists started)" },
+  { value: "TEMPERATURE_POINTS", label: "Temperature check points (no readings)" },
 ] as const;
 
 type Props = {

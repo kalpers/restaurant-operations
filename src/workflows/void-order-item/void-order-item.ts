@@ -135,7 +135,13 @@ export async function voidOrderItem(
   actor: Actor,
   orderId: string,
   itemId: string,
-  input: { reason: string; disposition: VoidDisposition; expectedVersion: number },
+  input: {
+    reason: string;
+    disposition: VoidDisposition;
+    expectedVersion: number;
+    /** Phase 36 (policy 9): a bundle's components, each by its own kitchen state (default: the bundle's). */
+    componentDispositions?: Record<string, VoidDisposition>;
+  },
 ): Promise<{ id: string; version: number }> {
   assertPermission(actor, "orders.void");
 
@@ -158,6 +164,21 @@ export async function voidOrderItem(
     }
 
     const at = new Date();
+    // Phase 36 (policy 9): voiding a bundle voids its components first. A component alone may
+    // be voided too (a skipped course); its price is zero, so the check's total is unchanged.
+    const components = await transaction
+      .select({ id: orderItems.id, status: orderItems.status })
+      .from(orderItems)
+      .where(and(eq(orderItems.bundleParentOrderItemId, item.id), inArray(orderItems.status, ["SUBMITTED"])))
+      .for("update");
+
+    for (const component of components) {
+      await voidSubmittedItem(transaction, actor, component, {
+        reason,
+        disposition: input.componentDispositions?.[component.id] ?? input.disposition,
+        at,
+      });
+    }
 
     await voidSubmittedItem(transaction, actor, item, {
       reason,

@@ -44,6 +44,7 @@ import {
 import { securityGiftCardPurchaserPermissionsSeed } from "./gift-card-purchaser-permissions";
 import { securityLoyaltyPermissionsSeed } from "./loyalty-permissions";
 import { securityLocationsLotsPermissionsSeed } from "./locations-lots-permissions";
+import { securityPhase36PermissionsSeed } from "./phase-36-permissions";
 
 /** Seeds run in this order. Later phases register their seeds here. */
 export const seeds: readonly Seed[] = [
@@ -80,4 +81,5 @@ export const seeds: readonly Seed[] = [
   securityManagerLogCategoryPermissionsSeed,
   restaurantManagerLogCategoriesSeed,
   securityGiftCardPurchaserPermissionsSeed,
+  securityPhase36PermissionsSeed,
 ];

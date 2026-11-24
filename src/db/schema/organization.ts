@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   integer,
+  numeric,
   pgTable,
   smallint,
   text,
@@ -123,6 +124,16 @@ export const locationSettings = pgTable(
     runningLowPortions: smallint("running_low_portions").notNull().default(5),
     /** Phase 23 (policy 22, D13): warn this many days before a lot expires. 0 turns it off. */
     lotExpiryWarningDays: smallint("lot_expiry_warning_days").notNull().default(2),
+    /** Phase 36 (policy 6): the default unit for new temperature check points, F or C. */
+    temperatureUnit: text("temperature_unit").notNull().default("F"),
+    /** Phase 36 (policy 8): an invoiced unit price within this percent of the receipt cost is in tolerance. */
+    invoicePriceTolerancePercent: numeric("invoice_price_tolerance_percent", { precision: 5, scale: 2, mode: "string" })
+      .notNull()
+      .default("2.00"),
+    /** Phase 36 (policy 8): or within this amount per purchase unit, whichever is larger. */
+    invoicePriceToleranceAmount: numeric("invoice_price_tolerance_amount", { precision: 14, scale: 4, mode: "string" })
+      .notNull()
+      .default("0.5000"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -143,6 +154,11 @@ export const locationSettings = pgTable(
     check(
       "location_settings_lot_expiry_warning_range",
       sql`${table.lotExpiryWarningDays} BETWEEN 0 AND 30`,
+    ),
+    check("location_settings_temperature_unit_valid", sql`${table.temperatureUnit} IN ('F', 'C')`),
+    check(
+      "location_settings_invoice_tolerance_valid",
+      sql`${table.invoicePriceTolerancePercent} BETWEEN 0 AND 100 AND ${table.invoicePriceToleranceAmount} >= 0`,
     ),
   ],
 );

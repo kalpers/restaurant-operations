@@ -17,12 +17,17 @@ import {
   readReservationContext,
   type ActiveHold,
 } from "../repositories/reservation-repository";
+import { findEventBlocks } from "../queries/event-blocks";
 import {
   reservationPlanningInterval,
   walkInHoldInterval,
 } from "../rules/hold-intervals";
+import { describeEventBlock } from "./event-holds";
 
 export type HeldTable = ActiveHold;
+
+/** Phase 36 (policy 7): a table an event holds right now, for seating. */
+export type EventHeldTable = { eventBookingId: string; eventNumber: string; name: string; tableId: string; endsAt: Date };
 
 /**
  * Holds on these tables for anyone but `guestPartyId`'s own reservation. Call this after
@@ -73,19 +78,44 @@ export async function checkHoldsForSeating(
     overrideReason?: string | null;
     now: Date;
   },
-): Promise<{ overridden: HeldTable[]; reason: string | null }> {
+): Promise<{ overridden: HeldTable[]; eventsOverridden: EventHeldTable[]; reason: string | null }> {
   const holds = await findHoldsForOtherParties(transaction, {
     locationId: actor.locationId,
     tableIds: input.tableIds,
     guestPartyId: input.guestPartyId,
     now: input.now,
   });
+  // Phase 36 (policy 7): an event's tables are held for its party over the whole block.
+  const blocks = await findEventBlocks(transaction, {
+    locationId: actor.locationId,
+    interval: { start: input.now, end: new Date(input.now.getTime() + 1) },
+    tableIds: input.tableIds,
+    buyouts: "exclude",
+    exceptGuestPartyId: input.guestPartyId,
+  });
+  const wanted = new Set(input.tableIds);
+  const eventHolds: EventHeldTable[] = blocks.flatMap((block) =>
+    block.tableIds
+      .filter((tableId) => wanted.has(tableId))
+      .map((tableId) => ({ eventBookingId: block.eventId, eventNumber: block.eventNumber, name: block.name, tableId, endsAt: block.interval.end })),
+  );
 
-  if (holds.length === 0) {
-    return { overridden: [], reason: null };
+  if (holds.length === 0 && eventHolds.length === 0) {
+    return { overridden: [], eventsOverridden: [], reason: null };
   }
 
   const reason = input.overrideReason?.trim();
+
+  if (!reason && eventHolds.length > 0) {
+    const context = await readReservationContext(transaction, actor.locationId);
+
+    throw new ConflictError(
+      "EVENT_HOLD_ACTIVE",
+      `${describeEventBlock(blocks[0]!, context.timeZone)}${
+        actorHolds(actor, "reservations.override-hold") ? " Give a reason to override the hold." : " A manager can override this."
+      }`,
+    );
+  }
 
   if (!reason) {
     const context = await readReservationContext(transaction, actor.locationId);
@@ -104,7 +134,7 @@ export async function checkHoldsForSeating(
     throw new AuthorizationError();
   }
 
-  return { overridden: holds, reason };
+  return { overridden: holds, eventsOverridden: eventHolds, reason };
 }
 
 /** Appends the override record for each hold that was bypassed. */
@@ -114,11 +144,15 @@ export async function recordHoldOverrides(
   input: {
     sessionId: string;
     holds: readonly HeldTable[];
+    /** Phase 36 (policy 7): event holds bypassed, recorded the same way. */
+    eventHolds?: readonly EventHeldTable[];
     reason: string;
     occurredAt: Date;
   },
 ): Promise<void> {
-  if (input.holds.length === 0) {
+  const eventHolds = input.eventHolds ?? [];
+
+  if (input.holds.length === 0 && eventHolds.length === 0) {
     return;
   }
 
@@ -129,8 +163,8 @@ export async function recordHoldOverrides(
     );
   }
 
-  await transaction.insert(reservationHoldOverrides).values(
-    input.holds.map((hold) => ({
+  await transaction.insert(reservationHoldOverrides).values([
+    ...input.holds.map((hold) => ({
       reservationId: hold.reservationId,
       tableSessionId: input.sessionId,
       restaurantTableId: hold.tableId,
@@ -138,11 +172,23 @@ export async function recordHoldOverrides(
       overriddenByUserId: actor.userId,
       occurredAt: input.occurredAt,
     })),
-  );
+    ...eventHolds.map((hold) => ({
+      eventBookingId: hold.eventBookingId,
+      category: "EVENT_HOLD_OVERRIDE",
+      tableSessionId: input.sessionId,
+      restaurantTableId: hold.tableId,
+      reason: input.reason.trim(),
+      overriddenByUserId: actor.userId,
+      occurredAt: input.occurredAt,
+    })),
+  ]);
 }
 
 export type TableHoldIndicator = {
+  /** Phase 36 (policy 7): a reservation's hold, or an event's block. */
+  kind: "RESERVATION" | "EVENT";
   tableId: string;
+  /** The reservation, or (for an event) the event booking. */
   reservationId: string;
   reservationAt: string;
   holdStartsAt: string;
@@ -175,11 +221,29 @@ export async function listTableHoldIndicators(
     to: new Date(now.getTime() + within * 60_000),
   });
   const canSeeNames = actorHolds(actor, "reservations.view");
+  const blocks = await findEventBlocks(executor, {
+    locationId: actor.locationId,
+    interval: { start: now, end: new Date(now.getTime() + within * 60_000) },
+    buyouts: "exclude",
+  });
+  const eventIndicators: TableHoldIndicator[] = blocks.flatMap((block) =>
+    block.tableIds.map((tableId) => ({
+      kind: "EVENT" as const,
+      tableId,
+      reservationId: block.eventId,
+      reservationAt: block.interval.start.toISOString(),
+      holdStartsAt: block.interval.start.toISOString(),
+      holdEndsAt: block.interval.end.toISOString(),
+      active: block.interval.start <= now && now < block.interval.end,
+      guestName: canSeeNames ? `${block.eventNumber} ${block.name}` : null,
+    })),
+  );
 
-  return plans.map((plan) => {
+  return [...eventIndicators, ...plans.map((plan) => {
     const hold = walkInHoldInterval(plan, context);
 
     return {
+      kind: "RESERVATION" as const,
       tableId: plan.tableId,
       reservationId: plan.reservationId,
       reservationAt: plan.reservationAt.toISOString(),
@@ -188,7 +252,7 @@ export async function listTableHoldIndicators(
       active: hold.start <= now && now < hold.end,
       guestName: canSeeNames ? plan.guestName : null,
     };
-  });
+  })];
 }
 
 export { reservationPlanningInterval };

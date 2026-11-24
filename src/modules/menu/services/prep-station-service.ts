@@ -10,7 +10,7 @@ import { BusinessRuleError, ConflictError, NotFoundError } from "@/shared/errors
 import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 
 import type { StationType } from "../types";
-import { assertAnyPermission, assertPermission, requireMenuItem } from "./access";
+import { assertAnyPermission, assertNotBundleItem, assertPermission, requireMenuItem } from "./access";
 
 // Preparation routing is configuration only. Phase 10 Kitchen snapshots a send's routing
 // onto its tickets, so changing routing or a station never moves submitted work. A station
@@ -142,6 +142,8 @@ export async function setItemRouting(
     await requireMenuItem(transaction, actor, menuItemId);
 
     if (wanted.length > 0) {
+      await assertNotBundleItem(transaction, menuItemId);
+
       const found = await transaction
         .select({ id: prepStations.id })
         .from(prepStations)

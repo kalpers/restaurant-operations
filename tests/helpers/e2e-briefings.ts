@@ -30,15 +30,16 @@ export type BriefingsSetup = {
   suffix: string;
 };
 
-async function account(roleCode: string, locationId: string): Promise<OrdersAccount> {
-  const created = await createRoleAccount(roleCode, BRIEFINGS_SCOPE);
+async function account(roleCode: string, locationId: string, scope: E2eScope): Promise<OrdersAccount> {
+  const created = await createRoleAccount(roleCode, scope);
 
   await assignAt(created.id, roleCode, locationId);
 
   return created;
 }
 
-export async function createBriefingsSetup(): Promise<BriefingsSetup> {
+/** Phase 36: other specs pass their own scope, so disabling one spec's accounts leaves the others signed in. */
+export async function createBriefingsSetup(scope: E2eScope = BRIEFINGS_SCOPE): Promise<BriefingsSetup> {
   const database = getDatabase();
   const [main] = await database.select({ organizationId: locations.organizationId }).from(locations).where(eq(locations.locationCode, "MAIN"));
   const suffix = randomUUID().slice(0, 8);
@@ -55,10 +56,10 @@ export async function createBriefingsSetup(): Promise<BriefingsSetup> {
 
   await database.insert(locationSettings).values({ locationId, cashDrawerRequired: false });
 
-  const owner = await account("OWNER", locationId);
-  const manager = await account("MANAGER", locationId);
-  const server = await account("SERVER", locationId);
-  const cook = await account("COOK", locationId);
+  const owner = await account("OWNER", locationId, scope);
+  const manager = await account("MANAGER", locationId, scope);
+  const server = await account("SERVER", locationId, scope);
+  const cook = await account("COOK", locationId, scope);
   const context = await getUserAuthContext(database, owner.id);
   const ownerActor = requirePermission(context!, { permission: "employees.create", locationId });
 
@@ -107,9 +108,9 @@ export async function briefingsGuestProfile(setup: BriefingsSetup, displayName: 
   return profile.id;
 }
 
-export async function disableBriefingsAccounts(): Promise<void> {
+export async function disableBriefingsAccounts(scope: E2eScope = BRIEFINGS_SCOPE): Promise<void> {
   const database = getDatabase();
-  const accounts = await database.select({ id: users.id }).from(users).where(like(users.normalizedEmail, `%@${BRIEFINGS_SCOPE.emailDomain}`));
+  const accounts = await database.select({ id: users.id }).from(users).where(like(users.normalizedEmail, `%@${scope.emailDomain}`));
 
   if (accounts.length > 0) {
     await database

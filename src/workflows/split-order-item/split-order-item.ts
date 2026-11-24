@@ -16,6 +16,7 @@ import { assertPermission } from "@/modules/orders/services/access";
 import { createOrderInTransaction } from "@/modules/orders/services/order-service";
 import { assertNoOpenSettlement } from "@/modules/settlements/repositories/settlement-repository";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
+import { assertNotBundleComponent } from "@/modules/orders/rules/bundle-lines";
 
 // Phase 20 (policy 17, D16): share one sent item between checks on one Table Session. The
 // original becomes SPLIT and leaves the totals; its equal shares carry the money (cents by
@@ -150,6 +151,9 @@ export async function splitOrderItem(
         if (!item) {
           throw new NotFoundError("order item");
         }
+
+        // Phase 36 (policy 9): a bundle is shared as a whole; its components stay with it.
+        assertNotBundleComponent(item, "share");
 
         if (item.status !== "SUBMITTED") {
           throw new BusinessRuleError(

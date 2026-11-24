@@ -25,6 +25,10 @@ const KIND_HEADINGS: Record<MentionKind, string> = {
   ORDER_ITEM_INSTRUCTION: "Order item instructions (and kitchen tickets)",
   SHIFT_NOTE: "Shift notes",
   ASSIGNMENT_NOTE: "Shift assignment notes",
+  CHECKLIST_NOTE: "Checklist notes",
+  TEMPERATURE_ACTION: "Temperature corrective actions",
+  EVENT_TEXT: "Other events (names and notes)",
+  INVOICE_NOTE: "Supplier invoice notes",
   GIFT_CARD_PURCHASER: "Gift card purchasers",
 };
 

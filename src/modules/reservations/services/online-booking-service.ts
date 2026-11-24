@@ -29,10 +29,12 @@ import { ConcurrencyError } from "@/shared/errors/concurrency-error";
 import { businessDateOf } from "@/shared/time/business-date-service";
 import { addDays, localDateOf, localMinutesOf, localTimeOf, localToInstantLenient } from "@/shared/time/zoned-time";
 
+import { findEventBlocks, lockLocationPlanning } from "../queries/event-blocks";
 import { appendPartyHistory, changePartyStatus, lockPartyGraph } from "../repositories/party-repository";
 import { countPublicAttempt, publicThrottleKey } from "../repositories/public-throttle-repository";
 import { endAssignments, readReservationContext } from "../repositories/reservation-repository";
 import { assertNoCardNumbers } from "../rules/guest-contact";
+import { intervalsOverlap, reservationPlanningInterval } from "../rules/hold-intervals";
 import { assertReservationTransition } from "../rules/lifecycle";
 import { normalizeMessageAddress, toE164 } from "../rules/message-address";
 import { formatMessageTime } from "../rules/message-templates";
@@ -317,7 +319,7 @@ export async function offeredSlots(
   location: PublicLocation,
   input: { localDate: string; partySize: number; now: Date },
 ) {
-  return listOfferedSlots({
+  const slots = listOfferedSlots({
     localDate: input.localDate,
     today: localDateOf(input.now, location.timeZone),
     timeZone: location.timeZone,
@@ -327,6 +329,25 @@ export async function offeredSlots(
     settings: location.settings,
     bookedCovers: await bookedCoversOn(executor, location, input.localDate),
   });
+
+  if (slots.length === 0) {
+    return slots;
+  }
+
+  // Phase 36 (policy 7): no time is offered whose booking would overlap a buyout.
+  const context = await readReservationContext(executor, location.locationId);
+  const planning = (slot: (typeof slots)[number]) =>
+    reservationPlanningInterval({ reservationAt: slot.at, expectedDurationMinutes: context.defaultReservationDurationMinutes }, context);
+  const buyouts = await findEventBlocks(executor, {
+    locationId: location.locationId,
+    interval: { start: planning(slots[0]!).start, end: planning(slots[slots.length - 1]!).end },
+    tableIds: [],
+    buyouts: "include",
+  });
+
+  return buyouts.length === 0
+    ? slots
+    : slots.filter((slot) => !buyouts.some((block) => intervalsOverlap(block.interval, planning(slot))));
 }
 
 export type PublicRequestContext = { clientIp: string | null; now?: Date };
@@ -463,6 +484,8 @@ export async function createOnlineReservation(
 
   return withTransaction(database, async (transaction) => {
     await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`online-booking:${location.locationId}`}, 0))`);
+    // Phase 36 (policy 7): and in turn with staff reservation and event writes.
+    await lockLocationPlanning(transaction, location.locationId);
 
     const [previous] = await transaction
       .select({ id: reservations.id, status: reservations.status, reservationAt: reservations.reservationAt, partySize: guestParties.partySize })

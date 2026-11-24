@@ -25,6 +25,7 @@ function holdCheck(actor: Actor, overrideReason: string | null | undefined): New
       await recordHoldOverrides(transaction, actor, {
         sessionId: input.sessionId,
         holds: holds.overridden,
+        eventHolds: holds.eventsOverridden,
         reason: holds.reason,
         occurredAt: input.now,
       });

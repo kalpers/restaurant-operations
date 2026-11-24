@@ -21,6 +21,7 @@ import {
 } from "../helpers/timestamps";
 import { versionColumn } from "../helpers/versioning";
 import { users } from "./auth";
+import { eventBookings } from "./events";
 import { guestParties } from "./guest-parties";
 import { restaurantAreas } from "./organization";
 import { restaurantTables, tableSessions } from "./restaurant";
@@ -168,9 +169,10 @@ export const reservationHoldOverrides = pgTable(
   "reservation_hold_overrides",
   {
     id: uuidPrimaryKey(),
-    reservationId: uuid("reservation_id")
-      .notNull()
-      .references(() => reservations.id, { onDelete: "restrict" }),
+    /** Null for a Phase 36 event hold override. */
+    reservationId: uuid("reservation_id").references(() => reservations.id, { onDelete: "restrict" }),
+    /** Phase 36 (policy 7): the event whose hold was overridden. */
+    eventBookingId: uuid("event_booking_id"),
     tableSessionId: uuid("table_session_id").notNull(),
     restaurantTableId: uuid("restaurant_table_id").notNull(),
     category: text("category").notNull().default("RESERVATION_HOLD_OVERRIDE"),
@@ -193,9 +195,15 @@ export const reservationHoldOverrides = pgTable(
       columns: [table.restaurantTableId],
       foreignColumns: [restaurantTables.id],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "reservation_hold_overrides_event_fk",
+      columns: [table.eventBookingId],
+      foreignColumns: [eventBookings.id],
+    }).onDelete("restrict"),
     check(
       "reservation_hold_overrides_category_valid",
-      sql`${table.category} = 'RESERVATION_HOLD_OVERRIDE'`,
+      sql`(${table.category} = 'RESERVATION_HOLD_OVERRIDE' AND ${table.reservationId} IS NOT NULL AND ${table.eventBookingId} IS NULL)
+        OR (${table.category} = 'EVENT_HOLD_OVERRIDE' AND ${table.eventBookingId} IS NOT NULL AND ${table.reservationId} IS NULL)`,
     ),
     check(
       "reservation_hold_overrides_reason_not_blank",

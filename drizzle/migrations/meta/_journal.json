@@ -568,6 +568,76 @@
       "when": 1795442476737,
       "tag": "0080_phase_35_code_hash_scheme",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795455121203,
+      "tag": "0081_phase_36_checklists",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795455125603,
+      "tag": "0082_phase_36_checklist_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795456114250,
+      "tag": "0083_phase_36_temperature_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795456129655,
+      "tag": "0084_phase_36_temperature_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795457554117,
+      "tag": "0085_phase_36_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795457578266,
+      "tag": "0086_phase_36_event_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795459911240,
+      "tag": "0087_phase_36_supplier_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1795459915809,
+      "tag": "0088_phase_36_invoice_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1795461487097,
+      "tag": "0089_phase_36_bundles",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795461492318,
+      "tag": "0090_phase_36_bundle_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -41,6 +41,11 @@ const envObject = z.object({
     .string({ error: "must be a string" })
     .min(1, { error: "must not be empty" })
     .default(".local/hr-files"),
+  // Phase 36 (policy 8): scanned supplier invoices. Also outside public/.
+  SUPPLIER_INVOICE_STORAGE_PATH: z
+    .string({ error: "must be a string" })
+    .min(1, { error: "must not be empty" })
+    .default(".local/invoice-files"),
   EMPLOYEE_DOCUMENT_MAX_BYTES: z.coerce
     .number({ error: "must be a whole number" })
     .int({ error: "must be a whole number" })

@@ -18,6 +18,7 @@ export type NotificationLinks = {
   employeeCertificationId?: string;
   timeEntryId?: string;
   inventoryLotId?: string;
+  temperatureReadingId?: string;
 };
 
 export type NewNotification = {

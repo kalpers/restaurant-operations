@@ -4,10 +4,19 @@ import { menuItems } from "@/db/schema";
 import type { DatabaseExecutor } from "@/db/transactions/transaction-context";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { Actor } from "@/modules/auth/types";
-import { AuthorizationError, NotFoundError } from "@/shared/errors/app-error";
+import { AuthorizationError, BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 
 export function actorHolds(actor: Actor, permission: PermissionCode): boolean {
   return actor.permissions.has(permission);
+}
+
+/** Phase 36 (policy 9): refuses giving a bundle its own recipe, routing or modifiers. */
+export async function assertNotBundleItem(executor: DatabaseExecutor, menuItemId: string): Promise<void> {
+  const [item] = await executor.select({ itemKind: menuItems.itemKind }).from(menuItems).where(eq(menuItems.id, menuItemId));
+
+  if (item?.itemKind === "BUNDLE") {
+    throw new BusinessRuleError("BUNDLE_HAS_NO_OWN_PREP", "A bundle has no recipe, kitchen routing or modifiers of its own; its courses do.");
+  }
 }
 
 /** Every service calls this itself, so a request is refused however it's reached. */

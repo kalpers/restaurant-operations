@@ -91,6 +91,14 @@ All of this feeds the reports (sales, tax, item mix, menu engineering, labor, ti
 - To try an erase: Dana Whitfield has a profile and is named in a takeout check, its instruction, a draft shift note and tonight's waitlist.
 - The manager log has five entries (one a correction), and there are three pre-shift notes.
 
+## Checklists, temperatures, events, invoices and bundles (Phase 36)
+
+- Checklists: "Opening", "Closing" and "Server side work" (for servers); the last two need a manager sign-off. Today's opening run has been started and partly ticked.
+- Temperature log: "Walk-in cooler" and "Prep line reach-in" (33 to 41 °F), "Freezer" (0 °F or below) and "Sauce hot well" (135 °F or above), checked every 4 hours, with recent readings. Yesterday evening the walk-in ran warm: the reading has a corrective action, and a recheck follows it.
+- Events: "Rivera rehearsal dinner" (confirmed, 18 guests, a $900 minimum spend and a $200 deposit recorded as information) holds its tables; "Office holiday party (inquiry)" (30 guests) holds nothing yet.
+- Supplier invoices: invoices entered against recent receipts, one approved and one disputed.
+- Bundles: "Pizza Night for Two" (39.00: a starter, two pizzas and a dessert in three courses, with upcharges for the Caesar salad, supreme pizza and tiramisu) and "Lunch Combo" (14.00: a sub and a drink, with an upcharge for the cheesesteak).
+
 ## Files
 
 | File | Holds |

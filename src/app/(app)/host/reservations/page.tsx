@@ -1,3 +1,4 @@
+import { EventsAhead } from "@/components/reservations/events-ahead";
 import { HostTabs } from "@/components/reservations/host-tabs";
 import {
   ReservationsBoard,
@@ -6,6 +7,7 @@ import {
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { readReservationContext } from "@/modules/reservations/repositories/reservation-repository";
+import { listEvents } from "@/modules/reservations/services/event-service";
 import { listHostTables } from "@/modules/reservations/services/recommendation-service";
 import { listReservations } from "@/modules/reservations/services/reservation-service";
 import {
@@ -26,6 +28,10 @@ export default async function ReservationsPage() {
     toBusinessDate: addDays(clock.businessDate, 14),
   });
   const tables = await listHostTables(database, actor);
+  // Phase 36 (policy 7): events that hold space over the same dates.
+  const events = actorHolds(actor, "events.view")
+    ? await listEvents(database, actor, { from: clock.businessDate, to: addDays(clock.businessDate, 14) })
+    : [];
   const abilities: ReservationAbilities = {
     manage: actorHolds(actor, "reservations.manage"),
     seat: actorHolds(actor, "restaurant.seat"),
@@ -51,6 +57,7 @@ export default async function ReservationsPage() {
           online: actorHolds(actor, "reservations.online.manage"),
         }}
       />
+      <EventsAhead events={events} timeZone={clock.timeZone} />
       <ReservationsBoard
         reservations={reservations}
         tables={tables}

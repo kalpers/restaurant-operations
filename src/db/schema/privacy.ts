@@ -23,6 +23,14 @@ export const REDACTABLE_TABLES = [
   "shifts",
   "shift_assignments",
   "gift_card_purchasers",
+  // Phase 36 (policy 3): checklist notes and skip reasons.
+  "checklist_run_items",
+  // Phase 36 (policy 3): temperature corrective actions.
+  "temperature_readings",
+  // Phase 36 (policy 3): other events' names and notes.
+  "event_bookings",
+  // Phase 36 (policy 3): supplier invoice notes.
+  "supplier_invoices",
 ] as const;
 
 export type RedactableTable = (typeof REDACTABLE_TABLES)[number];

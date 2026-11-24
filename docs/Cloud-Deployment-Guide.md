@@ -36,6 +36,7 @@ All are validated in `src/config/env.ts`. The app refuses to start sign-in witho
 | `DATABASE_URL` | `postgresql://<user>:<password>@<host>:5432/restaurant_ops?sslmode=require` |
 | `EMPLOYEE_DOCUMENT_STORAGE_PATH` | Absolute path on a persistent volume, outside the app directory and `public/` |
 | `EMPLOYEE_DOCUMENT_MAX_BYTES` | Optional; default 10 MiB, max 50 MiB |
+| `SUPPLIER_INVOICE_STORAGE_PATH` | Phase 36: absolute path on a persistent volume for scanned supplier invoices, outside the app directory and `public/` (same rules as the employee documents path) |
 | `OUTBOX_POLL_INTERVAL_MS` | Optional; default 1000. Do not set it to 0 in production, because that turns off realtime. |
 | `TEST_DATABASE_URL` | **Do not set.** Test tooling recreates that database. |
 | `MESSAGING_EMAIL_PROVIDER` | Phase 22: `smtp` or `off`. Required in production; `capture` is refused. |
@@ -185,7 +186,7 @@ It works, with these constraints:
 - **One instance only.** Set the plan to one instance and turn off autoscale (see section 1). Turn on **Always On** so the outbox processor isn't idled out.
 - **Node 26 support.** Check that App Service offers Node 26 on Linux. If not, deploy a custom container, which needs the `Dockerfile` from section 2 item 5.
 - **Streaming.** App Service's front end has a request timeout of roughly 230 s for requests that send nothing. The 25 s SSE heartbeat should keep the stream alive, and the client reconnects anyway. Verify live tickets after deploy.
-- **Documents.** Point `EMPLOYEE_DOCUMENT_STORAGE_PATH` under `/home`, which persists across restarts, or use the Blob adapter. Anything outside `/home` is lost on restart.
+- **Documents.** Point `EMPLOYEE_DOCUMENT_STORAGE_PATH` and `SUPPLIER_INVOICE_STORAGE_PATH` under `/home`, which persists across restarts, or use the Blob adapter. Anything outside `/home` is lost on restart.
 - **Migrations and owner bootstrap.** These need dev dependencies and an interactive terminal. Run them from a deployment pipeline or jump box with VNet access to the DB, or from the App Service SSH console.
 - **Networking.** Use VNet integration to reach the private Flexible Server.
 - **Secrets.** Use Key Vault references in App Settings.

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import { orderItems } from "@/db/schema";
@@ -6,6 +6,7 @@ import { withTransaction } from "@/db/transactions/transaction-context";
 import { writeOutboxEvents } from "@/infrastructure/outbox/outbox";
 import type { Actor } from "@/modules/auth/types";
 import { lockOrder, recomputeAndBumpOrder } from "@/modules/orders/repositories/order-repository";
+import { assertNotBundleComponent } from "@/modules/orders/rules/bundle-lines";
 import { assertOrderOpen } from "@/modules/orders/rules/order-lifecycle";
 import { assertSeatAllowed, validateSeat } from "@/modules/orders/rules/seats";
 import { assertPermission } from "@/modules/orders/services/access";
@@ -39,7 +40,12 @@ export async function setItemSeat(
     await assertNoOpenSettlement(transaction, order.id);
 
     const [item] = await transaction
-      .select({ id: orderItems.id, status: orderItems.status, seatNumber: orderItems.seatNumber })
+      .select({
+        id: orderItems.id,
+        status: orderItems.status,
+        seatNumber: orderItems.seatNumber,
+        bundleParentOrderItemId: orderItems.bundleParentOrderItemId,
+      })
       .from(orderItems)
       .where(and(eq(orderItems.id, itemId), eq(orderItems.orderId, orderId)))
       .for("update");
@@ -52,6 +58,9 @@ export async function setItemSeat(
       throw new BusinessRuleError("ITEM_VOIDED", "A voided item can't change seat.");
     }
 
+    // Phase 36 (policy 9): a bundle changes seat with its components; a component alone doesn't.
+    assertNotBundleComponent(item, "change the seat of");
+
     if (item.seatNumber === seatNumber) {
       return { id: order.id, version: order.version, seatNumber };
     }
@@ -60,6 +69,10 @@ export async function setItemSeat(
       .update(orderItems)
       .set({ seatNumber, version: sql`${orderItems.version} + 1`, updatedAt: new Date() })
       .where(eq(orderItems.id, itemId));
+    await transaction
+      .update(orderItems)
+      .set({ seatNumber, version: sql`${orderItems.version} + 1`, updatedAt: new Date() })
+      .where(and(eq(orderItems.bundleParentOrderItemId, itemId), ne(orderItems.status, "VOIDED")));
 
     const updated = await recomputeAndBumpOrder(transaction, orderId);
 

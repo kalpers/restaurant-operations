@@ -7,6 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDatabase, getDatabase } from "@/db";
 import {
   auditEvents,
+  checklistTemplateItems,
+  checklistTemplates,
+  temperaturePoints,
   inventoryBalances,
   inventoryItemLocations,
   inventoryTransactions,
@@ -99,6 +102,22 @@ describe("opening and closing locations (Phase 23)", () => {
     await database().insert(tipPoolRules).values({ organizationId: scenario.organizationId, locationId: scenario.locationA, name: "House pool" });
     await database().insert(onlineBookingSettings).values({ locationId: scenario.locationA, enabled: true, maxPartySize: 8 });
     await database().insert(onlineBookingPeriods).values({ locationId: scenario.locationA, weekday: 5, startsAt: "17:00:00", endsAt: "21:00:00" });
+    // Phase 36 (policy 4): one active checklist with an active and a retired item, and a retired checklist.
+    const [opening] = await database()
+      .insert(checklistTemplates)
+      .values([
+        { organizationId: scenario.organizationId, locationId: scenario.locationA, name: "Opening", kind: "OPENING", requiresSignOff: true },
+        { organizationId: scenario.organizationId, locationId: scenario.locationA, name: "Old", kind: "OTHER", active: false },
+      ])
+      .returning({ id: checklistTemplates.id });
+    await database().insert(checklistTemplateItems).values([
+      { templateId: opening!.id, organizationId: scenario.organizationId, text: "Unlock doors", sortOrder: 10 },
+      { templateId: opening!.id, organizationId: scenario.organizationId, text: "Retired task", sortOrder: 20, active: false },
+    ]);
+    await database().insert(temperaturePoints).values([
+      { organizationId: scenario.organizationId, locationId: scenario.locationA, name: "Walk-in", kind: "COLD_HOLDING", unit: "F", maximumValue: "41.0" },
+      { organizationId: scenario.organizationId, locationId: scenario.locationA, name: "Old cooler", kind: "COLD_HOLDING", unit: "F", active: false },
+    ]);
   });
 
   afterAll(async () => {
@@ -168,6 +187,12 @@ describe("opening and closing locations (Phase 23)", () => {
     const [booking] = await database().select().from(onlineBookingSettings).where(eq(onlineBookingSettings.locationId, locationId));
     expect(booking).toMatchObject({ enabled: false, maxPartySize: 8 });
     expect(await countWhere(onlineBookingPeriods, eq(onlineBookingPeriods.locationId, locationId))).toBe(1);
+    const copied = await database().select().from(checklistTemplates).where(eq(checklistTemplates.locationId, locationId));
+    expect(copied).toEqual([expect.objectContaining({ name: "Opening", kind: "OPENING", requiresSignOff: true, active: true })]);
+    const copiedItems = await database().select().from(checklistTemplateItems).where(eq(checklistTemplateItems.templateId, copied[0]!.id));
+    expect(copiedItems.map((item) => item.text)).toEqual(["Unlock doors"]);
+    const copiedPoints = await database().select().from(temperaturePoints).where(eq(temperaturePoints.locationId, locationId));
+    expect(copiedPoints).toEqual([expect.objectContaining({ name: "Walk-in", unit: "F", maximumValue: "41.0", active: true })]);
 
     // Never copied: tables, other people's access.
     expect(await countWhere(restaurantTables, eq(restaurantTables.locationId, locationId))).toBe(0);

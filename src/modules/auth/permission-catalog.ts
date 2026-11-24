@@ -79,10 +79,20 @@ export const PERMISSION_CATALOG = [
   { code: "manager-log.categories", name: "Add, rename and deactivate manager log categories", category: "Manager log" },
   { code: "pre-shift.view", name: "Read today's pre-shift notes", category: "Manager log" },
   { code: "pre-shift.manage", name: "Write, edit and withdraw pre-shift notes", category: "Manager log" },
+  // Phase 36 (policy 2): checklists and food-safety temperature logs.
+  { code: "checklists.view", name: "See checklists and their history", category: "Checklists" },
+  { code: "checklists.complete", name: "Start checklists, tick items and complete them", category: "Checklists" },
+  { code: "checklists.manage", name: "Set up checklist templates and sign off checklists", category: "Checklists" },
+  { code: "food-safety.view", name: "Read the temperature log", category: "Food safety" },
+  { code: "food-safety.record", name: "Record temperature readings", category: "Food safety" },
+  { code: "food-safety.manage", name: "Set up temperature check points", category: "Food safety" },
 
   { code: "reservations.view", name: "View reservations", category: "Reservations" },
   { code: "reservations.manage", name: "Manage reservations", category: "Reservations" },
   { code: "reservations.override-hold", name: "Seat a walk-in at a table under a reservation hold", category: "Reservations" },
+  // Phase 36 (policy 2): event and private-dining bookings.
+  { code: "events.view", name: "See events and event sheets", category: "Reservations" },
+  { code: "events.manage", name: "Book, change, confirm and cancel events", category: "Reservations" },
   { code: "waitlist.view", name: "View the waitlist", category: "Waitlist" },
   { code: "waitlist.manage", name: "Manage the waitlist", category: "Waitlist" },
   { code: "waitlist.notify", name: "Record waitlist notifications", category: "Waitlist" },
@@ -132,6 +142,9 @@ export const PERMISSION_CATALOG = [
   { code: "purchasing.view", name: "View purchase orders", category: "Purchasing" },
   { code: "purchasing.manage", name: "Create and edit draft purchase orders", category: "Purchasing" },
   { code: "purchasing.submit", name: "Submit and cancel purchase orders", category: "Purchasing" },
+  // Phase 36 (policy 2): supplier invoices matched against receipts.
+  { code: "purchasing.invoices.record", name: "Enter and match supplier invoices", category: "Purchasing" },
+  { code: "purchasing.invoices.approve", name: "Approve, dispute and void supplier invoices", category: "Purchasing" },
   { code: "suppliers.manage", name: "Manage suppliers and supplier items", category: "Purchasing" },
 
   { code: "orders.view", name: "View orders", category: "Orders" },

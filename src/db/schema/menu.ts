@@ -160,6 +160,11 @@ export const menuItems = pgTable(
     displayOrder: integer("display_order").notNull().default(0),
     /** Phase 17: explicit taxability. Null means no Tax Category is assigned. */
     taxCategoryId: uuid("tax_category_id"),
+    /**
+     * Phase 36 (policy 9): STANDARD, or BUNDLE (a prix-fixe or combo: one price, chosen courses).
+     * A bundle has no recipe, routing or modifier groups; its slots name the component items.
+     */
+    itemKind: text("item_kind").notNull().default("STANDARD"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -175,6 +180,78 @@ export const menuItems = pgTable(
     check("menu_items_item_type_valid", sql`${table.itemType} IN (${sql.raw(MENU_ITEM_TYPES)})`),
     check("menu_items_code_not_blank", sql`length(trim(${table.code})) > 0`),
     check("menu_items_name_not_blank", sql`length(trim(${table.name})) > 0`),
+    check("menu_items_item_kind_valid", sql`${table.itemKind} IN ('STANDARD', 'BUNDLE')`),
+  ],
+);
+
+/** Phase 36 (policy 9): a course (slot) of a bundle, such as "Starter" or "Side". Deactivated, never deleted. */
+export const menuItemBundleSlots = pgTable(
+  "menu_item_bundle_slots",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    bundleMenuItemId: uuid("bundle_menu_item_id").notNull(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    /** The course its choices are sent as, 1 to 5 (changeable on the draft). */
+    defaultCourse: integer("default_course").notNull().default(1),
+    minimumChoices: integer("minimum_choices").notNull().default(1),
+    maximumChoices: integer("maximum_choices").notNull().default(1),
+    active: activeColumn(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "menu_item_bundle_slots_bundle_fk",
+      columns: [table.bundleMenuItemId, table.organizationId],
+      foreignColumns: [menuItems.id, menuItems.organizationId],
+    }).onDelete("restrict"),
+    check("menu_item_bundle_slots_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 60`),
+    check("menu_item_bundle_slots_course_range", sql`${table.defaultCourse} BETWEEN 1 AND 5`),
+    check(
+      "menu_item_bundle_slots_choices_valid",
+      sql`${table.minimumChoices} >= 0 AND ${table.maximumChoices} >= 1 AND ${table.maximumChoices} >= ${table.minimumChoices} AND ${table.maximumChoices} <= 10`,
+    ),
+    index("menu_item_bundle_slots_bundle_idx").on(table.bundleMenuItemId, table.sortOrder),
+  ],
+);
+
+/** Phase 36 (policy 9): a component item a slot offers, with any upcharge. Deactivated, never deleted. */
+export const menuItemBundleSlotOptions = pgTable(
+  "menu_item_bundle_slot_options",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: uuid("organization_id").notNull(),
+    slotId: uuid("slot_id").notNull(),
+    componentMenuItemId: uuid("component_menu_item_id").notNull(),
+    upcharge: money("upcharge").notNull().default("0.00"),
+    isDefault: boolean("is_default").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: activeColumn(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "menu_item_bundle_slot_options_org_fk",
+      columns: [table.organizationId],
+      foreignColumns: [organizations.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "menu_item_bundle_slot_options_slot_fk",
+      columns: [table.slotId],
+      foreignColumns: [menuItemBundleSlots.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "menu_item_bundle_slot_options_component_fk",
+      columns: [table.componentMenuItemId, table.organizationId],
+      foreignColumns: [menuItems.id, menuItems.organizationId],
+    }).onDelete("restrict"),
+    unique("menu_item_bundle_slot_options_slot_component_unique").on(table.slotId, table.componentMenuItemId),
+    check("menu_item_bundle_slot_options_upcharge_valid", sql`${table.upcharge} >= 0`),
+    index("menu_item_bundle_slot_options_slot_idx").on(table.slotId, table.sortOrder),
+    index("menu_item_bundle_slot_options_component_idx").on(table.componentMenuItemId),
   ],
 );
 

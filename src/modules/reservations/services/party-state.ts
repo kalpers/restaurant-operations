@@ -1,3 +1,4 @@
+import { completeEventForParty } from "./event-service";
 import { eq } from "drizzle-orm";
 
 import { nextVersion } from "@/db/helpers/versioning";
@@ -165,6 +166,8 @@ export async function markPartyCompleted(
       userId: actor.userId,
       occurredAt: at,
     });
+    // Phase 36 (policy 7): an event's party finishing completes the event.
+    await completeEventForParty(transaction, graph.party.id, at);
   }
 }
 

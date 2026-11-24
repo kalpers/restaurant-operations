@@ -27,6 +27,9 @@ import {
   locations,
   partyStatusHistory,
   reservationHoldOverrides,
+  eventBookingTables,
+  eventBookings,
+  eventNumberCounters,
   reservations,
   reservationTableAssignments,
   waitlistEntries,
@@ -213,6 +216,14 @@ export async function clearRestaurantData(database: Database): Promise<void> {
   // Phase 22: messages reference reservations, waitlist entries and parties.
   await clearGuestMessagingData(database);
   await database.delete(reservationHoldOverrides);
+  // Phase 36: events reference parties, tables and areas, and can't be deleted (guard lifted here).
+  await database.transaction(async (transaction) => {
+    await transaction.execute(sql`ALTER TABLE event_bookings DISABLE TRIGGER event_bookings_guard_trigger`);
+    await transaction.delete(eventBookingTables);
+    await transaction.delete(eventBookings);
+    await transaction.delete(eventNumberCounters);
+    await transaction.execute(sql`ALTER TABLE event_bookings ENABLE TRIGGER event_bookings_guard_trigger`);
+  });
   await database.delete(waitlistTableAssignments);
   await database.delete(waitlistEntries);
   await database.delete(reservationTableAssignments);

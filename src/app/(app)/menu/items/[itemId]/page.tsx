@@ -9,12 +9,15 @@ import {
   formatMoney,
   ITEM_TYPE_OPTIONS,
 } from "@/components/menu/format";
+import { BundleEditor } from "@/components/menu/bundle-editor";
 import { RoutingForm } from "@/components/menu/routing-form";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
+import { getBundleConfiguration } from "@/modules/menu/services/bundle-service";
 import { loadSelectionGroups } from "@/modules/menu/services/selection-service";
 import {
   getItem,
+  listItems,
   listCategories,
   listMenus,
   listPlacements,
@@ -68,6 +71,11 @@ export default async function MenuItemEditorPage({
 
   const canSeePricing = actorHolds(actor, "menu.pricing.view");
   const canEditPricing = actorHolds(actor, "menu.pricing.edit");
+  // Phase 36 (policy 9): prix-fixe and combo set-up, and the ordinary items it can offer.
+  const [bundle, catalog] = await Promise.all([getBundleConfiguration(database, actor, itemId), listItems(database, actor)]);
+  const bundleComponents = catalog
+    .filter((entry) => entry.active && entry.itemKind === "STANDARD" && entry.id !== itemId)
+    .map((entry) => ({ id: entry.id, name: entry.name }));
   const [placements, menus, categories, attachments, groups, routing, stations, modifiers, selection] =
     await Promise.all([
       listPlacements(database, actor, { menuItemId: itemId }),
@@ -254,6 +262,17 @@ export default async function MenuItemEditorPage({
             { name: "menuCategoryId", label: "Category", type: "select", required: true, options: categories.filter((category) => category.active).map((category) => ({ value: category.id, label: category.name })) },
             { name: "displayOrder", label: "Display order", type: "number", defaultValue: 0 },
           ]}
+        />
+      </section>
+
+      <section aria-label="Prix-fixe or combo" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Prix-fixe or combo</h2>
+        <BundleEditor
+          itemId={itemId}
+          itemVersion={bundle.version}
+          config={bundle}
+          components={bundleComponents}
+          canEdit={actorHolds(actor, "menu.edit") && canEditPricing}
         />
       </section>
 

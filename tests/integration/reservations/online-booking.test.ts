@@ -29,6 +29,7 @@ import {
   saveOnlineBookingSettings,
   type OnlineBookingInput,
 } from "@/modules/reservations/services/online-booking-service";
+import { createEvent } from "@/modules/reservations/services/event-service";
 import { confirmReservation, listReservations } from "@/modules/reservations/services/reservation-service";
 import { AuthorizationError, TooManyRequestsError } from "@/shared/errors/app-error";
 import { addDays, localDateOf } from "@/shared/time/zoned-time";
@@ -375,6 +376,33 @@ describe("online booking (Phase 22)", () => {
         .where(eq(guestPartyMessageConsents.guestPartyId, reservation.guestPartyId));
 
       expect(consent).toMatchObject({ withdrawReason: "UNSUBSCRIBED" });
+    });
+  });
+
+  describe("events (Phase 36 policy 7)", () => {
+    it("offers no time whose booking would overlap a buyout, and refuses booking one", async () => {
+      const planner = await actorWith(database(), scenario, ["events.view", "events.manage"]);
+
+      expect((await getPublicAvailability(database(), code, { localDate: date, partySize: 2 }, guestContext)).times).toContain("19:00");
+
+      await createEvent(database(), planner, {
+        name: "Company party",
+        guestName: "Acme",
+        partySize: 80,
+        localDate: date,
+        startTime: "18:00",
+        endTime: "20:00",
+        setupMinutes: 0,
+        teardownMinutes: 0,
+        spaceScope: "LOCATION",
+        status: "CONFIRMED",
+      });
+
+      const { times } = await getPublicAvailability(database(), code, { localDate: date, partySize: 2 }, guestContext);
+
+      expect(times).not.toContain("19:00");
+      expect(times).not.toContain("17:00");
+      await expect(book({ localTime: "19:00" })).rejects.toMatchObject({ code: "SLOT_UNAVAILABLE" });
     });
   });
 });

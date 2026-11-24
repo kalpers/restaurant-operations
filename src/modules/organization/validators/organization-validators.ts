@@ -53,6 +53,11 @@ export const updateLocationSettingsSchema = z.object({
   kitchenDisplayEnabled: z.boolean(),
   /** Phase 23 (policy 22): days of warning before a lot expires; 0 turns warnings off. */
   lotExpiryWarningDays: z.int().min(0).max(30).optional(),
+  /** Phase 36 (policy 6): the default unit for new temperature check points. */
+  temperatureUnit: z.enum(["F", "C"]).optional(),
+  /** Phase 36 (policy 8): invoice price tolerance, by percent and by amount per unit. */
+  invoicePriceTolerancePercent: z.string().trim().regex(/^\d{1,3}(\.\d{1,2})?$/).optional(),
+  invoicePriceToleranceAmount: z.string().trim().regex(/^\d{1,10}(\.\d{1,4})?$/).optional(),
   expectedVersion,
 });
 
@@ -76,6 +81,8 @@ const COPY_GROUP_VALUES = [
   "SCHEDULING_RULES",
   "TIP_POOL_RULES",
   "BOOKING_HOURS",
+  "CHECKLISTS",
+  "TEMPERATURE_POINTS",
 ] as const;
 
 export const createLocationSchema = z.object({

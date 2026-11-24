@@ -20,6 +20,7 @@ import { seedDemoLoyalty, seedDemoRedemption } from "./demo/loyalty";
 import { seedPizzaMenu } from "./demo/menu";
 import { seedPizzaRestaurant } from "./demo/restaurant";
 import { seedPizzaStaff, seedPizzaTimeOff } from "./demo/staff";
+import { seedDemoPhase36 } from "./demo/phase-36";
 import { seedDemoPhase34 } from "./demo/unclaimed-and-erase";
 import { assertLocalDevelopment, mainOwnerActor } from "./local-seed-guard";
 
@@ -150,6 +151,10 @@ async function main(): Promise<void> {
     const briefings = await seedDemoBriefings(database, owner);
 
     console.log(`Manager log and pre-shift: ${briefings.entries} log entries and ${briefings.notes} notes added.`);
+
+    for (const line of await seedDemoPhase36(database, owner)) {
+      console.log(line);
+    }
 
     const codes = [...giftCards.codes, ...followUps.codes];
 

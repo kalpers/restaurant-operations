@@ -260,6 +260,7 @@ export async function seatPartyInTransaction(
     await recordHoldOverrides(transaction, actor, {
       sessionId: session!.id,
       holds: holds.overridden,
+      eventHolds: holds.eventsOverridden,
       reason: holds.reason,
       occurredAt: now,
     });

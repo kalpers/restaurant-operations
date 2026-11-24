@@ -32,6 +32,12 @@ const SCHEDULE_SELF_SERVICE: readonly PermissionCode[] = [
 /** Phase 32 (policy 11): everyone on staff reads the day's pre-shift notes. */
 const STAFF_BRIEFING: readonly PermissionCode[] = ["pre-shift.view"];
 
+/** Phase 36 (policy 2): everyone on the floor or the line works through checklists. */
+const STAFF_CHECKLISTS: readonly PermissionCode[] = ["checklists.view", "checklists.complete"];
+
+/** Phase 36 (policy 2): reading and recording food-safety temperatures. */
+const FOOD_SAFETY_RECORDING: readonly PermissionCode[] = ["food-safety.view", "food-safety.record"];
+
 /** Clearing up after a party, which floor staff do during service. */
 const SESSION_CLOSE_OUT: readonly PermissionCode[] = [
   "restaurant.complete-session",
@@ -76,6 +82,9 @@ const SERVER_PERMISSIONS: readonly PermissionCode[] = [
   // Phase 31: look up, sell and reload gift cards.
   "gift-cards.view",
   "gift-cards.sell",
+  // Phase 36: checklists and the event sheet.
+  ...STAFF_CHECKLISTS,
+  "events.view",
 ];
 
 /** The starting role-permission matrix. Later changes use a new versioned seed. */
@@ -211,6 +220,16 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "manager-log.write",
       "pre-shift.view",
       "pre-shift.manage",
+      // Phase 36: checklists, temperature logs, events, invoice entry (not approval).
+      "checklists.view",
+      "checklists.complete",
+      "checklists.manage",
+      "food-safety.view",
+      "food-safety.record",
+      "food-safety.manage",
+      "events.view",
+      "events.manage",
+      "purchasing.invoices.record",
       "drawers.view",
       "drawers.operate",
       "tax.view",
@@ -252,6 +271,8 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       ...FULFILLMENT_ACTIONS,
       // Phase 19: the bar 86es drinks it has run out of.
       "menu.availability.manage",
+      // Phase 36: bar coolers and ice wells.
+      "food-safety.record",
     ],
   },
   {
@@ -281,6 +302,9 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "gift-cards.view",
       ...SCHEDULE_SELF_SERVICE,
       ...STAFF_BRIEFING,
+      // Phase 36: checklists and events at the host stand.
+      ...STAFF_CHECKLISTS,
+      "events.view",
     ],
   },
   {
@@ -298,6 +322,9 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "inventory.waste",
       ...SCHEDULE_SELF_SERVICE,
       ...STAFF_BRIEFING,
+      // Phase 36: line checklists and temperature readings.
+      ...STAFF_CHECKLISTS,
+      ...FOOD_SAFETY_RECORDING,
     ],
   },
   {
@@ -314,6 +341,9 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "guests.view",
       ...SCHEDULE_SELF_SERVICE,
       ...STAFF_BRIEFING,
+      // Phase 36: side work and event sheets.
+      ...STAFF_CHECKLISTS,
+      "events.view",
     ],
   },
   {
@@ -337,6 +367,9 @@ export const ROLE_CATALOG: readonly RoleDefinition[] = [
       "menu.view",
       // Phase 21: tag ingredients with their allergens.
       "recipes.allergens.manage",
+      // Phase 36: enter supplier invoices, read receiving temperatures.
+      "purchasing.invoices.record",
+      "food-safety.view",
       ...SCHEDULE_SELF_SERVICE,
       ...STAFF_BRIEFING,
       "reports.view",

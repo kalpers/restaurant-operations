@@ -5,6 +5,7 @@ import { locations } from "@/db/schema";
 import { withReadOnlySnapshot, withTransaction, type DatabaseExecutor, type DatabaseTransaction } from "@/db/transactions/transaction-context";
 import type { PermissionCode } from "@/modules/auth/permission-catalog";
 import type { AuthContext, Actor } from "@/modules/auth/types";
+import { findInvoiceNoteCandidates, redactInvoiceNote } from "@/modules/inventory/services/invoice-erase-text";
 import { redactTicketItemInstructions } from "@/modules/kitchen/services/erase-text";
 import {
   findItemInstructionCandidates,
@@ -31,6 +32,7 @@ import {
   redactReservationNote,
   redactWaitlistNote,
 } from "@/modules/reservations/services/erase-text";
+import { clearOwnEventText, findEventTextCandidates, redactEventText } from "@/modules/reservations/services/event-erase-text";
 import { assertPermission } from "@/modules/reservations/services/guest-access";
 import {
   eraseGuestProfileInTransaction,
@@ -39,7 +41,15 @@ import {
   readVisitIdentifiers,
 } from "@/modules/reservations/services/guest-profile-service";
 import { findBriefingTextCandidates } from "@/modules/restaurant/queries/briefing-text-search";
-import { clearOwnSessionNotes, findSessionNoteCandidates, redactSessionNote } from "@/modules/restaurant/services/erase-text";
+import {
+  clearOwnSessionNotes,
+  findChecklistNoteCandidates,
+  findSessionNoteCandidates,
+  findTemperatureActionCandidates,
+  redactChecklistNote,
+  redactSessionNote,
+  redactTemperatureAction,
+} from "@/modules/restaurant/services/erase-text";
 import { redactLogEntryInTransaction } from "@/modules/restaurant/services/manager-log-service";
 import { redactNoteInTransaction } from "@/modules/restaurant/services/pre-shift-service";
 import {
@@ -71,6 +81,11 @@ export const MENTION_KINDS = [
   "ORDER_ITEM_INSTRUCTION",
   "SHIFT_NOTE",
   "ASSIGNMENT_NOTE",
+  // Phase 36 (policy 3): the new free-text fields.
+  "CHECKLIST_NOTE",
+  "TEMPERATURE_ACTION",
+  "EVENT_TEXT",
+  "INVOICE_NOTE",
   "GIFT_CARD_PURCHASER",
 ] as const;
 
@@ -112,6 +127,10 @@ const KIND_PERMISSIONS: Record<Exclude<MentionKind, "GIFT_CARD_PURCHASER">, read
   ORDER_ITEM_INSTRUCTION: ["orders.view"],
   SHIFT_NOTE: ["schedule.view"],
   ASSIGNMENT_NOTE: ["schedule.view"],
+  CHECKLIST_NOTE: ["checklists.view"],
+  TEMPERATURE_ACTION: ["food-safety.view"],
+  EVENT_TEXT: ["events.view"],
+  INVOICE_NOTE: ["purchasing.view"],
 };
 
 /** Amendments 3 and 8: from the eraser's whole sign-in, where each kind may be searched. */
@@ -144,6 +163,10 @@ export function logOnlyScope(locationIds: readonly string[]): EraseSearchScope {
     ORDER_ITEM_INSTRUCTION: [],
     SHIFT_NOTE: [],
     ASSIGNMENT_NOTE: [],
+    CHECKLIST_NOTE: [],
+    TEMPERATURE_ACTION: [],
+    EVENT_TEXT: [],
+    INVOICE_NOTE: [],
     purchasers: false,
   };
 }
@@ -189,6 +212,10 @@ async function candidatesOf(
     ...tag("ORDER_ITEM_INSTRUCTION")(await findItemInstructionCandidates(executor, at(scope.ORDER_ITEM_INSTRUCTION), query)),
     ...tag("SHIFT_NOTE")(await findShiftNoteCandidates(executor, at(scope.SHIFT_NOTE), query)),
     ...tag("ASSIGNMENT_NOTE")(await findAssignmentNoteCandidates(executor, at(scope.ASSIGNMENT_NOTE), query)),
+    ...tag("CHECKLIST_NOTE")(await findChecklistNoteCandidates(executor, at(scope.CHECKLIST_NOTE), query)),
+    ...tag("TEMPERATURE_ACTION")(await findTemperatureActionCandidates(executor, at(scope.TEMPERATURE_ACTION), query)),
+    ...tag("EVENT_TEXT")(await findEventTextCandidates(executor, at(scope.EVENT_TEXT), query)),
+    ...tag("INVOICE_NOTE")(await findInvoiceNoteCandidates(executor, at(scope.INVOICE_NOTE), query)),
     ...(scope.purchasers
       ? (await findPurchaserCandidates(executor, actor, { ...query, contains: likeContains })).map((row) => ({
           kind: "GIFT_CARD_PURCHASER" as const,
@@ -308,6 +335,10 @@ const TEXT_REDACTORS: Record<Exclude<TextMentionKind, "GIFT_CARD_PURCHASER">, Te
   },
   SHIFT_NOTE: redactShiftNote,
   ASSIGNMENT_NOTE: redactAssignmentNote,
+  CHECKLIST_NOTE: redactChecklistNote,
+  TEMPERATURE_ACTION: redactTemperatureAction,
+  EVENT_TEXT: redactEventText,
+  INVOICE_NOTE: redactInvoiceNote,
 };
 
 /** Redacts the chosen mentions after checking each is still a mention; returns the counts. */
@@ -390,7 +421,8 @@ export async function eraseGuestProfileWithMentions(
   return withTransaction(database, async (transaction) => {
     const { identifiers, ownPartyIds, redactionReason } = await identifiersOf(transaction, actor, { profileId });
     const redacted = await redactChosen(transaction, actor, identifiers, scope, ownPartyIds, input, redactionReason);
-    const ownNotesCleared = await clearOwnNotes(transaction, ownPartyIds);
+    const ownNotesCleared =
+      (await clearOwnNotes(transaction, ownPartyIds)) + (await clearOwnEventText(transaction, actor, ownPartyIds, redactionReason));
 
     return eraseGuestProfileInTransaction(
       transaction,
@@ -416,7 +448,8 @@ export async function eraseGuestVisitWithMentions(
   return withTransaction(database, async (transaction) => {
     const { identifiers, ownPartyIds, redactionReason } = await identifiersOf(transaction, actor, { guestPartyId });
     const redacted = await redactChosen(transaction, actor, identifiers, scope, ownPartyIds, input, redactionReason);
-    const ownNotesCleared = await clearOwnNotes(transaction, ownPartyIds);
+    const ownNotesCleared =
+      (await clearOwnNotes(transaction, ownPartyIds)) + (await clearOwnEventText(transaction, actor, ownPartyIds, redactionReason));
 
     return eraseGuestVisitInTransaction(
       transaction,

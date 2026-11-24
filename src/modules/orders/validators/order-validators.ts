@@ -53,6 +53,25 @@ export const addDraftItemSchema = z.object({
   seatNumber: z.int().min(1).max(30).nullable().optional(),
 });
 
+/** Phase 36 (policy 9): a prix-fixe or combo with one choice per row, each with its modifiers. */
+export const addBundleDraftSchema = z.object({
+  expectedVersion,
+  menuItemId: z.uuid(),
+  choices: z
+    .array(
+      z.object({
+        slotId: z.uuid(),
+        menuItemId: z.uuid(),
+        selections,
+        specialInstructions,
+        courseNumber: z.int().min(1).max(5).optional(),
+      }),
+    )
+    .min(1)
+    .max(30),
+  seatNumber: z.int().min(1).max(30).nullable().optional(),
+});
+
 /** Phase 29 (policy 5): set or clear an item's seat, draft or sent. */
 export const setItemSeatSchema = z.object({
   expectedVersion,
@@ -104,6 +123,8 @@ export const voidItemSchema = z.object({
   expectedVersion,
   reason,
   disposition: z.enum(VOID_DISPOSITIONS),
+  /** Phase 36 (policy 9): a bundle's components, each by its own kitchen state. */
+  componentDispositions: z.record(z.uuid(), z.enum(VOID_DISPOSITIONS)).optional(),
 });
 
 export const voidOrderSchema = z.object({

@@ -684,8 +684,9 @@ function TableCard({
       )}
       {hold && table.availability !== "OCCUPIED" && (
         <p role="status" className="mt-2 rounded-md bg-white/70 px-2 py-1 text-sm font-medium text-purple-900">
-          {hold.active ? "Reservation hold" : "Reserved soon"} · reserved at{" "}
-          {formatClock(hold.reservationAt, timeZone)}
+          {hold.kind === "EVENT"
+            ? `${hold.active ? "Event hold" : "Event soon"} · held until ${formatClock(hold.holdEndsAt, timeZone)}`
+            : `${hold.active ? "Reservation hold" : "Reserved soon"} · reserved at ${formatClock(hold.reservationAt, timeZone)}`}
           {hold.active ? "" : ` · hold begins ${formatClock(hold.holdStartsAt, timeZone)}`}
           {hold.guestName ? ` · ${hold.guestName}` : ""}
         </p>

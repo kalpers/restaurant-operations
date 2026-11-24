@@ -105,10 +105,10 @@ export async function itemMixSections(context: ReportContext): Promise<ReportSec
                               WHERE d.order_item_id = oi.id AND d.status = 'APPLIED'), 0) AS net,
                (SELECT SUM(t.total_cost) FROM order_item_inventory_consumption c
                   JOIN inventory_transactions t ON t.id = c.inventory_transaction_id
-                 WHERE c.order_item_id = oi.id) AS cost,
-               EXISTS (SELECT 1 FROM order_item_inventory_consumption c WHERE c.order_item_id = oi.id) AS has_consumption
+                 WHERE c.order_item_id IN (SELECT oi.id UNION ALL SELECT ch.id FROM order_items ch WHERE ch.bundle_parent_order_item_id = oi.id)) AS cost,
+               EXISTS (SELECT 1 FROM order_item_inventory_consumption c WHERE c.order_item_id IN (SELECT oi.id UNION ALL SELECT ch.id FROM order_items ch WHERE ch.bundle_parent_order_item_id = oi.id)) AS has_consumption
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE ${closedScope(context)} AND oi.status IN ${SOLD_ITEM_STATUSES}
+        WHERE ${closedScope(context)} AND oi.status IN ${SOLD_ITEM_STATUSES} AND oi.bundle_parent_order_item_id IS NULL
       ),
       grouped AS (
         SELECT code, name, SUM(quantity)::int AS quantity, SUM(net) AS net,
@@ -214,10 +214,10 @@ async function itemMixByCategorySections(
                               WHERE d.order_item_id = oi.id AND d.status = 'APPLIED'), 0) AS net,
                (SELECT SUM(t.total_cost) FROM order_item_inventory_consumption c
                   JOIN inventory_transactions t ON t.id = c.inventory_transaction_id
-                 WHERE c.order_item_id = oi.id) AS cost,
-               EXISTS (SELECT 1 FROM order_item_inventory_consumption c WHERE c.order_item_id = oi.id) AS has_consumption
+                 WHERE c.order_item_id IN (SELECT oi.id UNION ALL SELECT ch.id FROM order_items ch WHERE ch.bundle_parent_order_item_id = oi.id)) AS cost,
+               EXISTS (SELECT 1 FROM order_item_inventory_consumption c WHERE c.order_item_id IN (SELECT oi.id UNION ALL SELECT ch.id FROM order_items ch WHERE ch.bundle_parent_order_item_id = oi.id)) AS has_consumption
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
-        WHERE ${closedScope(context)} AND oi.status IN ${SOLD_ITEM_STATUSES}
+        WHERE ${closedScope(context)} AND oi.status IN ${SOLD_ITEM_STATUSES} AND oi.bundle_parent_order_item_id IS NULL
       ),
       grouped AS (
         SELECT category, code, name, SUM(quantity)::int AS quantity, SUM(net) AS net,

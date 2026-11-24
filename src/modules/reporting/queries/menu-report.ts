@@ -34,6 +34,7 @@ export async function menuSections(context: ReportContext): Promise<ReportSectio
     AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
     AND o.status = 'CLOSED'
     AND oi.status IN ${SOLD_ITEM_STATUSES}
+    AND oi.bundle_parent_order_item_id IS NULL
     ${filters.orderType ? sql`AND o.order_type = ${filters.orderType}` : sql``}
   `;
 
@@ -47,7 +48,7 @@ export async function menuSections(context: ReportContext): Promise<ReportSectio
                  WHERE d.order_item_id = oi.id AND d.status = 'APPLIED') AS item_discounts,
                (SELECT SUM(t.total_cost) FROM order_item_inventory_consumption c
                   JOIN inventory_transactions t ON t.id = c.inventory_transaction_id
-                 WHERE c.order_item_id = oi.id) AS consumption_cost
+                 WHERE c.order_item_id IN (SELECT oi.id UNION ALL SELECT ch.id FROM order_items ch WHERE ch.bundle_parent_order_item_id = oi.id)) AS consumption_cost
         FROM order_items oi JOIN orders o ON o.id = oi.order_id
         WHERE ${scope}
       ),
@@ -80,6 +81,26 @@ export async function menuSections(context: ReportContext): Promise<ReportSectio
       WHERE ${scope}
       GROUP BY m.modifier_group_name_snapshot, m.modifier_name_snapshot
       ORDER BY quantity DESC, group_name, modifier_name
+    `,
+  );
+
+  // Phase 36 (policy 9): what bundles were made of, by bundle and course. Components carry no
+  // price of their own; the upcharge column is what each choice added to its bundle's price.
+  const components = await rowsOf<{ bundle: string; course: string; component: string; quantity: number; upcharges: string }>(
+    context,
+    sql`
+      SELECT oi.bundle_name_snapshot AS bundle, oi.bundle_slot_name_snapshot AS course,
+             oi.menu_item_name_snapshot AS component, SUM(oi.quantity)::int AS quantity,
+             SUM(oi.bundle_upcharge_snapshot * oi.quantity)::numeric(14,2)::text AS upcharges
+      FROM order_items oi JOIN orders o ON o.id = oi.order_id
+      WHERE o.location_id = ${filters.locationId}
+        AND o.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        AND o.status = 'CLOSED'
+        AND oi.status IN ${SOLD_ITEM_STATUSES}
+        AND oi.bundle_parent_order_item_id IS NOT NULL
+        ${filters.orderType ? sql`AND o.order_type = ${filters.orderType}` : sql``}
+      GROUP BY oi.bundle_name_snapshot, oi.bundle_slot_name_snapshot, oi.menu_item_name_snapshot
+      ORDER BY bundle, course, quantity DESC, component
     `,
   );
 
@@ -130,6 +151,25 @@ export async function menuSections(context: ReportContext): Promise<ReportSectio
         modifier: row.modifier_name,
         quantity: row.quantity,
         revenue: row.revenue,
+      })),
+    },
+    {
+      key: "bundle-components",
+      title: "Bundle components",
+      description: "The courses chosen in prix-fixe and combo items. Their sales and cost are on the bundle's own row.",
+      columns: [
+        { key: "bundle", label: "Bundle", kind: "text" },
+        { key: "course", label: "Course", kind: "text" },
+        { key: "component", label: "Choice", kind: "text" },
+        { key: "quantity", label: "Times chosen", kind: "count" },
+        { key: "upcharges", label: "Upcharges", kind: "money" },
+      ],
+      rows: components.map((row) => ({
+        bundle: row.bundle,
+        course: row.course,
+        component: row.component,
+        quantity: row.quantity,
+        upcharges: row.upcharges,
       })),
     },
   ];

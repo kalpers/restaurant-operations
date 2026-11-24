@@ -58,7 +58,11 @@ export type NavigationIcon =
   | "happy-hour"
   | "exports"
   | "manager-log"
-  | "pre-shift";
+  | "pre-shift"
+  | "checklists"
+  | "temperature-log"
+  | "events"
+  | "supplier-invoices";
 
 export type NavigationItem = {
   href: string;
@@ -93,6 +97,7 @@ const NAVIGATION: readonly NavigationItem[] = [
 
   { href: "/restaurant/floor", label: "Floor", permission: "restaurant.view", group: "service", icon: "floor" },
   { href: "/host/reservations", label: "Reservations", permission: "reservations.view", group: "service", icon: "reservations" },
+  { href: "/events", label: "Events", permission: "events.view", group: "service", icon: "events" },
   { href: "/host/waitlist", label: "Waitlist", permission: "waitlist.view", group: "service", icon: "waitlist" },
   { href: "/host/guests", label: "Guests", permission: "guests.view", group: "service", icon: "guests" },
   { href: "/host/guests/loyalty", label: "Loyalty", permission: "loyalty.manage", group: "service", icon: "loyalty" },
@@ -107,18 +112,21 @@ const NAVIGATION: readonly NavigationItem[] = [
   { href: "/menu/86", label: "86 board", permission: "menu.view", group: "service", icon: "eighty-six" },
   { href: "/pre-shift", label: "Pre-shift", permission: "pre-shift.view", group: "service", icon: "pre-shift" },
   { href: "/manager-log", label: "Manager log", permission: "manager-log.view", group: "service", icon: "manager-log" },
+  { href: "/checklists", label: "Checklists", permission: "checklists.view", group: "service", icon: "checklists" },
 
   { href: "/menu", label: "Menu", permission: "menu.view", group: "back-of-house", icon: "menu" },
   { href: "/menu/manage", label: "Manage menu", permission: "menu.edit", group: "back-of-house", icon: "menu-manage" },
   { href: "/menu/happy-hour", label: "Happy hour", permission: "menu.pricing.view", group: "back-of-house", icon: "happy-hour" },
   { href: "/menu/modifiers", label: "Modifiers", permission: "menu.modifiers.manage", group: "back-of-house", icon: "modifiers" },
   { href: "/menu/stations", label: "Prep stations", permission: "prep-stations.manage", group: "back-of-house", icon: "stations" },
+  { href: "/temperature-log", label: "Temperature log", permission: "food-safety.view", group: "back-of-house", icon: "temperature-log" },
   { href: "/recipes", label: "Recipes", permission: "recipes.view", group: "back-of-house", icon: "recipes" },
   { href: "/recipes/allergens", label: "Allergens", permission: "recipes.allergens.manage", group: "back-of-house", icon: "allergens" },
   { href: "/inventory", label: "Inventory", permission: "inventory.view", group: "back-of-house", icon: "inventory" },
   { href: "/inventory/counts", label: "Inventory counts", permission: "inventory.count", group: "back-of-house", icon: "counts" },
   { href: "/inventory/items", label: "Inventory items", permission: "inventory.configure", group: "back-of-house", icon: "items" },
   { href: "/purchasing/orders", label: "Purchase orders", permission: "purchasing.view", group: "back-of-house", icon: "purchase-orders" },
+  { href: "/purchasing/invoices", label: "Supplier invoices", permission: "purchasing.view", group: "back-of-house", icon: "supplier-invoices" },
   { href: "/purchasing/suggested", label: "Suggested orders", permission: "purchasing.manage", group: "back-of-house", icon: "suggested-orders" },
   { href: "/purchasing/suppliers", label: "Suppliers", permission: "suppliers.manage", group: "back-of-house", icon: "suppliers" },
 

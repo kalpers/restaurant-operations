@@ -116,6 +116,9 @@ export default async function LocationsPage() {
                   { name: "schedulingEnabled", label: "Scheduling enabled", type: "checkbox", defaultValue: settings.schedulingEnabled },
                   { name: "kitchenDisplayEnabled", label: "Kitchen display enabled", type: "checkbox", defaultValue: settings.kitchenDisplayEnabled },
                   { name: "lotExpiryWarningDays", label: "Warn before a lot expires (days, 0 for never)", type: "number", required: true, defaultValue: settings.lotExpiryWarningDays },
+                  { name: "temperatureUnit", label: "Temperature unit for new check points", type: "select", options: [{ value: "F", label: "Fahrenheit (°F)" }, { value: "C", label: "Celsius (°C)" }], defaultValue: settings.temperatureUnit },
+                  { name: "invoicePriceTolerancePercent", label: "Invoice price tolerance (percent)", required: true, defaultValue: settings.invoicePriceTolerancePercent },
+                  { name: "invoicePriceToleranceAmount", label: "Invoice price tolerance (amount per unit)", required: true, defaultValue: settings.invoicePriceToleranceAmount },
                 ]}
               />
             </section>

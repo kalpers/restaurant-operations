@@ -20,6 +20,7 @@ import {
   type NewLocationInput,
 } from "@/modules/organization/services/location-lifecycle-service";
 import { createLocationOnlineBooking } from "@/modules/reservations/services/location-setup";
+import { copyChecklistTemplates, copyTemperaturePoints } from "@/modules/restaurant/services/location-setup";
 import { createLocationSchedulingRules } from "@/modules/scheduling/services/location-setup";
 import { copyTipPoolRules } from "@/modules/settlements/services/location-setup";
 import { AuthorizationError, NotFoundError } from "@/shared/errors/app-error";
@@ -40,6 +41,10 @@ export const COPY_GROUPS = [
   "SCHEDULING_RULES",
   "TIP_POOL_RULES",
   "BOOKING_HOURS",
+  // Phase 36 (policy 4): checklist templates.
+  "CHECKLISTS",
+  // Phase 36 (policy 4): temperature check points.
+  "TEMPERATURE_POINTS",
 ] as const;
 
 export type CopyGroup = (typeof COPY_GROUPS)[number];
@@ -141,6 +146,14 @@ export async function openLocation(
 
       if (groups.has("TIP_POOL_RULES")) {
         await copyTipPoolRules(transaction, copy);
+      }
+
+      if (groups.has("CHECKLISTS")) {
+        await copyChecklistTemplates(transaction, copy);
+      }
+
+      if (groups.has("TEMPERATURE_POINTS")) {
+        await copyTemperaturePoints(transaction, copy);
       }
     }
 

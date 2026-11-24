@@ -24,6 +24,7 @@ import { resolvePrice } from "../rules/price-resolution";
 import { assertPermission } from "../services/access";
 import { loadPeriodPriceFacts, sellingPrice } from "./price-period-prices";
 import { loadModifierOutagesInEffect, loadStockSignals } from "./stock-signals";
+import { loadBundleSlots, offeredBundle, type OperationalBundle } from "./bundle-facts";
 
 // The contract Phase 9 order entry reads. It carries what is sold and how it is chosen:
 // placement, exact price, modifier groups with their effective rules, and routing IDs.
@@ -68,6 +69,9 @@ export type OperationalMenuItem = {
   pricePeriod: { id: string; name: string; endsAt: string } | null;
   prepStationIds: string[];
   modifierGroups: OperationalModifierGroup[];
+  /** Phase 36 (policy 9): STANDARD, or BUNDLE with its slots of sellable options. */
+  itemKind: "STANDARD" | "BUNDLE";
+  bundle: OperationalBundle | null;
 };
 
 export type OperationalMenu = {
@@ -347,11 +351,39 @@ export async function getOperationalMenu(
           .filter((entry) => entry.menuItemId === row.item.id)
           .map((entry) => entry.stationId),
         modifierGroups: modifierGroupsOfItem,
+        itemKind: row.item.itemKind === "BUNDLE" ? "BUNDLE" : "STANDARD",
+        bundle: null,
       });
       categories.set(row.category.id, category);
     }
 
     result.menus.push({ ...menu, categories: [...categories.values()] });
+  }
+
+  // Phase 36 (policy 9): a bundle offers only sellable components, and isn't sold when a slot
+  // can't be filled.
+  const offeredItems = result.menus.flatMap((menu) => menu.categories.flatMap((category) => category.items));
+  const sellableComponents = new Set(offeredItems.filter((item) => item.itemKind === "STANDARD").map((item) => item.menuItemId));
+  const bundleSlots = await loadBundleSlots(
+    executor,
+    actor.organizationId,
+    [...new Set(offeredItems.filter((item) => item.itemKind === "BUNDLE").map((item) => item.menuItemId))],
+  );
+
+  for (const menu of result.menus) {
+    for (const category of menu.categories) {
+      category.items = category.items.flatMap((item) => {
+        if (item.itemKind !== "BUNDLE") {
+          return [item];
+        }
+
+        const bundle = offeredBundle(bundleSlots.get(item.menuItemId), sellableComponents);
+
+        return bundle ? [{ ...item, bundle }] : [];
+      });
+    }
+
+    menu.categories = menu.categories.filter((category) => category.items.length > 0);
   }
 
   return result;

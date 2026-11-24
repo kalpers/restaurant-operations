@@ -97,6 +97,9 @@ export async function insertLocationWithDefaults(
           auto86FromStock: source.auto86FromStock,
           runningLowPortions: source.runningLowPortions,
           lotExpiryWarningDays: source.lotExpiryWarningDays,
+          temperatureUnit: source.temperatureUnit,
+          invoicePriceTolerancePercent: source.invoicePriceTolerancePercent,
+          invoicePriceToleranceAmount: source.invoicePriceToleranceAmount,
           ...(options.copyTaxSwitch ? { taxEnabled: source.taxEnabled } : {}),
         }
       : { locationId },

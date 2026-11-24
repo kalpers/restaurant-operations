@@ -98,6 +98,9 @@ const AUDITED_SETTINGS = [
   "schedulingEnabled",
   "kitchenDisplayEnabled",
   "lotExpiryWarningDays",
+  "temperatureUnit",
+  "invoicePriceTolerancePercent",
+  "invoicePriceToleranceAmount",
 ] as const;
 
 /** Phase 20 (policy 6): the change and its audit row commit together. */

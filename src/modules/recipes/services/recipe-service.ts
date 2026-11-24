@@ -52,12 +52,17 @@ async function requireMenuItemInOrganization(
   menuItemId: string,
 ) {
   const [item] = await executor
-    .select({ id: menuItems.id })
+    .select({ id: menuItems.id, itemKind: menuItems.itemKind })
     .from(menuItems)
     .where(and(eq(menuItems.id, menuItemId), eq(menuItems.organizationId, actor.organizationId)));
 
   if (!item) {
     throw new NotFoundError("menu item");
+  }
+
+  // Phase 36 (policy 9): a bundle's courses have the recipes; the bundle has none.
+  if (item.itemKind === "BUNDLE") {
+    throw new BusinessRuleError("BUNDLE_HAS_NO_OWN_PREP", "A bundle has no recipe, kitchen routing or modifiers of its own; its courses do.");
   }
 }
 

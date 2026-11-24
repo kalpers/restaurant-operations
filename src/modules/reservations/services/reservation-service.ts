@@ -47,7 +47,9 @@ import {
   type PlanningConflict,
   type ReservationContext,
 } from "../repositories/reservation-repository";
+import { lockLocationPlanning } from "../queries/event-blocks";
 import { reservationPlanningInterval } from "../rules/hold-intervals";
+import { assertNoEventBlock } from "./event-holds";
 import {
   assertNoShowAllowed,
   assertReservationTransition,
@@ -193,6 +195,15 @@ async function planTables(
     throw new ConflictError("PLANNING_CONFLICT", describeConflict(conflict));
   }
 
+  // Phase 36 (policy 7): tables an event holds can't be planned for anyone else.
+  await assertNoEventBlock(transaction, {
+    locationId: actor.locationId,
+    timeZone: input.context.timeZone,
+    interval: reservationPlanningInterval(input.reservation, input.context),
+    tableIds,
+    buyouts: "exclude",
+  });
+
   const current = await activeAssignments(transaction, [input.reservation.id]);
   const currentIds = new Set(current.map((row) => row.tableId));
   const wanted = new Set(tableIds);
@@ -253,6 +264,9 @@ export async function createReservation(
   assertPermission(actor, "reservations.manage");
 
   return withTransaction(database, async (transaction) => {
+    // Phase 36 (policy 7): reservation and event writes at a location take turns.
+    await lockLocationPlanning(transaction, actor.locationId);
+
     const now = new Date();
     const context = await readReservationContext(transaction, actor.locationId);
 
@@ -269,6 +283,18 @@ export async function createReservation(
       input.localTime,
     );
     const status = input.status ?? "CONFIRMED";
+
+    // Phase 36 (policy 7): nothing is booked during a buyout.
+    await assertNoEventBlock(transaction, {
+      locationId: actor.locationId,
+      timeZone: context.timeZone,
+      interval: reservationPlanningInterval(
+        { reservationAt, expectedDurationMinutes: input.expectedDurationMinutes ?? context.defaultReservationDurationMinutes },
+        context,
+      ),
+      tableIds: [],
+      buyouts: "include",
+    });
     const [party] = await transaction
       .insert(guestParties)
       .values({
@@ -392,6 +418,8 @@ export async function updateReservation(
   assertPermission(actor, "reservations.manage");
 
   return withTransaction(database, async (transaction) => {
+    await lockLocationPlanning(transaction, actor.locationId);
+
     const now = new Date();
     const { party, reservation } = await lockReservation(
       transaction,
@@ -413,6 +441,15 @@ export async function updateReservation(
       input.localDate,
       input.localTime,
     );
+
+    // Phase 36 (policy 7): a reservation can't be moved into a buyout.
+    await assertNoEventBlock(transaction, {
+      locationId: actor.locationId,
+      timeZone: context.timeZone,
+      interval: reservationPlanningInterval({ reservationAt, expectedDurationMinutes: input.expectedDurationMinutes }, context),
+      tableIds: [],
+      buyouts: "include",
+    });
 
     await transaction
       .update(guestParties)
@@ -674,6 +711,8 @@ export async function setPlannedTables(
   assertPermission(actor, "reservations.manage");
 
   return withTransaction(database, async (transaction) => {
+    await lockLocationPlanning(transaction, actor.locationId);
+
     const now = new Date();
     const { party, reservation } = await lockReservation(
       transaction,

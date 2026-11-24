@@ -316,6 +316,204 @@ function ItemPicker({
   );
 }
 
+/**
+ * Phase 36 (policy 9): a prix-fixe or combo. The guest chooses from each course; each choice is
+ * an ordinary item with its own modifiers (priced at zero inside the bundle) and course. The
+ * bundle's price plus any upcharges is the one price on the check.
+ */
+function BundlePicker({
+  orderId,
+  version,
+  item,
+  components,
+  seat,
+  onDone,
+}: {
+  orderId: string;
+  version: number;
+  item: MenuEntry;
+  /** The sellable items, to find each choice's modifier groups. */
+  components: ReadonlyMap<string, MenuEntry>;
+  seat: number | null | undefined;
+  onDone: () => void;
+}) {
+  const { run, pending, error } = useAction();
+  const slots = item.bundle?.slots ?? [];
+  const [picked, setPicked] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(
+      slots.map((slot) => {
+        const only = slot.options.length === 1 && slot.minimumChoices > 0 ? [slot.options[0]!.menuItemId] : [];
+        const defaults = slot.options.filter((option) => option.isDefault).map((option) => option.menuItemId).slice(0, slot.maximumChoices);
+
+        return [slot.id, only.length > 0 ? only : defaults];
+      }),
+    ),
+  );
+  const [modifiers, setModifiers] = useState<Record<string, Record<string, string[]>>>({});
+  const [courses, setCourses] = useState<Record<string, number>>(() => Object.fromEntries(slots.map((slot) => [slot.id, slot.defaultCourse])));
+  const upcharges = slots.flatMap((slot) =>
+    slot.options.filter((option) => (picked[slot.id] ?? []).includes(option.menuItemId)).map((option) => option.upcharge),
+  );
+  const extra = upcharges.filter((value) => value !== "0.00");
+  const key = (slotId: string, menuItemId: string) => `${slotId}:${menuItemId}`;
+
+  function choose(slotId: string, menuItemId: string, single: boolean) {
+    setPicked((current) => {
+      const now = current[slotId] ?? [];
+
+      if (single) {
+        return { ...current, [slotId]: [menuItemId] };
+      }
+
+      return { ...current, [slotId]: now.includes(menuItemId) ? now.filter((id) => id !== menuItemId) : [...now, menuItemId] };
+    });
+  }
+
+  function toggleModifier(choiceKey: string, groupId: string, modifierId: string, single: boolean) {
+    setModifiers((current) => {
+      const groups = current[choiceKey] ?? {};
+      const now = groups[groupId] ?? [];
+      const next = single ? (now.includes(modifierId) ? [] : [modifierId]) : now.includes(modifierId) ? now.filter((id) => id !== modifierId) : [...now, modifierId];
+
+      return { ...current, [choiceKey]: { ...groups, [groupId]: next } };
+    });
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+
+    const result = await run("POST", `/api/orders/${orderId}/bundles`, {
+      expectedVersion: version,
+      menuItemId: item.menuItemId,
+      choices: slots.flatMap((slot) =>
+        (picked[slot.id] ?? []).map((menuItemId) => ({
+          slotId: slot.id,
+          menuItemId,
+          selections: Object.entries(modifiers[key(slot.id, menuItemId)] ?? {}).flatMap(([modifierGroupId, ids]) =>
+            ids.map((modifierId) => ({ modifierGroupId, modifierId })),
+          ),
+          specialInstructions: null,
+          courseNumber: courses[slot.id] ?? slot.defaultCourse,
+        })),
+      ),
+      ...(seat === undefined ? {} : { seatNumber: seat }),
+    });
+
+    if (result.ok) {
+      onDone();
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      aria-label={`Add ${item.name}`}
+      className="grid gap-4 rounded-lg border-2 border-brand-600 bg-surface p-4 shadow-sm"
+    >
+      <p className="flex justify-between text-lg font-semibold">
+        <span>
+          {item.name}
+          {seat !== undefined && (
+            <span className="ml-2 text-sm font-medium text-neutral-600">{seat === null ? "for the table" : `for seat ${seat}`}</span>
+          )}
+        </span>
+        <span className="tabular">
+          {formatMoney(item.price)}
+          {extra.length > 0 && ` + ${extra.map((value) => formatMoney(value)).join(" + ")}`}
+        </span>
+      </p>
+      {slots.map((slot) => {
+        const single = slot.maximumChoices === 1;
+
+        return (
+          <fieldset key={slot.id} className="grid gap-2" data-testid="bundle-slot">
+            <legend className="mb-1 flex flex-wrap items-center gap-3 text-sm font-semibold">
+              <span>
+                {slot.name}
+                {slot.minimumChoices > 0 ? " (required)" : ""}
+                {slot.maximumChoices > 1 ? ` · up to ${slot.maximumChoices}` : ""}
+              </span>
+              <Select
+                aria-label={`${slot.name} course`}
+                value={courses[slot.id] ?? slot.defaultCourse}
+                onChange={(event) => setCourses((current) => ({ ...current, [slot.id]: Number(event.target.value) }))}
+                className="w-28"
+              >
+                {COURSES.map((entry) => (
+                  <option key={entry} value={entry}>
+                    Course {entry}
+                  </option>
+                ))}
+              </Select>
+            </legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {slot.options.map((option) => {
+                const checked = (picked[slot.id] ?? []).includes(option.menuItemId);
+
+                return (
+                  <label
+                    key={option.menuItemId}
+                    className={cn(
+                      "flex min-h-12 items-center gap-3 rounded-md border px-3",
+                      checked ? "border-brand-600 bg-brand-50" : "border-neutral-300 bg-white",
+                    )}
+                  >
+                    <input
+                      type={single ? "radio" : "checkbox"}
+                      name={slot.id}
+                      checked={checked}
+                      onChange={() => choose(slot.id, option.menuItemId, single)}
+                      className="size-5 accent-brand-700"
+                    />
+                    <span className="flex-1">{option.name}</span>
+                    {option.upcharge !== "0.00" && <span className="tabular text-sm">+{formatMoney(option.upcharge)}</span>}
+                  </label>
+                );
+              })}
+            </div>
+            {(picked[slot.id] ?? []).map((menuItemId) =>
+              (components.get(menuItemId)?.modifierGroups ?? []).map((group) => {
+                const groupSingle = group.maximumSelections === 1;
+                const choiceKey = key(slot.id, menuItemId);
+
+                return (
+                  <fieldset key={`${choiceKey}:${group.id}`} className="ml-4 grid gap-2 border-l-2 border-neutral-200 pl-3">
+                    <legend className="text-sm font-medium">
+                      {components.get(menuItemId)?.name}: {group.name}
+                      {group.minimumSelections > 0 ? " (required)" : ""}
+                    </legend>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {group.modifiers.map((modifier) => (
+                        <label key={modifier.id} className="flex min-h-11 items-center gap-3 rounded-md border border-neutral-300 bg-white px-3">
+                          <input
+                            type={groupSingle ? "radio" : "checkbox"}
+                            name={`${choiceKey}:${group.id}`}
+                            checked={(modifiers[choiceKey]?.[group.id] ?? []).includes(modifier.id)}
+                            onChange={() => toggleModifier(choiceKey, group.id, modifier.id, groupSingle)}
+                            className="size-5 accent-brand-700"
+                          />
+                          <span className="flex-1">{modifier.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                );
+              }),
+            )}
+          </fieldset>
+        );
+      })}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" variant="primary" pending={pending}>
+          Add to order
+        </Button>
+        <Button onClick={onDone}>Cancel</Button>
+      </div>
+      <ErrorText error={error} />
+    </form>
+  );
+}
+
 /** True when a key press is typing into a field, so shortcuts stay out of the way. */
 function isTyping(target: EventTarget | null): boolean {
   return (
@@ -486,7 +684,18 @@ function MenuBrowser({
         </p>
       )}
       {picking ? (
-        <ItemPicker orderId={order.id} version={order.version} item={picking} seat={seat} onDone={() => setPicking(null)} />
+        picking.itemKind === "BUNDLE" && picking.bundle ? (
+          <BundlePicker
+            orderId={order.id}
+            version={order.version}
+            item={picking}
+            components={new Map(categories.flatMap((category) => category.items).map((entry) => [entry.menuItemId, entry]))}
+            seat={seat}
+            onDone={() => setPicking(null)}
+          />
+        ) : (
+          <ItemPicker orderId={order.id} version={order.version} item={picking} seat={seat} onDone={() => setPicking(null)} />
+        )
       ) : shown.length === 0 ? (
         <EmptyState icon={Search} title={`Nothing matches “${query.trim()}”`}>
           Try another name, or clear the search to browse by category.
@@ -543,13 +752,14 @@ function DraftLine({ order, item, canEdit }: { order: OrderDetail; item: OrderDe
         </span>
         <span className="tabular">{formatMoney(item.lineTotal)}</span>
       </p>
-      <SeatControl order={order} item={item} canEdit={canEdit} />
+      {item.bundlePart && <p className="text-xs text-neutral-700">Part of {item.bundlePart}</p>}
+      <SeatControl order={order} item={item} canEdit={canEdit && !item.bundlePart} />
       <ModifierLines item={item} />
       <ItemAllergenNote order={order} itemId={item.id} />
       <p className="text-xs font-medium tracking-wide text-warning-900 uppercase">
         Course {item.courseNumber} · Not sent · price shown is today&apos;s
       </p>
-      {canEdit && (
+      {canEdit && !item.bundlePart && (
         <div className="mt-2 flex flex-wrap gap-2">
           <Button disabled={pending || item.quantity <= 1} onClick={() => setQuantity(item.quantity - 1)} aria-label={`One fewer ${item.name}`}>
             −
@@ -752,6 +962,7 @@ function SentLine({
         </span>
         <span className={cn("tabular", (voided || split) && "line-through")}>{formatMoney(item.lineTotal)}</span>
       </p>
+      {item.bundlePart && <p className="text-xs text-neutral-700">Part of {item.bundlePart}</p>}
       <SeatControl order={order} item={item} canEdit={order.status === "OPEN" && abilities.edit} />
       <ModifierLines item={item} />
       {!voided && <ItemAllergenNote order={order} itemId={item.id} />}

@@ -159,6 +159,8 @@ export type OrderDetail = OrderSummary & {
     courseNumber: number;
     /** Phase 29: the seat, 1 to 30, or null for "Table". Editable while the check is OPEN. */
     seatNumber: number | null;
+    /** Phase 36 (policy 9): on a bundle's component, its course and bundle, e.g. "Side · Burger Combo". */
+    bundlePart: string | null;
     taxRate: string | null;
     submittedAt: string | null;
     voidedAt: string | null;
@@ -374,6 +376,7 @@ export async function readOrderDetail(
       batchNumber: batchNumber ?? null,
       courseNumber: item.courseNumber,
       seatNumber: item.seatNumber,
+      bundlePart: item.bundleParentOrderItemId ? `${item.bundleSlotNameSnapshot} · ${item.bundleNameSnapshot}` : null,
       taxRate: item.taxRateSnapshot,
       submittedAt: item.submittedAt?.toISOString() ?? null,
       voidedAt: item.voidedAt?.toISOString() ?? null,

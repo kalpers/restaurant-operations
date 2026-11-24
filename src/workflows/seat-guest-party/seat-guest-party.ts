@@ -5,7 +5,9 @@ import { withTransaction } from "@/db/transactions/transaction-context";
 import type { Actor } from "@/modules/auth/types";
 import {
   appendPartyHistory,
+  lockPartyGraph,
 } from "@/modules/reservations/repositories/party-repository";
+import { eventSpaceTableIds, lockEventForSeating } from "@/modules/reservations/services/event-service";
 import { readReservationContext } from "@/modules/reservations/repositories/reservation-repository";
 import {
   assertPartySeatable,
@@ -102,6 +104,50 @@ export async function seatWaitlistParty(
 
       const seated = await seatPartyInTransaction(transaction, actor, {
         ...options,
+        partySize: graph.party.partySize,
+        guestPartyId: graph.party.id,
+      });
+
+      await markPartySeated(transaction, actor, graph, now);
+
+      return { ...seated, guestPartyId: graph.party.id };
+    });
+  } catch (error) {
+    throw mapSeatingViolation(error);
+  }
+}
+
+/**
+ * Phase 36 (policy 7): seats a confirmed event's party as one table session, by default on the
+ * tables its space holds (one area; the planning limit of three tables doesn't apply). The
+ * event stays CONFIRMED and is COMPLETED when the session ends.
+ */
+export async function seatEventParty(
+  database: Database,
+  actor: Actor,
+  input: Omit<SeatGuestOptions, "tableIds"> & { eventId: string; expectedVersion: number; tableIds?: readonly string[] | null },
+): Promise<SeatGuestPartyResult> {
+  assertPermission(actor, "restaurant.seat");
+  assertPermission(actor, "events.view");
+
+  try {
+    return await withTransaction(database, async (transaction) => {
+      const now = new Date();
+      const { eventId, expectedVersion, tableIds, ...options } = input;
+      const event = await lockEventForSeating(transaction, actor, { eventId, expectedVersion });
+      const graph = await lockPartyGraph(transaction, actor.locationId, event.guestPartyId);
+
+      assertPartySeatable(graph);
+
+      const chosen = tableIds && tableIds.length > 0 ? [...tableIds] : await eventSpaceTableIds(transaction, event);
+
+      if (chosen.length === 0) {
+        throw new BusinessRuleError("EVENT_TABLES_REQUIRED", "Choose the tables to seat this event at.");
+      }
+
+      const seated = await seatPartyInTransaction(transaction, actor, {
+        ...options,
+        tableIds: chosen,
         partySize: graph.party.partySize,
         guestPartyId: graph.party.id,
       });

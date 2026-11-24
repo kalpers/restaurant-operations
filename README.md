@@ -590,6 +590,10 @@ Order Closed
  -> Table CLEAN / Available
 ```
 
+Phase 36 adds **checklists**: per-location templates (`checklist_templates`, kind `OPENING`, `CLOSING`, `SIDE_WORK` or `OTHER`, positions for relevance, optional sign-off; `checklist_template_items`), deactivated never deleted, managed under `checklists.manage`. Staff with `checklists.complete` start a run for the current business date (one per template and date; side work one per template, employee and date), which copies the active items into `checklist_run_items`. Items are done, skipped with a reason, or open, each under its own `version`; completion is refused while a required item is open; sign-off (`checklists.manage`) is by a manager other than the one who completed it; a completed run is frozen by trigger, apart from sign-off and a recorded guest erase. Missed checklists are worked out on read. Pages `/checklists`, `/checklists/manage`, `/checklists/history` and a dashboard panel.
+
+Phase 36 also adds **temperature logs**: `temperature_points` per location (kind, unit fixed at creation from `location_settings.temperature_unit`, optional minimum and maximum, check interval), deactivated never deleted (`food-safety.manage`). `temperature_readings` (`food-safety.record`) are append-only: each copies the point's range and stores `in_range` (checked by the database); an out-of-range reading needs a corrective action and writes `TEMPERATURE_OUT_OF_RANGE` to the location's `food-safety.manage` holders in the same transaction; corrections and rechecks are new readings naming the earlier one; adding is idempotent. Overdue checks are worked out on read from the interval. The log page `/temperature-log` exports CSV for `reports.export` holders.
+
 ## 13. Domain 06: Reservations and Waitlist
 
 Tables:
@@ -669,7 +673,7 @@ Walk-in hold protection:
  reservation_at + post_grace)
 ```
 
-These are distinct calculations. A `NO_SHOW` is a manual transition allowed only for `CONFIRMED` reservations at or after the configured post-grace time; record actor/time and release planned table assignments. It never undoes actual seating. Combined-table recommendations use at most three tables from one Restaurant Area and never reserve or occupy them.
+These are distinct calculations. A `NO_SHOW` is a manual transition allowed only for `CONFIRMED` reservations at or after the configured post-grace time; record actor/time and release planned table assignments. It never undoes actual seating. Combined-table recommendations use at most three tables from one Restaurant Area and never reserve or occupy them. (Phase 36: the three-table limit is for reservation and waitlist planning; an event's space is its own kind of plan, any number of tables in one area, a whole area, or the whole location.)
 
 Takeout must not be represented by a fake table.
 
@@ -682,6 +686,8 @@ Phase 33: erasing a guest (a profile, or a visit with no profile) first lists **
 Phase 34: the erase search covers every free-text field staff type: special requests of other visits, reservation and waitlist notes (`reservations.view`, `waitlist.view`), table session notes (`restaurant.view`), takeout names and order item instructions with their kitchen copies (`orders.view`), shift, course/station and assignment notes (`schedule.view`), each at the locations where the eraser holds that view permission, and gift card purchaser details organization-wide (`gift-cards.purchaser.view`). `guests.erase` is the redaction right; what wasn't searched is counted in the dialog. In those fields only the matching words become `[redacted]` (log entries and pre-shift notes are still emptied), and a purchaser match clears the whole purchaser row; each change writes an append-only `free_text_redactions` row (table, row, column, reason, who, when, never the text). The guest's own reservation, waitlist and table session notes are cleared outright. A shift note redaction isn't a schedule change: any period status, no notification. **Points and voids:** voids, comps and discounts never reverse points, because points are earned only when the session ends, a session can't end with an OPEN check, and a CLOSED check can't be voided, comped or discounted; those made before close already lower the `subtotal` that earns. A refunded check's redeemed reward stays spent.
 
 Phase 22 adds online booking and guest messaging to this domain. A location may take bookings on a public, signed-out page (`/book/{location code}`): off until a manager turns it on, times offered from booking hours (`online_booking_periods`) every 15, 30 or 60 minutes, limited by lead time, a booking window, a party size limit and pacing (covers starting per slot), checked again under a location lock when the booking is made. Online bookings are `source = 'ONLINE'` with no creating user (a `GUEST` actor in audit), `CONFIRMED` or, when the location requires approval, `PENDING`; tables are still planned by the host, and a booking is never linked to a profile automatically. Guests view or cancel through a private link whose token is stored only as a SHA-256 hash (`reservation_manage_links`). Service messages (confirmed, received, changed, cancelled, reminder, table ready) go by email or SMS only with the visit's consent per channel (`guest_party_message_consents`) and never to an address on the opt-out list (`message_suppressions`, a keyed hash). Erase also clears consents, message addresses and bodies, and manage links. See sections 22 and 33.
+
+Phase 36 adds **events and private dining** (`events.view`, `events.manage`). `event_bookings` (`EV-000123` per organization) each have their own Guest Party and move `INQUIRY` -> `TENTATIVE` -> `CONFIRMED` -> `COMPLETED`, or to `CANCELLED`; a finished event is frozen apart from a recorded guest erase. Its space is tables in one area (`event_booking_tables`, any number), a whole area, or the whole location (buyout). TENTATIVE and CONFIRMED events hold that space over the half-open interval `[start - setup minutes, end + teardown minutes)`; `queries/event-blocks.ts` is the one place this is decided and every planning entry point reads it: reservation table plans and create/update (buyouts), waitlist table choice, seating and moving (`EVENT_HOLD_ACTIVE`, overridable with `reservations.override-hold` and a reason, recorded in `reservation_hold_overrides.event_booking_id`), table suggestions, the floor's hold indicators, online booking (no slots in a buyout) and booked covers in the demand forecast. Reservation, online-booking and event writes take a per-location advisory lock. A confirmed event is seated as one session; when that session ends the event completes. Deposits and minimum spend are recorded as information only: no tender, drawer or journal effect (contract change C3). The three-table combination limit applies to reservation and waitlist planning, not to events (C1).
 
 ## 14. Domain 07: Menu Management
 
@@ -737,6 +743,8 @@ BAR
 ```
 
 The architecture may later support multiple fulfillment components for a single composite menu item.
+
+Phase 36 adds **prix-fixe and combo items**: `menu_items.item_kind` is `STANDARD` or `BUNDLE`. A bundle has courses (`menu_item_bundle_slots`: name, default course, minimum and maximum choices) of ordinary menu items with an upcharge each (`menu_item_bundle_slot_options`), deactivated never deleted, set under `menu.edit` (upcharges also `menu.pricing.edit`). A bundle has no recipe, station routing or modifier groups of its own. `getOperationalMenu` offers a bundle only while every course can still be filled from sellable items at the location.
 
 ## 15. Domain 08: Recipes and Modifiers
 
@@ -859,6 +867,8 @@ Phase 19 adds `inventory_stock_alerts`: the posting service opens one when a pos
 
 Theoretical versus actual inventory and cost variance are critical reporting capabilities.
 
+Phase 36 adds **supplier invoices**, record only (`purchasing.view`, `purchasing.invoices.record`, `purchasing.invoices.approve`). `supplier_invoices` (`INV-000123` per location; the supplier's invoice number unique per supplier and location among live invoices; `DRAFT` -> `APPROVED`, `DISPUTED` or `VOIDED`) carry `supplier_invoice_lines`: item lines naming one receipt line each (a receipt line is held by at most one live invoice, and one invoice may cover several POs from its supplier) and `FREIGHT`, `TAX`, `OTHER` and `CREDIT` lines. Lines must add up to the stated total. At approval the variances against the receipt are stored append-only in `supplier_invoice_variances`; a line priced outside the location's tolerance (`invoice_price_tolerance_percent` 2.00 or `invoice_price_tolerance_amount` 0.50 per unit, whichever is larger) or with a quantity mismatch needs a reason. Invoices never write the ledger and never change balances, average cost or supplier cost history (cost correction is left to a later phase). An optional scanned copy (PDF, PNG or JPEG) is stored through `FileStorageService` under `SUPPLIER_INVOICE_STORAGE_PATH`. No card or bank numbers are accepted.
+
 ## 17. Domain 10: Orders
 
 Tables:
@@ -941,6 +951,8 @@ Discounts and comps do not automatically restore inventory.
 
 Phase 30: a discount definition may be `reward_only`. It belongs to one loyalty reward, is never offered in the discount picker, and the ordinary apply and edit refuse it (`REWARD_ONLY_DISCOUNT`). The `redeem-loyalty-reward` workflow applies it through the same discount rules (snapshot, reason, recompute, `orders.discount-applied` audit), needing `loyalty.redeem` rather than `orders.discount.apply`. Removing it is an ordinary discount removal. Tax, totals and settlement are unchanged.
 
+Phase 36: a **bundle** sale is one priced bundle line (bundle price plus the chosen upcharges, quantity 1, taxed by the bundle's tax category) and one component order item per choice (`bundle_parent_order_item_id`, `bundle_slot_id`, slot and bundle name snapshots, `bundle_upcharge_snapshot`). Components are priced at zero with zero-priced modifiers and no tax, and each keeps its own recipe, consumption, allergen check, course and stations. SEND re-reads the upcharges, sends the bundle and its components together, and is idempotent as before. Bundles move between checks and change seats as a whole; voiding the bundle voids its components (a component may be voided alone); discounts and shares apply only to the bundle line. The freeze trigger covers the new columns, and a deferred trigger keeps components on their bundle's check.
+
 ## 18. Domain 11: Kitchen and Bar
 
 Tables:
@@ -994,6 +1006,8 @@ Phase 21: a ticket item sent after an allergy acknowledgment carries `allergy_al
 Phase 29: station queues and Expo show each item's seat ("S2"), read from the order item when shown, not snapshotted, so a seat fixed after SEND reaches the pass. No kitchen schema change.
 
 Phase 25: a read-only **prep list** per station (Kitchen → Prep list) shows, for today and the next six days, the portions the item forecast expects (rounded up; today less what has been sent), the modifiers guests usually choose and the ingredients those portions take. Station access follows the queues (`kitchen.view` for KITCHEN, `bar.view` for BAR). It is worked out when opened and stored nowhere; prep itself is not tracked. See section 16 and "Phase 25 Prep and Purchasing Forecast" in section 33.
+
+Phase 36: the bundle line makes no ticket. Components are fulfilled like any item at their own stations and courses, labelled "Item (Bundle)" on tickets and queues.
 
 ## 19. Domain 12: Order Settlement
 
@@ -1232,6 +1246,8 @@ Both support "All my locations" (a `location_code` column) and are audited as `r
 
 Phase 25: the Inventory area ends with **Item forecast vs actual**: for each past business date covered by a stored purchasing forecast (the latest one that covered it), forecast and sold portions per menu item on closed checks, the difference and its percentage. Counts only. "All my locations" adds forecast and sold portions.
 
+Phase 36 adds Inventory report sections "Invoice variances" and "Received, not invoiced" (cost figures need `inventory.cost.view`), and a "Bundle components" section in menu reports; item mix and menu engineering show a bundle with its components' cost and leave component rows out.
+
 ## 22. Notifications
 
 Table:
@@ -1264,6 +1280,8 @@ Phase 22 intentionally adds email and SMS **to guests**, for service messages on
 - **Retention.** The hourly maintenance run queues due reminders (09:00 to 21:00 local only) and clears the address and body of finished messages older than `MESSAGE_RETENTION_DAYS` (90).
 
 Phase 23 adds `LOT_EXPIRING` (linked to its lot), from the hourly run, once as a lot starts expiring and once when it has expired.
+
+Phase 36 adds `TEMPERATURE_OUT_OF_RANGE` (linked to its temperature reading), written to `food-safety.manage` holders at the location in the same transaction as an out-of-range reading.
 
 As built in Phase 10, `notifications` holds `FOOD_READY` and `BAR_ORDER_READY` (see section 33). Phase 19 adds `INVENTORY_LOW`, linked to its low-stock alert. Phase 20 adds the other example kinds and `TIME_OFF_DENIED`, `OVERTIME_APPROACHING` and `MISSED_CLOCK_OUT`: the schedule and time-off kinds are written with the change they report, and the time-based kinds by the hourly maintenance run, once per dedupe key and recipient.
 
@@ -2031,6 +2049,17 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
 
+### Phase 36 Events, Checklists, Food Safety, Supplier Invoices and Prix-Fixe
+
+Phase 36 builds five features in one phase (plan approved 2026-11-23, D1–D40 as recommended, with contract changes C1–C6). Plan: `docs/Phase-36-Events-Checklists-Food-Safety-Invoices-and-Prix-Fixe.md`. Report: `docs/Phase-36-Completion-Report.md`. Ten permissions (172 in all): `checklists.view`, `.complete`, `.manage`; `food-safety.view`, `.record`, `.manage`; `events.view`, `events.manage`; `purchasing.invoices.record`, `purchasing.invoices.approve` (Owner and GM only by default), seeded by `security.phase-36-permissions`.
+
+- **Checklists (Restaurant):** per-location `checklist_templates` (kind `OPENING`, `CLOSING`, `SIDE_WORK`, `OTHER`; positions for relevance; optional sign-off) with `checklist_template_items`, deactivated never deleted. A run (`checklist_runs`, `checklist_run_items`) is started for the current business date and copies the active items; one per template and date, or per template, employee and date for side work. Items are done, skipped with a reason or open, each with its own `version`; completing is refused while a required item is open (`CHECKLIST_INCOMPLETE`); sign-off is by a different manager; a completed run is frozen (migration `0082`). Missed checklists are worked out on read. Pages `/checklists`, `/checklists/manage`, `/checklists/history`, a dashboard panel. Migrations `0081`, `0082`.
+- **Temperature logs (Restaurant):** `temperature_points` per location (kind, a unit fixed at creation from `location_settings.temperature_unit`, optional minimum and maximum, check interval). `temperature_readings` are append-only (migration `0084`) with the range copied and `in_range` stored (checked by the database); out of range needs a corrective action and writes `TEMPERATURE_OUT_OF_RANGE` to `food-safety.manage` holders in the same transaction; corrections and rechecks are new readings naming the earlier one; adding is idempotent. Overdue checks are worked out on read. Pages `/temperature-log` (with CSV export for `reports.export` holders) and `/temperature-log/points`, a dashboard panel. Migrations `0083`, `0084`.
+- **Events (Reservations):** `event_bookings` (`EV-000123` per organization, its own Guest Party, `INQUIRY` → `TENTATIVE` → `CONFIRMED` → `COMPLETED`, or `CANCELLED`) with `event_booking_tables`. TENTATIVE and CONFIRMED events hold their space (tables in one area, a whole area, or a buyout) over `[start − setup, end + teardown)`: `src/modules/reservations/queries/event-blocks.ts` is the one place a block is decided, read by reservation planning and create/update (buyouts), waitlist table choice, seating (`EVENT_HOLD_ACTIVE`, override with `reservations.override-hold` and a reason, recorded in `reservation_hold_overrides.event_booking_id`), table suggestions, floor hold indicators, online booking (no slot in a buyout) and the demand forecast's booked covers. Reservation, online-booking and event writes take a per-location advisory lock (`lockLocationPlanning`). A confirmed event is seated as one session through `seatEventParty`; its session ending completes it. Deposits and minimum spend are information only. Pages `/events`, `/events/new`, `/events/[id]` (with `/edit` and a printable `/sheet`), an "Events holding space" band on the reservation book. Migrations `0085`, `0086`.
+- **Supplier invoices (Inventory):** `supplier_invoices` (`INV-000123` per location, the supplier's number unique per supplier and location among live invoices, `DRAFT` → `APPROVED`, `DISPUTED`, `VOIDED`), `supplier_invoice_lines` (item lines naming one receipt line each, held by at most one live invoice; `FREIGHT`, `TAX`, `OTHER`, `CREDIT` lines) and append-only `supplier_invoice_variances` stored at approval. Lines must add up to the stated total; a line outside tolerance (`location_settings.invoice_price_tolerance_percent` 2.00, `_amount` 0.50 per unit, the larger applies) or with a quantity mismatch needs a reason to approve. Invoices never touch the ledger, balances, average cost or supplier cost history. An optional scanned copy (PDF, PNG, JPEG up to 10 MB) is kept outside PostgreSQL (`SUPPLIER_INVOICE_STORAGE_PATH`). Inventory report sections "Invoice variances" and "Received, not invoiced". Pages under `/purchasing/invoices`. Migrations `0087`, `0088`.
+- **Prix-fixe and combo items (Menu, Orders):** `menu_items.item_kind` `STANDARD` or `BUNDLE`; `menu_item_bundle_slots` (courses with a default course and minimum and maximum choices) and `menu_item_bundle_slot_options` (ordinary items with an upcharge), deactivated never deleted, set under `menu.edit` and `menu.pricing.edit`. A bundle has no recipe, routing or modifiers of its own. The operational menu offers a bundle only while each course can be filled from sellable items. A sale is a priced bundle line (bundle price + upcharges, quantity 1) plus one zero-priced component order item per choice (`order_items.bundle_parent_order_item_id`, slot, slot and bundle names, upcharge), each with its own modifiers (priced at zero), recipe, consumption, allergen check, stations and course; the bundle line makes no ticket, components show "Item (Bundle)" on tickets, components carry no tax. Bundles are sent, moved and re-seated whole; voiding the bundle voids its components (a component may be voided alone); discounts and shares apply to the bundle line only. Reports show the bundle with its components' cost and a "Bundle components" section. Migrations `0089`, `0090` (freeze trigger gains the bundle columns; a deferred trigger keeps components on their bundle's check).
+- **Guest erase (policy 3):** checklist notes and skip reasons, temperature corrective actions, other events' names, notes, menu notes, deposit references and cancel reasons, and supplier invoice notes and reasons join the erase search under each kind's view permission; the guest's own events are cleared. Setup copy (Phase 23) gains `CHECKLISTS` and `TEMPERATURE_POINTS`.
+
 ### Phase 35 Keyed Gift Card Code Hashes
 
 Phase 35 removes the Phase 34 risk "supplier codes are stored as an unsalted SHA-256" (plan approved 2026-11-23, D1–D9 as recommended). Plan: `docs/Phase-35-Keyed-Gift-Card-Code-Hashes.md`. Report: `docs/Phase-35-Completion-Report.md`.
@@ -2196,7 +2225,7 @@ Phase 23 builds the third group of section 39, chosen by the owner on 2026-11-12
 
 ### Phase 22 Online Reservations and Guest Messaging
 
-Phase 22 builds the guest messaging and online booking group of section 39, with the Phase 21 leftovers, by owner decision on 2026-11-12 (plan approved with D1–D16 as recommended; nodemailer through a peer override, accepted as DEV-004). Marketing, two-way messaging, external reservation networks, deposits and staff email or SMS stay out. Plan: `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md` (16 amendments). Report: `docs/Phase-22-Completion-Report.md`. It supersedes section 22's "no SMS/email" line for guest service messages, and the Phase 6 and Phase 21 plans' bans on guest messaging; the ban on marketing stays.
+Phase 22 builds the guest messaging and online booking group of section 39, with the Phase 21 leftovers, by owner decision on 2026-11-12 (plan approved with D1–D16 as recommended; nodemailer through a peer override, accepted as DEV-004). Marketing, two-way messaging, external reservation networks, deposits and staff email or SMS stay out (Phase 36: event deposits are recorded as event information only). Plan: `docs/Phase-22-Online-Reservations-and-Guest-Messaging.md` (16 amendments). Report: `docs/Phase-22-Completion-Report.md`. It supersedes section 22's "no SMS/email" line for guest service messages, and the Phase 6 and Phase 21 plans' bans on guest messaging; the ban on marketing stays.
 
 - **Messaging** (section 22): `guest_messages`, `message_suppressions`, `guest_party_message_consents`, the port and adapters, the dispatcher, and counts on Admin → System health. Staff record consent with two unticked boxes on the reservation and waitlist forms; a changed phone or email withdraws that channel.
 - **Staff messages.** Creating a confirmed reservation, confirming one, changing its date, time or party size, and cancelling it queue the matching message; no-shows and seating cancel what is waiting. Notify on the waitlist queues the table-ready message (SMS first, else email); "Text again" repeats it at most once a minute. Each reservation and waitlist card has a Messages panel: consent state, history (addresses masked without `guests.contact.view`), retry and send-again.
@@ -2489,6 +2518,12 @@ Requested and approved by the owner on 2026-11-19, with decisions D1–D13 as re
 Guest erase offers to redact the manager log entries and pre-shift notes that mention the guest; refunds take back the loyalty points they paid for; supplier-printed gift card codes and an unused-balance report; organization-wide balances shown once in comparisons; configurable manager log categories. One new permission (161). Plan: `docs/Phase-33-Privacy-Loyalty-and-Gift-Card-Follow-ups.md`.
 
 Requested and approved by the owner on 2026-11-19, with decisions D1–D19 as recommended in the plan.
+
+### Phase 36: Events, Checklists, Food Safety, Supplier Invoices and Prix-Fixe
+
+Opening, closing and side-work checklists; food-safety temperature logs with out-of-range alerts; event and private-dining bookings that hold their space; supplier invoices matched against receipts (record only, no cost change); prix-fixe and combo items sold as one priced line with ordinary component items. Ten permissions, migrations `0081`–`0090`. FIFO lot costing moves to Phase 37. Plan: `docs/Phase-36-Events-Checklists-Food-Safety-Invoices-and-Prix-Fixe.md`.
+
+Requested and approved by the owner on 2026-11-23, with decisions D1–D40 as recommended in the plan.
 
 ### Phase 35: Keyed Gift Card Code Hashes
 

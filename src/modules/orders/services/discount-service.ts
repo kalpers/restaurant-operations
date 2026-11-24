@@ -19,6 +19,7 @@ import { assertOrderOpen } from "../rules/order-lifecycle";
 import { isComp } from "../rules/order-totals";
 import type { DiscountScope, DiscountType } from "../types";
 import { actorHolds, assertPermission } from "./access";
+import { assertNotBundleComponent } from "../rules/bundle-lines";
 
 // Discounts come only from configured definitions. Applying one snapshots its code, name,
 // type and value with a reason and the actor, so later definition edits change nothing
@@ -337,13 +338,16 @@ export async function applyDiscountInTransaction(
   }
 
   const [item] = await transaction
-    .select({ status: orderItems.status })
+    .select({ status: orderItems.status, bundleParentOrderItemId: orderItems.bundleParentOrderItemId })
     .from(orderItems)
     .where(and(eq(orderItems.id, input.orderItemId), eq(orderItems.orderId, orderId)));
 
   if (!item) {
     throw new NotFoundError("order item");
   }
+
+  // Phase 36 (policy 9): a bundle is discounted as a whole; its components carry no price.
+  assertNotBundleComponent(item, "discount");
 
   if (item.status !== "SUBMITTED") {
     throw new BusinessRuleError(

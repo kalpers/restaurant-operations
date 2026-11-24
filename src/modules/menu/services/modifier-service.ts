@@ -23,7 +23,7 @@ import {
   type SelectionType,
 } from "../rules/modifier-selection";
 import type { PreparationEffectType } from "../types";
-import { assertPermission, requireMenuItem } from "./access";
+import { assertNotBundleItem, assertPermission, requireMenuItem } from "./access";
 
 const codeTaken = (label: string) =>
   new ConflictError("CODE_TAKEN", `Another ${label} already uses that code.`);
@@ -330,6 +330,7 @@ export async function attachGroup(
 
   return withTransaction(database, async (transaction) => {
     await requireMenuItem(transaction, actor, menuItemId);
+    await assertNotBundleItem(transaction, menuItemId);
 
     const group = await requireGroup(transaction, actor, input.modifierGroupId);
 

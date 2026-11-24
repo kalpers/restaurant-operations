@@ -318,5 +318,139 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
     });
   }
 
+  if (canViewCost) {
+    sections.push(...(await invoiceSections(context)));
+  }
+
   return sections;
+}
+
+/**
+ * Phase 36 (policy 8): approved supplier invoices' stored variances, by invoice date, and
+ * received lines no live invoice holds yet, by receipt date. Information only: invoices never
+ * change inventory cost.
+ */
+async function invoiceSections(context: ReportContext): Promise<ReportSection[]> {
+  const { filters } = context;
+  const variances = await rowsOf<{
+    invoice_number: string;
+    invoice_date: string;
+    supplier: string;
+    item: string;
+    received_quantity: string;
+    invoiced_quantity: string;
+    quantity_variance: string;
+    receipt_unit_cost: string;
+    invoiced_unit_price: string;
+    price_variance: string;
+    amount_variance: string;
+    within_tolerance: boolean;
+  }>(
+    context,
+    sql`
+      SELECT i.invoice_number, i.invoice_date::text AS invoice_date, s.name AS supplier, ii.name AS item,
+             v.received_quantity::text, v.invoiced_quantity::text, v.quantity_variance::text,
+             v.receipt_unit_cost::text, v.invoiced_unit_price::text, v.price_variance::text,
+             v.amount_variance::text, v.within_tolerance
+      FROM supplier_invoice_variances v
+      JOIN supplier_invoices i ON i.id = v.invoice_id
+      JOIN suppliers s ON s.id = i.supplier_id
+      JOIN supplier_invoice_lines l ON l.id = v.invoice_line_id
+      JOIN purchase_order_receipt_lines rl ON rl.id = l.receipt_line_id
+      JOIN purchase_order_lines pol ON pol.id = rl.purchase_order_line_id
+      JOIN inventory_items ii ON ii.id = pol.inventory_item_id
+      WHERE i.location_id = ${filters.locationId}
+        AND i.status = 'APPROVED'
+        AND i.invoice_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        AND (v.quantity_variance <> 0 OR v.price_variance <> 0)
+      ORDER BY i.invoice_date, i.invoice_number, ii.name
+    `,
+  );
+  const uninvoiced = await rowsOf<{
+    received_on: string;
+    po_number: string;
+    supplier: string;
+    item: string;
+    received_quantity: string;
+    total_cost: string;
+    age_days: number;
+  }>(
+    context,
+    sql`
+      SELECT r.business_date::text AS received_on, po.po_number, s.name AS supplier, ii.name AS item,
+             rl.received_quantity::text, rl.total_cost::text,
+             (${filters.to}::date - r.business_date)::int AS age_days
+      FROM purchase_order_receipt_lines rl
+      JOIN purchase_order_receipts r ON r.id = rl.receipt_id
+      JOIN purchase_orders po ON po.id = r.purchase_order_id
+      JOIN suppliers s ON s.id = po.supplier_id
+      JOIN purchase_order_lines pol ON pol.id = rl.purchase_order_line_id
+      JOIN inventory_items ii ON ii.id = pol.inventory_item_id
+      WHERE r.location_id = ${filters.locationId}
+        AND r.business_date BETWEEN ${filters.from}::date AND ${filters.to}::date
+        AND NOT EXISTS (
+          SELECT 1 FROM supplier_invoice_lines l WHERE l.receipt_line_id = rl.id AND l.holds_receipt_line
+        )
+      ORDER BY r.business_date, po.po_number, ii.name
+    `,
+  );
+
+  return [
+    {
+      key: "invoice-variances",
+      title: "Invoice variances",
+      description: "Approved supplier invoice lines that differ from what was received, as stored at approval. Inventory cost is unchanged.",
+      columns: [
+        { key: "invoiceDate", label: "Invoice date", kind: "date" },
+        { key: "invoice", label: "Invoice", kind: "text" },
+        { key: "supplier", label: "Supplier", kind: "text" },
+        { key: "item", label: "Item", kind: "text" },
+        { key: "received", label: "Received", kind: "quantity" },
+        { key: "invoiced", label: "Invoiced", kind: "quantity" },
+        { key: "quantityVariance", label: "Quantity variance", kind: "quantity" },
+        { key: "receiptCost", label: "Receipt unit cost", kind: "cost" },
+        { key: "invoicedPrice", label: "Invoiced unit price", kind: "cost" },
+        { key: "priceVariance", label: "Price variance", kind: "cost" },
+        { key: "amountVariance", label: "Amount variance", kind: "money" },
+        { key: "withinTolerance", label: "Within tolerance", kind: "text" },
+      ],
+      rows: variances.map((row) => ({
+        invoiceDate: row.invoice_date,
+        invoice: row.invoice_number,
+        supplier: row.supplier,
+        item: row.item,
+        received: row.received_quantity,
+        invoiced: row.invoiced_quantity,
+        quantityVariance: row.quantity_variance,
+        receiptCost: row.receipt_unit_cost,
+        invoicedPrice: row.invoiced_unit_price,
+        priceVariance: row.price_variance,
+        amountVariance: row.amount_variance,
+        withinTolerance: row.within_tolerance ? "Yes" : "No",
+      })),
+    },
+    {
+      key: "received-not-invoiced",
+      title: "Received, not invoiced",
+      description: "Received lines in the range that no live supplier invoice holds yet, with their age at the end of the range.",
+      columns: [
+        { key: "receivedOn", label: "Received", kind: "date" },
+        { key: "po", label: "Purchase order", kind: "text" },
+        { key: "supplier", label: "Supplier", kind: "text" },
+        { key: "item", label: "Item", kind: "text" },
+        { key: "quantity", label: "Quantity (purchase units)", kind: "quantity" },
+        { key: "receivedCost", label: "Received cost", kind: "cost" },
+        { key: "ageDays", label: "Age (days)", kind: "count" },
+      ],
+      rows: uninvoiced.map((row) => ({
+        receivedOn: row.received_on,
+        po: row.po_number,
+        supplier: row.supplier,
+        item: row.item,
+        quantity: row.received_quantity,
+        receivedCost: row.total_cost,
+        ageDays: row.age_days,
+      })),
+    },
+  ];
 }

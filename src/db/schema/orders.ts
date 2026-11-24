@@ -25,7 +25,7 @@ import { employees } from "./employees";
 import { guestParties } from "./guest-parties";
 import { idempotencyRecords } from "./infrastructure";
 import { inventoryItems, inventoryTransactions } from "./inventory";
-import { menuCategories, menuItems, modifierGroups, modifiers } from "./menu";
+import { menuCategories, menuItemBundleSlots, menuItems, modifierGroups, modifiers } from "./menu";
 import { locations, organizations } from "./organization";
 import { pricePeriods } from "./price-periods";
 import { recipes, recipeVersions, unitsOfMeasure } from "./recipes";
@@ -320,6 +320,16 @@ export const orderItems = pgTable(
      * freeze trigger doesn't list it. Moves carry it unchanged.
      */
     seatNumber: smallint("seat_number"),
+    /**
+     * Phase 36 (policy 9): on a bundle's component, the bundle line it belongs to, its slot, the
+     * slot's and bundle's names, and the upcharge this choice added to the bundle's price. A
+     * component's own prices are zero; the bundle line carries the money. Frozen at SEND.
+     */
+    bundleParentOrderItemId: uuid("bundle_parent_order_item_id"),
+    bundleSlotId: uuid("bundle_slot_id"),
+    bundleSlotNameSnapshot: text("bundle_slot_name_snapshot"),
+    bundleNameSnapshot: text("bundle_name_snapshot"),
+    bundleUpchargeSnapshot: money("bundle_upcharge_snapshot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -393,6 +403,27 @@ export const orderItems = pgTable(
         AND (${table.status} <> 'DRAFT' OR ${table.pricePeriodId} IS NULL)
         AND (${table.regularPriceSnapshot} IS NULL OR ${table.regularPriceSnapshot} >= 0)`,
     ),
+    foreignKey({
+      name: "order_items_bundle_parent_fk",
+      columns: [table.bundleParentOrderItemId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "order_items_bundle_slot_fk",
+      columns: [table.bundleSlotId],
+      foreignColumns: [menuItemBundleSlots.id],
+    }).onDelete("restrict"),
+    check(
+      "order_items_bundle_component_fields",
+      sql`((${table.bundleParentOrderItemId} IS NULL) = (${table.bundleSlotId} IS NULL)
+          AND (${table.bundleParentOrderItemId} IS NULL) = (${table.bundleSlotNameSnapshot} IS NULL)
+          AND (${table.bundleParentOrderItemId} IS NULL) = (${table.bundleNameSnapshot} IS NULL)
+          AND (${table.bundleParentOrderItemId} IS NULL) = (${table.bundleUpchargeSnapshot} IS NULL))
+        AND (${table.bundleParentOrderItemId} IS NULL OR (${table.basePriceSnapshot} = 0 AND ${table.modifierTotalSnapshot} = 0
+          AND ${table.lineTotalSnapshot} = 0 AND ${table.bundleUpchargeSnapshot} >= 0 AND ${table.taxCategoryId} IS NULL))
+        AND (${table.bundleParentOrderItemId} IS NULL OR ${table.bundleParentOrderItemId} <> ${table.id})`,
+    ),
+    index("order_items_bundle_parent_idx").on(table.bundleParentOrderItemId),
     index("order_items_order_status_idx").on(table.orderId, table.status),
     index("order_items_send_batch_idx").on(table.sendBatchId),
   ],

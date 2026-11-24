@@ -7,6 +7,7 @@ import { listTableFacts } from "@/modules/restaurant/queries/table-facts";
 import { actorHolds } from "@/modules/restaurant/services/access";
 import { AuthorizationError } from "@/shared/errors/app-error";
 
+import { findEventHeldTableIds } from "../queries/event-blocks";
 import {
   findActiveHolds,
   readReservationContext,
@@ -56,7 +57,11 @@ export async function recommendTablesFor(
     settings: context,
     now,
   });
-  const held = new Set(holds.map((hold) => hold.tableId));
+  // Phase 36 (policy 7): tables an event holds now count as held for anyone else.
+  const held = new Set([
+    ...holds.map((hold) => hold.tableId),
+    ...(await findEventHeldTableIds(executor, { locationId: actor.locationId, now, exceptGuestPartyId: input.guestPartyId })),
+  ]);
 
   return recommendTables({
     partySize: input.partySize,
@@ -176,12 +181,16 @@ export async function listHostTables(
   assertCanSeeParties(actor);
 
   const context = await readReservationContext(executor, actor.locationId);
+  const now = new Date();
   const holds = await findActiveHolds(executor, {
     locationId: actor.locationId,
     settings: context,
-    now: new Date(),
+    now,
   });
-  const held = new Set(holds.map((hold) => hold.tableId));
+  const held = new Set([
+    ...holds.map((hold) => hold.tableId),
+    ...(await findEventHeldTableIds(executor, { locationId: actor.locationId, now })),
+  ]);
 
   return (await listTableFacts(executor, actor.locationId))
     .filter((table) => table.usable && table.areaType !== "TAKEOUT")

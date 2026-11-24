@@ -37,6 +37,12 @@ import { describeConflict, findAllergenConflicts } from "@/modules/recipes/rules
 import { assertOrderOpen, buildKitchenInstructions } from "@/modules/orders/rules/order-lifecycle";
 import { assertPermission } from "@/modules/orders/services/access";
 import { draftColumns } from "@/modules/orders/services/draft-item-service";
+import {
+  bundleComponentColumns,
+  bundleParentColumns,
+  choiceInBundle,
+  componentTicketName,
+} from "@/modules/orders/rules/bundle-lines";
 import { SEND_SCOPE } from "@/modules/orders/types";
 import { BusinessRuleError } from "@/shared/errors/app-error";
 
@@ -171,12 +177,49 @@ export async function sendOrderItems(
           resolved.push({ draft, sellable, revision, consumption });
         }
 
+        // Phase 36 (policy 9): each component's slot and upcharge from its bundle as offered now,
+        // and each bundle line's price from them. A bundle no longer sellable stops the round.
+        const isBundle = (entry: (typeof resolved)[number]) => entry.sellable.item.itemKind === "BUNDLE";
+        const bundleChoices = new Map<string, { slotName: string; upcharge: string; bundleName: string }>();
+
+        for (const entry of resolved.filter((candidate) => candidate.draft.bundleParentOrderItemId)) {
+          const parent = resolved.find((candidate) => candidate.draft.id === entry.draft.bundleParentOrderItemId);
+
+          if (!parent?.sellable.item.bundle) {
+            throw new BusinessRuleError("BUNDLE_OPTION_UNAVAILABLE", "A bundle on this check can't be sold right now. Remove it and add it again.");
+          }
+
+          bundleChoices.set(entry.draft.id, {
+            ...choiceInBundle(parent.sellable.item.bundle, entry.draft.bundleSlotId!, entry.draft.menuItemId),
+            bundleName: parent.sellable.item.name,
+          });
+        }
+
+        const priceColumns = (entry: (typeof resolved)[number]) =>
+          entry.draft.bundleParentOrderItemId
+            ? bundleComponentColumns(entry.sellable.item)
+            : isBundle(entry)
+              ? bundleParentColumns(
+                  entry.sellable.item,
+                  resolved
+                    .filter((candidate) => candidate.draft.bundleParentOrderItemId === entry.draft.id)
+                    .map((candidate) => bundleChoices.get(candidate.draft.id)!.upcharge),
+                )
+              : draftColumns(entry.sellable, entry.draft.quantity);
+        const ticketName = (entry: (typeof resolved)[number]) => {
+          const choice = bundleChoices.get(entry.draft.id);
+
+          return choice ? componentTicketName(entry.sellable.item.name, choice.bundleName) : entry.sellable.item.name;
+        };
+        // A bundle line has no ingredients; its components carry the allergen labels.
+        const labelled = resolved.filter((entry) => !isBundle(entry));
+
         // Phase 21 (policies 11, 12, 14): each item's label from the ingredients it will consume,
         // and its conflicts with the order's allergies. Unacknowledged conflicts stop the round.
         const labels = await loadAllergenLabels(
           transaction,
           actor.organizationId,
-          resolved.map(({ draft, consumption }) => ({
+          labelled.map(({ draft, consumption }) => ({
             key: draft.id,
             menuItemId: draft.menuItemId,
             ingredientIds: consumption.map((entry) => entry.inventoryItemId),
@@ -185,7 +228,7 @@ export async function sendOrderItems(
         const allergies = await loadOrderAllergies(transaction, order);
         const conflicts = new Map(
           findAllergenConflicts(
-            resolved.map(({ draft }) => ({ itemId: draft.id, label: labels.get(draft.id)! })),
+            labelled.map(({ draft }) => ({ itemId: draft.id, label: labels.get(draft.id)! })),
             allergies.allergies,
           ).map((conflict) => [conflict.itemId, { ...conflict, description: describeConflict(conflict, allergies.allergies) }]),
         );
@@ -226,7 +269,7 @@ export async function sendOrderItems(
 
         if (location.taxEnabled) {
           const untaxable = resolved
-            .filter(({ draft }) => !taxes.get(draft.menuItemId))
+            .filter(({ draft }) => !draft.bundleParentOrderItemId && !taxes.get(draft.menuItemId))
             .map(({ sellable }) => sellable.item.name);
 
           if (untaxable.length > 0) {
@@ -255,7 +298,12 @@ export async function sendOrderItems(
           })
           .returning();
 
-        for (const { draft, sellable, revision } of resolved) {
+        for (const entry of resolved) {
+          const { draft, sellable, revision } = entry;
+          // Phase 36 (policy 9): a component carries no tax and its modifiers no price.
+          const component = draft.bundleParentOrderItemId !== null;
+          const tax = component ? null : taxes.get(draft.menuItemId);
+
           // Refresh the modifier snapshots while the item is still a draft.
           await transaction.delete(orderItemModifiers).where(eq(orderItemModifiers.orderItemId, draft.id));
 
@@ -268,7 +316,7 @@ export async function sendOrderItems(
                 modifierGroupNameSnapshot: selection.modifierGroupName,
                 modifierCodeSnapshot: selection.modifier.code,
                 modifierNameSnapshot: selection.modifier.name,
-                priceAdjustmentSnapshot: selection.modifier.priceAdjustment,
+                priceAdjustmentSnapshot: component ? "0.00" : selection.modifier.priceAdjustment,
                 preparationEffectTypeSnapshot: selection.modifier.preparationEffectType,
                 preparationInstructionSnapshot: selection.modifier.preparationInstruction,
                 sortOrder: index,
@@ -279,7 +327,14 @@ export async function sendOrderItems(
           await transaction
             .update(orderItems)
             .set({
-              ...draftColumns(sellable, draft.quantity),
+              ...priceColumns(entry),
+              ...(component
+                ? {
+                    bundleSlotNameSnapshot: bundleChoices.get(draft.id)!.slotName,
+                    bundleNameSnapshot: bundleChoices.get(draft.id)!.bundleName,
+                    bundleUpchargeSnapshot: bundleChoices.get(draft.id)!.upcharge,
+                  }
+                : {}),
               status: "SUBMITTED",
               kitchenInstructionsSnapshot: buildKitchenInstructions(
                 sellable.selections.map((selection) => selection.modifier.preparationInstruction),
@@ -288,17 +343,17 @@ export async function sendOrderItems(
               prepStationIdsSnapshot: sellable.item.prepStationIds,
               recipeId: revision?.recipeId ?? null,
               recipeVersionId: revision?.id ?? null,
-              taxCategoryId: taxes.get(draft.menuItemId)?.taxCategoryId ?? null,
-              taxCategoryCodeSnapshot: taxes.get(draft.menuItemId)?.taxCategoryCode ?? null,
-              taxRateSnapshot: taxes.get(draft.menuItemId)?.taxRate ?? null,
-              taxIncludedSnapshot: taxes.get(draft.menuItemId)?.priceIncludesTax ?? false,
+              taxCategoryId: tax?.taxCategoryId ?? null,
+              taxCategoryCodeSnapshot: tax?.taxCategoryCode ?? null,
+              taxRateSnapshot: tax?.taxRate ?? null,
+              taxIncludedSnapshot: tax?.priceIncludesTax ?? false,
               menuCategoryId: sellable.category.id,
               menuCategoryNameSnapshot: sellable.category.name,
               // Phase 28 (policy 4): the period the price came from, and the regular price then.
               pricePeriodId: sellable.item.pricePeriod?.id ?? null,
               pricePeriodNameSnapshot: sellable.item.pricePeriod?.name ?? null,
               regularPriceSnapshot: sellable.item.pricePeriod ? sellable.item.regularPrice : null,
-              allergenLabelIncompleteSnapshot: labels.get(draft.id)!.incomplete,
+              allergenLabelIncompleteSnapshot: labels.get(draft.id)?.incomplete ?? null,
               ...(conflicts.has(draft.id)
                 ? {
                     allergyAcknowledgedByUserId: actor.userId,
@@ -314,7 +369,7 @@ export async function sendOrderItems(
             .where(eq(orderItems.id, draft.id));
         }
 
-        const allergenRows = resolved.flatMap(({ draft }) =>
+        const allergenRows = labelled.flatMap(({ draft }) =>
           labels.get(draft.id)!.allergens.map((allergen) => ({
             orderItemId: draft.id,
             allergenId: allergen.id,
@@ -393,12 +448,13 @@ export async function sendOrderItems(
             businessDate: location.businessDate,
           },
           fire: input.fire ?? "ALL",
-          items: resolved.map(({ draft, sellable }) => ({
+          // Phase 36 (policy 9): a bundle line makes no ticket; its components name the bundle.
+          items: resolved.filter((entry) => !isBundle(entry)).map(({ draft, sellable, ...entry }) => ({
             orderItemId: draft.id,
             quantity: draft.quantity,
             courseNumber: draft.courseNumber,
             menuItemCodeSnapshot: sellable.item.code,
-            menuItemNameSnapshot: sellable.item.name,
+            menuItemNameSnapshot: ticketName({ draft, sellable, ...entry }),
             kitchenInstructionsSnapshot: buildKitchenInstructions(
               sellable.selections.map((selection) => selection.modifier.preparationInstruction),
               draft.specialInstructions,

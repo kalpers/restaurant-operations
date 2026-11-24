@@ -3,7 +3,9 @@ import { Suspense } from "react";
 
 import { DashboardOverview } from "@/components/reports/dashboard-overview";
 import { LocationsToday } from "@/components/reports/locations-today";
+import { ChecklistsTodayPanel } from "@/components/restaurant/checklists-today-panel";
 import { PreShiftToday } from "@/components/restaurant/pre-shift-today";
+import { TemperatureDuePanel } from "@/components/restaurant/temperature-due-panel";
 import { requirePageUser, resolveCurrentLocation } from "@/modules/auth/guards";
 import { requirePermission } from "@/modules/auth/services/permission-service";
 import { dashboardQuerySchema } from "@/modules/reporting/validators/report-filters";
@@ -24,6 +26,8 @@ export default async function DashboardPage({
   const location = await resolveCurrentLocation(auth);
   const canReport = location?.permissions.includes("reports.view") ?? false;
   const canReadBriefing = location?.permissions.includes("pre-shift.view") ?? false;
+  const canSeeChecklists = location?.permissions.includes("checklists.view") ?? false;
+  const canSeeTemperatures = location?.permissions.includes("food-safety.view") ?? false;
   const raw = await searchParams;
   const parsed = dashboardQuerySchema.safeParse({
     locationId: location?.locationId,
@@ -53,6 +57,18 @@ export default async function DashboardPage({
       {location && canReadBriefing && (
         <Suspense fallback={<p className="mb-6 text-neutral-600">Loading pre-shift notes…</p>}>
           <PreShiftToday auth={auth} locationId={location.locationId} />
+        </Suspense>
+      )}
+
+      {location && canSeeChecklists && (
+        <Suspense fallback={null}>
+          <ChecklistsTodayPanel auth={auth} locationId={location.locationId} />
+        </Suspense>
+      )}
+
+      {location && canSeeTemperatures && (
+        <Suspense fallback={null}>
+          <TemperatureDuePanel auth={auth} locationId={location.locationId} />
         </Suspense>
       )}
 
