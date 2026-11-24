@@ -59,7 +59,13 @@ export default async function LotsPage() {
               {formatQuantity(lot.quantityRemaining)} {lot.baseUnitCode} left · use by {lot.expiresOn ?? "not set"} · received {lot.receivedOn} ·{" "}
               {ORIGIN[lot.origin] ?? lot.origin}
               {lot.supplierLotCode && <> · supplier lot {lot.supplierLotCode}</>}
-              {lot.unitCost && <> · cost {lot.unitCost} per {lot.baseUnitCode}</>}
+              {lot.unitCost && <> · received at {lot.unitCost} per {lot.baseUnitCode}</>}
+              {lot.carryingUnitCost && (
+                <>
+                  {" "}
+                  · carried at {lot.carryingUnitCost} per {lot.baseUnitCode}, worth {lot.valueRemaining ?? "not known"}
+                </>
+              )}
             </p>
             <div className="mt-3 flex flex-wrap items-start gap-4">
               {canTrace && (

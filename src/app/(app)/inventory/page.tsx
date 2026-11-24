@@ -1,5 +1,5 @@
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
-import { formatCost, formatQuantity } from "@/components/inventory/format";
+import { COSTING_METHOD_LABELS, formatCost, formatQuantity } from "@/components/inventory/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { listOnHand } from "@/modules/inventory/queries/stock-queries";
@@ -29,6 +29,7 @@ export default async function InventoryPage() {
                 <th className="px-3 py-2">On hand</th>
                 <th className="px-3 py-2">Reorder at</th>
                 <th className="px-3 py-2">Par</th>
+                {showCost && <th className="px-3 py-2">Costing</th>}
                 {showCost && <th className="px-3 py-2">Average cost</th>}
                 {showCost && <th className="py-2">Value</th>}
               </tr>
@@ -50,7 +51,15 @@ export default async function InventoryPage() {
                   </td>
                   <td className="px-3 py-2">{formatQuantity(row.reorderLevel)}</td>
                   <td className="px-3 py-2">{formatQuantity(row.parLevel)}</td>
-                  {showCost && <td className="px-3 py-2">{formatCost(row.weightedAverageCost)}</td>}
+                  {showCost && (
+                    <td className="px-3 py-2">{COSTING_METHOD_LABELS[row.costingMethod] ?? row.costingMethod}</td>
+                  )}
+                  {showCost && (
+                    <td className="px-3 py-2">
+                      {formatCost(row.weightedAverageCost)}
+                      {row.costingMethod === "LOT" && <span className="ml-1 text-neutral-500">on hand</span>}
+                    </td>
+                  )}
                   {showCost && <td className="py-2">{formatCost(row.stockValue)}</td>}
                 </tr>
               ))}

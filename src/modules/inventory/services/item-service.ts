@@ -175,7 +175,7 @@ export async function getItemConfiguration(
     .where(eq(inventoryItemLocations.inventoryItemId, itemId));
 
   return {
-    item: { ...item, description: record!.description, version: record!.version },
+    item: { ...item, description: record!.description, version: record!.version, costingMethod: record!.costingMethod },
     conversions,
     locations: levels.map((row) => ({ ...row.configuration, locationName: row.locationName })),
   };

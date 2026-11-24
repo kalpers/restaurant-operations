@@ -16,6 +16,7 @@ import { seedDemoGiftCards } from "./demo/gift-cards";
 import { seedRunTracker } from "./demo/helpers";
 import { HISTORY_DAYS, seedPizzaHistory } from "./demo/history";
 import { seedHappyHour, seedPizzaLive } from "./demo/live";
+import { seedDemoLotCosting } from "./demo/lot-costing";
 import { seedDemoLoyalty, seedDemoRedemption } from "./demo/loyalty";
 import { seedPizzaMenu } from "./demo/menu";
 import { seedPizzaRestaurant } from "./demo/restaurant";
@@ -126,6 +127,9 @@ async function main(): Promise<void> {
     );
 
     // ------------------------------------------------------------- today
+    // Phase 37 (D13): before tonight's tables, so their pizzas use mozzarella costed by lot.
+    console.log(`Lot costing: ${await seedDemoLotCosting(database, owner, today)}.`);
+
     const live = await seedPizzaLive(database, owner, { ...tracker, today, timeZone, locationCode: location!.code });
 
     console.log(

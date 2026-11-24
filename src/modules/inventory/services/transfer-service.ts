@@ -331,7 +331,7 @@ async function sendIn(transaction: DatabaseTransaction, actor: Actor, transferId
 
     await transaction
       .update(inventoryTransferLines)
-      .set({ unitCostSent: out.unitCost, updatedAt: now })
+      .set({ unitCostSent: out.unitCost, valueSent: out.totalCost, updatedAt: now })
       .where(eq(inventoryTransferLines.id, line.id));
   }
 
@@ -455,7 +455,9 @@ async function receiveIn(
       type: "TRANSFER_IN",
       quantity: line.baseQuantity,
       unitOfMeasureId: facts.baseUnitId,
-      incomingTotalCost: line.unitCostSent === null ? undefined : extendCost(line.baseQuantity, line.unitCostSent),
+      // Phase 37 (D7): the exact value sent; lines sent before it carry only the unit cost.
+      incomingTotalCost:
+        line.valueSent ?? (line.unitCostSent === null ? undefined : extendCost(line.baseQuantity, line.unitCostSent)),
       reference: { type: TRANSFER_REFERENCE, id: transferId },
       notes: transfer.transferNumber,
       occurredAt: now,

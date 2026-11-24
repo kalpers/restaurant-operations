@@ -111,6 +111,9 @@ export async function createLot(
     supplierLotCode: string | null;
     unitCost: string | null;
     sourceLotId?: string | null;
+    /** Phase 37: a `LOT` item's carrying cost and value; omitted (null) for weighted average. */
+    carryingUnitCost?: string | null;
+    valueRemaining?: string | null;
   },
 ): Promise<string> {
   await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`inventory.lots:${input.locationId}`}))`);
@@ -135,6 +138,8 @@ export async function createLot(
       unitCost: input.unitCost,
       quantityReceived: input.quantity,
       quantityRemaining: input.quantity,
+      carryingUnitCost: input.carryingUnitCost ?? null,
+      valueRemaining: input.valueRemaining ?? null,
     })
     .returning({ id: inventoryLots.id });
 

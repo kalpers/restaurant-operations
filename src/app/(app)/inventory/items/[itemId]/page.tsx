@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { ActionButton } from "@/components/forms/action-button";
 import { EntityForm } from "@/components/forms/entity-form";
-import { formatQuantity, MEASUREMENT_TYPE_OPTIONS } from "@/components/inventory/format";
+import { COSTING_REASON_OPTIONS, formatQuantity, MEASUREMENT_TYPE_OPTIONS } from "@/components/inventory/format";
 import { getDatabase } from "@/db";
 import { requirePageActor } from "@/modules/auth/guards";
 import { getItemConfiguration, listUnitChoices } from "@/modules/inventory/services/item-service";
@@ -103,6 +103,37 @@ export default async function InventoryItemPage({ params }: { params: Promise<{ 
           variant={item.lotTracked ? "secondary" : "primary"}
           successMessage={item.lotTracked ? "Lot tracking is off." : "Lot tracking is on."}
         />
+      </section>
+
+      {/* Phase 37 (policies 2 and 3): weighted average, or cost from the lots stock leaves. */}
+      <section aria-label="Costing" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">
+        <h2 className="mb-1 text-xl font-semibold">Costing</h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          {item.costingMethod === "LOT"
+            ? "By lot. Stock leaving is costed at the lots it came from, so a plate's cost follows the delivery it used."
+            : item.lotTracked
+              ? "Weighted average. Cost by lot instead to cost each use at the delivery it came from. Stock on hand keeps its value."
+              : "Weighted average. Costing by lot needs lot tracking."}
+        </p>
+        {item.lotTracked ? (
+          <EntityForm
+            method="PUT"
+            url={`/api/inventory/items/${item.id}/costing-method`}
+            submitLabel={item.costingMethod === "LOT" ? "Switch to weighted average" : "Cost by lot"}
+            successMessage={item.costingMethod === "LOT" ? "Costing is weighted average." : "Costing is by lot."}
+            hidden={{ method: item.costingMethod === "LOT" ? "WEIGHTED_AVERAGE" : "LOT", expectedVersion: item.version }}
+            fields={[
+              {
+                name: "reasonCode",
+                label: "Reason",
+                type: "select",
+                required: true,
+                options: COSTING_REASON_OPTIONS,
+                defaultValue: "SUPPLIER_PRICES_VARY",
+              },
+            ]}
+          />
+        ) : null}
       </section>
 
       <section aria-label="Allergens" className="mb-8 rounded-lg border border-neutral-200 bg-surface shadow-sm p-4">

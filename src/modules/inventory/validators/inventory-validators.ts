@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { IDEMPOTENCY_KEY_PATTERN } from "@/infrastructure/idempotency/idempotency-service";
 
+import { COSTING_CHANGE_REASONS, COSTING_METHODS } from "../rules/lot-costing";
 import { ADJUSTMENT_REASONS, INVENTORY_TRANSACTION_TYPES, WASTE_REASONS } from "../types";
 
 // Shape only. Business rules are in the services and PostgreSQL has the final word.
@@ -245,3 +246,10 @@ export const wasteLotSchema = z.object({
 });
 
 export const lotTrackingSchema = z.object({ enabled: z.boolean(), expectedVersion });
+
+/** Phase 37 (policy 2): change an item's costing method, with a reason code. */
+export const costingMethodSchema = z.object({
+  method: z.enum(COSTING_METHODS),
+  reasonCode: z.enum(COSTING_CHANGE_REASONS),
+  expectedVersion,
+});

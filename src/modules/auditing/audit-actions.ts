@@ -597,6 +597,14 @@ export const AUDIT_ACTIONS = {
     scope: "ORGANIZATION",
     fields: ["itemCode"],
   },
+  // Phase 37 (policy 2): an item's costing method changed. Method names and a reason code only;
+  // the values either side live in inventory_costing_changes.
+  "inventory.costing-method-changed": {
+    category: "INVENTORY",
+    entityType: "inventory_item",
+    scope: "ORGANIZATION",
+    fields: ["itemCode", "costingMethod", "reasonCode", "locationCount"],
+  },
   "inventory.lot-corrected": {
     category: "INVENTORY",
     entityType: "inventory_lot",

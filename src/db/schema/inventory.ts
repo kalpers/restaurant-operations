@@ -55,6 +55,11 @@ export const inventoryItems = pgTable(
      * and taken first to expire, first out. Organization-wide.
      */
     lotTracked: boolean("lot_tracked").notNull().default(false),
+    /**
+     * Phase 37 (policy 2, D2): `WEIGHTED_AVERAGE` (default) or `LOT`, where stock leaving is
+     * costed from the lots it left. `LOT` needs lot tracking. Organization-wide.
+     */
+    costingMethod: text("costing_method").notNull().default("WEIGHTED_AVERAGE"),
     active: activeColumn(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -72,6 +77,11 @@ export const inventoryItems = pgTable(
     }).onDelete("restrict"),
     check("inventory_items_code_not_blank", sql`length(trim(${table.code})) > 0`),
     check("inventory_items_name_not_blank", sql`length(trim(${table.name})) > 0`),
+    check("inventory_items_costing_method_valid", sql`${table.costingMethod} IN ('WEIGHTED_AVERAGE', 'LOT')`),
+    check(
+      "inventory_items_lot_costing_needs_lots",
+      sql`${table.costingMethod} = 'WEIGHTED_AVERAGE' OR ${table.lotTracked}`,
+    ),
   ],
 );
 
@@ -177,6 +187,11 @@ export const inventoryBalances = pgTable(
     locationId: uuid("location_id").notNull(),
     quantityOnHand: quantity("quantity_on_hand").notNull().default("0"),
     weightedAverageCost: cost("weighted_average_cost"),
+    /**
+     * Phase 37 (policy 8, D8): for a `LOT` item, the value of its open lots less open
+     * shortfalls; null for weighted-average items (value = quantity × average).
+     */
+    stockValue: cost("stock_value"),
     updatedAt: updatedAt(),
     version: versionColumn(),
   },
@@ -223,6 +238,8 @@ export const inventoryTransactions = pgTable(
     totalCost: cost("total_cost"),
     quantityAfter: quantity("quantity_after").notNull(),
     averageCostAfter: cost("average_cost_after"),
+    /** Phase 37 (D8): the `LOT` item's stock value after this row; null for weighted average. */
+    stockValueAfter: cost("stock_value_after"),
     businessDate: date("business_date", { mode: "string" }).notNull(),
     occurredAt: timestamptz("occurred_at").notNull(),
     referenceType: text("reference_type"),
@@ -927,6 +944,8 @@ export const inventoryTransferLines = pgTable(
     unitOfMeasureId: uuid("unit_of_measure_id").notNull(),
     baseQuantity: quantity("base_quantity").notNull(),
     unitCostSent: cost("unit_cost_sent"),
+    /** Phase 37 (D7): the TRANSFER_OUT's exact total cost, which the TRANSFER_IN enters at. */
+    valueSent: cost("value_sent"),
     baseQuantityReceived: quantity("base_quantity_received"),
     /** Phase 23 (D9): send from this lot instead of first to expire. */
     lotId: uuid("lot_id").references((): AnyPgColumn => inventoryLots.id, { onDelete: "restrict" }),
@@ -959,6 +978,7 @@ export const inventoryTransferLines = pgTable(
       "inventory_transfer_lines_cost_non_negative",
       sql`${table.unitCostSent} IS NULL OR ${table.unitCostSent} >= 0`,
     ),
+    check("inventory_transfer_lines_value_non_negative", sql`${table.valueSent} IS NULL OR ${table.valueSent} >= 0`),
   ],
 );
 
@@ -985,6 +1005,12 @@ export const inventoryLots = pgTable(
     unitCost: cost("unit_cost"),
     quantityReceived: quantity("quantity_received").notNull(),
     quantityRemaining: quantity("quantity_remaining").notNull(),
+    /**
+     * Phase 37 (D3, D8): for a `LOT` item, the per-unit cost the lot is carried at and the
+     * exact value of what remains. Null while the item is weighted average.
+     */
+    carryingUnitCost: cost("carrying_unit_cost"),
+    valueRemaining: cost("value_remaining"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     version: versionColumn(),
@@ -1018,6 +1044,10 @@ export const inventoryLots = pgTable(
       sql`${table.supplierLotCode} IS NULL OR (length(trim(${table.supplierLotCode})) BETWEEN 1 AND 64)`,
     ),
     check("inventory_lots_cost_non_negative", sql`${table.unitCost} IS NULL OR ${table.unitCost} >= 0`),
+    check(
+      "inventory_lots_carrying_non_negative",
+      sql`(${table.carryingUnitCost} IS NULL OR ${table.carryingUnitCost} >= 0) AND (${table.valueRemaining} IS NULL OR ${table.valueRemaining} >= 0)`,
+    ),
     index("inventory_lots_item_location_fefo_idx")
       .on(table.inventoryItemId, table.locationId, table.expiresOn, table.receivedOn, table.sequenceNumber)
       .where(sql`${table.quantityRemaining} > 0`),
@@ -1043,6 +1073,14 @@ export const inventoryLotMovements = pgTable(
     lotId: uuid("lot_id"),
     baseQuantityDelta: quantity("base_quantity_delta").notNull(),
     settlesMovementId: uuid("settles_movement_id"),
+    /**
+     * Phase 37 (D4, D6): for a `LOT` item, the per-unit and total cost of this movement (the
+     * total is a magnitude; the quantity gives the sign). On the lot side of a shortfall
+     * settlement, `cost_difference` is the lot value taken less the shortfall value closed.
+     */
+    unitCost: cost("unit_cost"),
+    totalCost: cost("total_cost"),
+    costDifference: cost("cost_difference"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -1063,11 +1101,66 @@ export const inventoryLotMovements = pgTable(
     }).onDelete("restrict"),
     check("inventory_lot_movements_delta_non_zero", sql`${table.baseQuantityDelta} <> 0`),
     check(
+      "inventory_lot_movements_cost_non_negative",
+      sql`(${table.unitCost} IS NULL OR ${table.unitCost} >= 0) AND (${table.totalCost} IS NULL OR ${table.totalCost} >= 0)`,
+    ),
+    check(
       "inventory_lot_movements_settlement_shape",
       sql`${table.settlesMovementId} IS NULL OR (${table.lotId} IS NULL AND ${table.baseQuantityDelta} > 0)`,
     ),
     index("inventory_lot_movements_transaction_idx").on(table.inventoryTransactionId),
     index("inventory_lot_movements_lot_idx").on(table.lotId),
     index("inventory_lot_movements_settles_idx").on(table.settlesMovementId),
+  ],
+);
+
+/**
+ * Phase 37 (policy 3, D3): each change of an item's costing method, one row per location
+ * stocking it, with the stock and value either side. Append-only (a trigger refuses updates
+ * and deletes). No ledger row is posted for a change of method.
+ */
+export const inventoryCostingChanges = pgTable(
+  "inventory_costing_changes",
+  {
+    id: uuidPrimaryKey(),
+    organizationId: organizationColumn(),
+    inventoryItemId: uuid("inventory_item_id").notNull(),
+    locationId: uuid("location_id").notNull(),
+    fromMethod: text("from_method").notNull(),
+    toMethod: text("to_method").notNull(),
+    quantityOnHand: quantity("quantity_on_hand").notNull(),
+    valueBefore: cost("value_before"),
+    valueAfter: cost("value_after"),
+    averageCostAfter: cost("average_cost_after"),
+    /** The item's last ledger sequence at the location when the method changed. */
+    lastTransactionSequence: bigint("last_transaction_sequence", { mode: "number" }),
+    /** Why: one of `COSTING_CHANGE_REASONS` (a code, so no free text sits on a cost record). */
+    reasonCode: text("reason_code").notNull(),
+    changedByUserId: uuid("changed_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    changedAt: timestamptz("changed_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "inventory_costing_changes_item_org_fk",
+      columns: [table.inventoryItemId, table.organizationId],
+      foreignColumns: [inventoryItems.id, inventoryItems.organizationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_costing_changes_location_org_fk",
+      columns: [table.locationId, table.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }).onDelete("restrict"),
+    check(
+      "inventory_costing_changes_methods_valid",
+      sql`${table.fromMethod} IN ('WEIGHTED_AVERAGE', 'LOT') AND ${table.toMethod} IN ('WEIGHTED_AVERAGE', 'LOT') AND ${table.fromMethod} <> ${table.toMethod}`,
+    ),
+    check(
+      "inventory_costing_changes_reason_valid",
+      sql`${table.reasonCode} IN ('SUPPLIER_PRICES_VARY', 'OWNER_OR_ACCOUNTANT_REQUEST', 'CORRECTION', 'OTHER')`,
+    ),
+    index("inventory_costing_changes_item_location_idx").on(table.inventoryItemId, table.locationId, table.changedAt),
   ],
 );

@@ -89,6 +89,7 @@ const EXPECTED_TABLES = [
   "public.idempotency_records",
   "public.ingredient_allergen_reviews",
   "public.inventory_balances",
+  "public.inventory_costing_changes",
   "public.inventory_count_lines",
   "public.inventory_counts",
   "public.inventory_item_allergens",
@@ -731,6 +732,27 @@ describe("reconstruction from checked-in migrations", { timeout: 30_000 }, () =>
         `),
       ).rejects.toThrow(scheme ? /gift_cards_code_hash_scheme_valid/ : /code_hash_scheme/);
     }
+  });
+
+  it("upgrades a Phase 36 database in place: items stay weighted average, lots and ledger rows keep their cost", async () => {
+    // 0000-0090 are Phase 36 and earlier; 0091-0092 are Phase 37.
+    await upgradeFromMigrationIndex(90, async () => {
+      await query(`
+        WITH unit AS (
+          INSERT INTO units_of_measure (code, name, measurement_type) VALUES ('UPG_EACH', 'Each', 'COUNT') RETURNING id
+        )
+        INSERT INTO inventory_items (organization_id, code, name, measurement_type, base_unit_id, lot_tracked)
+        SELECT o.id, 'CHEESE', 'Cheese', 'COUNT', unit.id, true FROM organizations o, unit WHERE o.name = 'Upgrade Org'
+      `);
+    });
+
+    expect(await query("SELECT costing_method FROM inventory_items")).toEqual([{ costing_method: "WEIGHTED_AVERAGE" }]);
+    expect(await query("SELECT * FROM inventory_costing_changes")).toEqual([]);
+    // Lot costing needs lot tracking.
+    await expect(query("UPDATE inventory_items SET lot_tracked = false, costing_method = 'LOT'")).rejects.toThrow(
+      /inventory_items_lot_costing_needs_lots/,
+    );
+    await expect(query("UPDATE inventory_items SET costing_method = 'FIFO'")).rejects.toThrow(/inventory_items_costing_method_valid/);
   });
 
   async function upgradeFromMigrationIndex(lastIndex: number, beforeUpgrade?: () => Promise<void>): Promise<void> {

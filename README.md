@@ -851,13 +851,15 @@ SALE_REVERSAL
 
 Transfers between Locations of one organization use a matching transfer-out and transfer-in with one shared reference and do not change total inventory. Since Phase 23 a transfer is a record (`inventory_transfers`, `inventory_transfer_lines`, numbered `TR-000001` per sending location): `DRAFT -> SENT -> RECEIVED`, or `CANCELLED` from a draft. Sending posts `TRANSFER_OUT` and freezes each line's average cost; the stock is then in transit; receiving at the other location posts `TRANSFER_IN` for the full sent quantity at that cost and, for a line that arrived short, `ADJUST_DECREASE` with reason `TRANSFER_SHORTAGE`. Each side needs `inventory.transfer` at its own location; send and receive take an idempotency key. "Send and receive now" (the Phase 8 one-step move) does both at once for someone with the permission at both.
 
-**Lots (Phase 23).** An item may be lot tracked (`inventory_items.lot_tracked`, under `inventory.configure`; turning it on makes an opening lot of the stock on hand, turning it off needs every lot empty). `inventory_lots` (per location, `L-000001`, supplier lot code, use-by date, origin) and append-only `inventory_lot_movements` are a sub-ledger written only by the posting service in the same transaction: a ledger row's movements sum to its quantity (checked at commit), and the lots hold the balance whenever it is zero or more. Stock leaves first to expire (dated before undated, then oldest received), at SEND too; waste, adjustments and transfers may name a lot. A CONSUME beyond the lots where negative stock is allowed leaves a shortfall the next increase settles. Receipts create lots, transfers recreate the sent lots at the receiver, a sale reversal returns stock to the lots it came from. Cost stays weighted average: a lot's cost is information only. The hourly run sends `LOT_EXPIRING` to `inventory.adjust` holders (location setting `lot_expiry_warning_days`, default 2), and Inventory → Lots wastes or corrects a lot.
+**Lots (Phase 23).** An item may be lot tracked (`inventory_items.lot_tracked`, under `inventory.configure`; turning it on makes an opening lot of the stock on hand, turning it off needs every lot empty). `inventory_lots` (per location, `L-000001`, supplier lot code, use-by date, origin) and append-only `inventory_lot_movements` are a sub-ledger written only by the posting service in the same transaction: a ledger row's movements sum to its quantity (checked at commit), and the lots hold the balance whenever it is zero or more. Stock leaves first to expire (dated before undated, then oldest received), at SEND too; waste, adjustments and transfers may name a lot. A CONSUME beyond the lots where negative stock is allowed leaves a shortfall the next increase settles. Receipts create lots, transfers recreate the sent lots at the receiver, a sale reversal returns stock to the lots it came from. Until Phase 37 cost stayed weighted average and a lot's cost was information only; since Phase 37 an item may be costed by lot (below). The hourly run sends `LOT_EXPIRING` to `inventory.adjust` holders (location setting `lot_expiry_warning_days`, default 2), and Inventory → Lots wastes or corrects a lot.
 
 Creating a purchase order does not increase stock. Receiving does.
 
 Support partial receipts.
 
-Use weighted-average costing initially. Preserve actual received/supplier cost history.
+Use weighted-average costing by default. Preserve actual received/supplier cost history.
+
+**Lot costing (Phase 37).** An item tracked in lots may instead be costed by lot (`inventory_items.costing_method`, `WEIGHTED_AVERAGE` by default or `LOT`, organization-wide, needs lot tracking; changed under `inventory.configure` with a reason code and audited as `inventory.costing-method-changed`). Stock leaving a `LOT` item is costed from the lots it actually leaves (first to expire, or a named lot): each lot carries a per-unit cost and the exact value of what remains (`inventory_lots.carrying_unit_cost`, `value_remaining`), the lots are allocated before the ledger row is written, each lot movement stores its cost, and the ledger row's cost is their sum. Taking the last of a lot takes all of its remaining value. Receipts enter at their own cost; a sale reversal returns stock to the same lots at the cost it left at; found stock enters at the on-hand cost (else the latest lot's cost). A CONSUME beyond the lots is costed at the latest lot cost; when a new lot covers it, the difference is stored on that lot's movement (`cost_difference`) and the sale keeps its cost. Transfers carry the exact value sent (`inventory_transfer_lines.value_sent`) and recreate the lots at the sender's carrying costs. A `LOT` item's value is its lots' value less open shortfalls (`inventory_balances.stock_value`, ledger `stock_value_after`); its average is shown as "average on hand". Changing the method carries the value over (open lots take the current average; back to weighted average, the average becomes value ÷ quantity), refused while a shortfall from before is open, and writes one append-only `inventory_costing_changes` row per location, with no ledger row. Past rows are never recalculated. Weighted-average items are unchanged. Supplier invoices still never change cost.
 
 Physical counts snapshot the system quantity, record counted quantity, and create adjustment transactions on completion.
 
@@ -1245,6 +1247,8 @@ Phase 28: the Sales area adds **Price periods** (per period and business date: i
 Both support "All my locations" (a `location_code` column) and are audited as `reports.exported` (`exports:journal`, `exports:payroll`).
 
 Phase 25: the Inventory area ends with **Item forecast vs actual**: for each past business date covered by a stored purchasing forecast (the latest one that covered it), forecast and sold portions per menu item on closed checks, the difference and its percentage. Counts only. "All my locations" adds forecast and sold portions.
+
+Phase 37 adds to the Inventory report a "Costing" column and closing value in "Usage and variance by item" (noting a method change inside the range), and, for `inventory.cost.view` holders, "Negative stock cost differences" and "Stock value by lot (on hand now)"; the lot trace shows each lot's carrying cost and each movement's cost.
 
 Phase 36 adds Inventory report sections "Invoice variances" and "Received, not invoiced" (cost figures need `inventory.cost.view`), and a "Bundle components" section in menu reports; item mix and menu engineering show a bundle with its components' cost and leave component rows out.
 
@@ -1758,7 +1762,7 @@ The six approved Phase 8 policies (negative inventory, negative-balance costing,
 
 **Negative inventory.** `location_settings.allow_negative_inventory` defaults to false. When false nothing may leave QOH below zero. When true, only `CONSUME` may; `WASTE`, `ADJUST_DECREASE`, `COUNT_DECREASE` and `TRANSFER_OUT` never may. Increases are always allowed. Nothing clamps. `postConsumption` is the Phase 9 entry point.
 
-**Weighted-average cost.** Per base unit, `NUMERIC(14,4)`, computed with exact `BigInt` arithmetic (`divideRoundHalfUp` in `src/shared/decimal/`) and rounded ROUND_HALF_UP to four places after each receipt; the persisted value is the next receipt's basis, with no hidden precision. A receipt enters as its exact total cost, so a base-unit cost needing more than four places isn't rounded twice. From QOH at or below zero the ordinary formula is never used: a receipt that leaves QOH at or below zero keeps the average, and one that lifts it above zero sets the average to that receipt's base-unit cost. Stock that arrived with no cost (an adjustment before any receipt) takes the next receipt's cost as its first average. Outgoing movements are valued at the current average and don't change it. Transfers carry the source's average to the destination. Costs and valuation are returned only to holders of `inventory.cost.view`.
+**Weighted-average cost.** Per base unit, `NUMERIC(14,4)`, computed with exact `BigInt` arithmetic (`divideRoundHalfUp` in `src/shared/decimal/`) and rounded ROUND_HALF_UP to four places after each receipt; the persisted value is the next receipt's basis, with no hidden precision. A receipt enters as its exact total cost, so a base-unit cost needing more than four places isn't rounded twice. From QOH at or below zero the ordinary formula is never used: a receipt that leaves QOH at or below zero keeps the average, and one that lifts it above zero sets the average to that receipt's base-unit cost. Stock that arrived with no cost (an adjustment before any receipt) takes the next receipt's cost as its first average. Outgoing movements are valued at the current average and don't change it. Transfers carry the source's average to the destination. (Phase 37: these rules are for weighted-average items; items costed by lot are valued from their lots.) Costs and valuation are returned only to holders of `inventory.cost.view`.
 
 **Suppliers and purchasing.** `supplier_items` says how a supplier sells an item: a purchase unit and `base_units_per_purchase`, computed from the item's conversions when saved and refused if the unit can't convert. As built in Phase 8 there was no preferred-supplier field and nothing chose a supplier: an order names one explicitly, and low-stock results list every active supplier option. Phase 19 (owner decision D8) adds an optional preferred supplier item per stocked item and location, used only to build suggested DRAFT orders. Listed costs and every receipt price are appended to `supplier_item_cost_history`. Purchase orders are numbered per Location (`PO-000001`) and move `DRAFT -> SUBMITTED -> PARTIALLY_RECEIVED -> RECEIVED`, or to `CANCELLED` from any but `RECEIVED`. Only drafts are edited. Lines snapshot the supplier item, unit, conversion and price; the order total is the exact sum of line totals; no tax or freight. Submitting moves no stock.
 
@@ -2048,6 +2052,15 @@ Phase 19 turns recorded stock and sales into signals for service. Nothing in it 
 - **Reports**, in the existing areas after their unchanged sections: sales by hour opened (Sales); item mix and menu engineering across the whole menu (Menu; engineering only with cost); server performance, with tips only for tip viewers, and voids, comps and discounts by the employee who did them (Orders); 86 history (Inventory).
 - **Permission** (138 in all): `menu.availability.manage` (Owner, General Manager, Manager, Cook, Bartender), seeded by `security.menu-stock-permissions`. The auto-86 setting needs `locations.manage`.
 - **Migrations:** `0037` (tables and columns) and `0038` (custom: outage, override and alert guards; the notifications guard now covers the alert link).
+
+### Phase 37 Lot Costing
+
+Phase 37 builds lot costing, deferred since Phase 23 (plan approved 2026-11-23, D1–D14 as recommended, contract changes C1–C3; C4 not taken, so invoices stay record only). Plan: `docs/Phase-37-Lot-Costing.md`. Report: `docs/Phase-37-Completion-Report.md`. No new permission.
+
+- **Method:** `inventory_items.costing_method` (`WEIGHTED_AVERAGE` or `LOT`, checked: `LOT` needs `lot_tracked`); `changeCostingMethod` (`src/modules/inventory/services/costing-method-service.ts`, `PUT /api/inventory/items/{id}/costing-method`, the item page's Costing section) with reason codes `SUPPLIER_PRICES_VARY`, `OWNER_OR_ACCOUNTANT_REQUEST`, `CORRECTION`, `OTHER` (a code, not free text). It locks the item and every balance of it in location order; postings read the method under the balance lock.
+- **Posting:** for a `LOT` item `postInventoryTransaction` calls `planLotCostedPosting` (`lot-costed-posting.ts`) before inserting the ledger row; the weighted-average path is unchanged. Rules in `rules/lot-costing.ts`.
+- **Valuation:** `reconcileLotValues` proves each balance's `stock_value` equals its lots less open shortfalls and the ledger's last `stock_value_after`.
+- **Migrations:** `0091` (generated: columns, `inventory_costing_changes`, checks) and `0092` (custom: costing changes append-only; the transfer line guard also freezes `value_sent`).
 
 ### Phase 36 Events, Checklists, Food Safety, Supplier Invoices and Prix-Fixe
 
@@ -2519,6 +2532,12 @@ Guest erase offers to redact the manager log entries and pre-shift notes that me
 
 Requested and approved by the owner on 2026-11-19, with decisions D1–D19 as recommended in the plan.
 
+### Phase 37: Lot Costing
+
+Items tracked in lots may be costed by lot: stock leaving is costed from the lots it came from, each lot carries its own cost and value, shortfalls leave their difference on the lot that covers them, transfers carry exact value, and changing the method carries the stock's value over with an append-only record. Weighted average stays the default. No new permission; migrations `0091`–`0092`. Plan: `docs/Phase-37-Lot-Costing.md`.
+
+Requested and approved by the owner on 2026-11-23, with decisions D1–D14 as recommended in the plan.
+
 ### Phase 36: Events, Checklists, Food Safety, Supplier Invoices and Prix-Fixe
 
 Opening, closing and side-work checklists; food-safety temperature logs with out-of-range alerts; event and private-dining bookings that hold their space; supplier invoices matched against receipts (record only, no cost change); prix-fixe and combo items sold as one priced line with ordinary component items. Ten permissions, migrations `0081`–`0090`. FIFO lot costing moves to Phase 37. Plan: `docs/Phase-36-Events-Checklists-Food-Safety-Invoices-and-Prix-Fixe.md`.
@@ -2644,7 +2663,7 @@ Architect for, but do not implement unless specifically requested:
 - SMS/email notifications to staff (guest service messages were built in Phase 22)
 - Full offline synchronization
 - Demand forecasting based on historical sales/reservations (built in Phase 24 for staffing: a same-weekday average with a booked-covers floor, sizing shifts on request; extended in Phase 25 to item portions, prep lists and forecast-based suggested orders; expected net sales added in Phase 28 for `reports.sales` holders)
-- Ingredient lots/FIFO/expiration-by-lot (built in Phase 23 for quantity and expiry, first to expire first; cost stays weighted average, so FIFO costing remains future work)
+- Ingredient lots/FIFO/expiration-by-lot (built in Phase 23 for quantity and expiry, first to expire first; Phase 37 added lot costing per item, where cost follows the lots used)
 - Vendor EDI
 - Nutritional analysis (built in Phase 28 for calories and macros from recipes and declared figures; no printed or public nutrition menu)
 - Separate analytics warehouse

@@ -87,20 +87,31 @@ describe("inventory module boundaries", () => {
   });
 
   it("writes stock only through the posting service", () => {
-    for (const file of files.filter((entry) => !entry.endsWith("posting-service.ts"))) {
+    for (const file of files.filter((entry) => !/(posting-service|costing-method-service)\.ts$/.test(entry))) {
       const text = readFileSync(file, "utf8");
 
       expect(`${file}: ${/\.insert\(inventoryTransactions\)|\.update\(inventoryBalances\)|\.insert\(inventoryBalances\)/.test(text)}`).toBe(
         `${file}: false`,
       );
     }
+
+    // Phase 37 (policy 3): a change of costing method re-values the balance, never its quantity,
+    // and posts no ledger row.
+    const costing = readFileSync(files.find((entry) => entry.endsWith("costing-method-service.ts"))!, "utf8");
+    const balanceUpdates = costing.match(/\.update\(inventoryBalances\)[\s\S]*?\.where\(/g) ?? [];
+
+    expect(balanceUpdates.length).toBeGreaterThan(0);
+    expect(balanceUpdates.some((update) => update.includes("quantityOnHand"))).toBe(false);
+    expect(/\.insert\(inventoryTransactions\)|\.insert\(inventoryBalances\)/.test(costing)).toBe(false);
   });
 
   // Phase 23 (policy 17): lots move only with a posting (lot-posting.ts, called by the posting
   // service). The lot service creates the opening lot and corrects a code or expiry, never a
   // remaining quantity.
   it("moves lots only through the posting service", () => {
-    for (const file of files.filter((entry) => !/(lot-posting|lot-service)\.ts$/.test(entry))) {
+    // Phase 37: lot-costed-posting is the lot side of a posting for items costed by lot; the
+    // costing method service re-values lots (never their quantity) when the method changes.
+    for (const file of files.filter((entry) => !/(lot-posting|lot-costed-posting|lot-service|costing-method-service)\.ts$/.test(entry))) {
       const text = readFileSync(file, "utf8");
 
       expect(`${file}: ${/\.insert\(inventoryLots\)|\.update\(inventoryLots\)|\.insert\(inventoryLotMovements\)/.test(text)}`).toBe(
@@ -113,6 +124,13 @@ describe("inventory module boundaries", () => {
 
     expect(updates.length).toBeGreaterThan(0);
     expect(updates.some((update) => update.includes("quantityRemaining"))).toBe(false);
+
+    const costing = readFileSync(files.find((entry) => entry.endsWith("costing-method-service.ts"))!, "utf8");
+    const lotUpdates = costing.match(/\.update\(inventoryLots\)[\s\S]*?\.where\(/g) ?? [];
+
+    expect(lotUpdates.length).toBeGreaterThan(0);
+    expect(lotUpdates.some((update) => update.includes("quantityRemaining"))).toBe(false);
+    expect(/\.insert\(inventoryLots\)|\.insert\(inventoryLotMovements\)/.test(costing)).toBe(false);
   });
 
   it("checks a permission in every exported service operation", () => {
@@ -122,7 +140,7 @@ describe("inventory module boundaries", () => {
       const checks = (text.match(/assert(Any)?Permission\(/g) ?? []).length;
       // Called inside an authorized caller's transaction, by design.
       const internal = (
-        text.match(/export (async )?function (postInventoryTransaction|lockBalance|latestSequence|readPostingSettings|postConsumption|postOrderConsumption|postRemakeConsumption|postSaleReversal|requireSupplier|receivedByLine|lockOrder|bumpOrder|applyStockAlert|copyStockedItems|findOpenInventoryWork|formatTransferNumber|formatLotNumber|createLot|postLotMovements|findLotsNeedingWarning|findInvoiceNoteCandidates|redactInvoiceNote)\b/g) ?? []
+        text.match(/export (async )?function (postInventoryTransaction|lockBalance|latestSequence|readPostingSettings|postConsumption|postOrderConsumption|postRemakeConsumption|postSaleReversal|requireSupplier|receivedByLine|lockOrder|bumpOrder|applyStockAlert|copyStockedItems|findOpenInventoryWork|formatTransferNumber|formatLotNumber|createLot|postLotMovements|planLotCostedPosting|reconcileLotValues|findLotsNeedingWarning|findInvoiceNoteCandidates|redactInvoiceNote)\b/g) ?? []
       ).length;
 
       expect(`${file}: ${checks >= exported - internal}`).toBe(`${file}: true`);

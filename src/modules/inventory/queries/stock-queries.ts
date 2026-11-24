@@ -44,6 +44,8 @@ export async function listOnHand(executor: DatabaseExecutor, actor: Actor) {
       configurationVersion: inventoryItemLocations.version,
       quantityOnHand: inventoryBalances.quantityOnHand,
       weightedAverageCost: inventoryBalances.weightedAverageCost,
+      balanceStockValue: inventoryBalances.stockValue,
+      costingMethod: inventoryItems.costingMethod,
     })
     .from(inventoryItemLocations)
     .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryItemLocations.inventoryItemId))
@@ -64,19 +66,24 @@ export async function listOnHand(executor: DatabaseExecutor, actor: Actor) {
     .orderBy(asc(inventoryItems.name));
   const showCost = canSeeCost(actor);
 
-  return rows.map((row) => {
+  return rows.map(({ balanceStockValue, ...row }) => {
     const quantityOnHand = toScale(row.quantityOnHand ?? "0", 4);
     const evaluation = evaluateStock(quantityOnHand, row);
+    // Phase 37 (policy 8): a lot-costed item's value is its lots' value; its average is the
+    // "average on hand". Weighted-average items are valued at quantity × average as before.
+    const value =
+      row.costingMethod === "LOT"
+        ? balanceStockValue
+        : row.weightedAverageCost !== null && !quantityOnHand.startsWith("-")
+          ? extendCost(quantityOnHand, row.weightedAverageCost)
+          : null;
 
     return {
       ...row,
       quantityOnHand,
       ...evaluation,
       weightedAverageCost: showCost ? row.weightedAverageCost : null,
-      stockValue:
-        showCost && row.weightedAverageCost !== null && !quantityOnHand.startsWith("-")
-          ? extendCost(quantityOnHand, row.weightedAverageCost)
-          : null,
+      stockValue: showCost ? value : null,
     };
   });
 }
@@ -246,6 +253,7 @@ export async function listTransactions(
     unitCost: showCost ? transaction.unitCost : null,
     totalCost: showCost ? transaction.totalCost : null,
     averageCostAfter: showCost ? transaction.averageCostAfter : null,
+    stockValueAfter: showCost ? transaction.stockValueAfter : null,
   }));
 }
 
@@ -292,4 +300,52 @@ export async function reconcileLots(executor: DatabaseExecutor, organizationId: 
     })),
     ...[...lots].map((row) => ({ kind: "LOT" as const, lotId: row.id, expected: row.moved, actual: row.remaining })),
   ];
+}
+
+/**
+ * Phase 37 (policy 8): for items costed by lot, each balance's stock value against its lots'
+ * value less open shortfalls at their posted cost, and against the ledger's last
+ * `stock_value_after`. Every disagreement is returned; none is expected.
+ */
+export async function reconcileLotValues(executor: DatabaseExecutor, organizationId: string) {
+  const rows = await executor.execute<{
+    inventory_item_id: string;
+    location_id: string;
+    balance: string | null;
+    lots: string;
+    ledger: string | null;
+  }>(sql`
+    WITH shortfalls AS (
+      SELECT t.inventory_item_id, t.location_id,
+             sum(greatest(m.total_cost - coalesce((SELECT sum(s.total_cost) FROM inventory_lot_movements s WHERE s.settles_movement_id = m.id), 0), 0)) AS open_value
+      FROM inventory_lot_movements m
+      JOIN inventory_transactions t ON t.id = m.inventory_transaction_id
+      WHERE m.organization_id = ${organizationId} AND m.lot_id IS NULL AND m.base_quantity_delta < 0 AND m.total_cost IS NOT NULL
+      GROUP BY t.inventory_item_id, t.location_id
+    ), lots AS (
+      SELECT inventory_item_id, location_id, sum(coalesce(value_remaining, 0)) AS value
+      FROM inventory_lots WHERE organization_id = ${organizationId}
+      GROUP BY inventory_item_id, location_id
+    )
+    SELECT b.inventory_item_id, b.location_id, b.stock_value::text AS balance,
+           (coalesce(l.value, 0) - coalesce(s.open_value, 0))::numeric(14, 4)::text AS lots,
+           (SELECT t.stock_value_after FROM inventory_transactions t
+             WHERE t.inventory_item_id = b.inventory_item_id AND t.location_id = b.location_id
+             ORDER BY t.sequence DESC LIMIT 1)::text AS ledger
+    FROM ${inventoryBalances} b
+    JOIN inventory_items i ON i.id = b.inventory_item_id AND i.costing_method = 'LOT'
+    LEFT JOIN lots l ON l.inventory_item_id = b.inventory_item_id AND l.location_id = b.location_id
+    LEFT JOIN shortfalls s ON s.inventory_item_id = b.inventory_item_id AND s.location_id = b.location_id
+    WHERE b.organization_id = ${organizationId}
+  `);
+
+  return [...rows]
+    .filter(
+      (row) =>
+        row.balance === null ||
+        Number.isNaN(Number(row.balance)) ||
+        toScale(row.balance, 4) !== toScale(row.lots, 4) ||
+        (row.ledger !== null && toScale(row.ledger, 4) !== toScale(row.balance, 4)),
+    )
+    .map((row) => ({ inventoryItemId: row.inventory_item_id, locationId: row.location_id, balance: row.balance, lots: row.lots, ledger: row.ledger }));
 }

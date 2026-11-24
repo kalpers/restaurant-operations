@@ -32,6 +32,19 @@ export const MEASUREMENT_TYPE_OPTIONS = [
   { value: "VOLUME", label: "Volume" },
 ];
 
+/** Phase 37 (policy 2): why an item's costing method changed. */
+export const COSTING_REASON_OPTIONS = [
+  { value: "SUPPLIER_PRICES_VARY", label: "Supplier prices change often" },
+  { value: "OWNER_OR_ACCOUNTANT_REQUEST", label: "Owner or accountant asked" },
+  { value: "CORRECTION", label: "Correcting an earlier change" },
+  { value: "OTHER", label: "Other" },
+];
+
+export const COSTING_METHOD_LABELS: Record<string, string> = {
+  WEIGHTED_AVERAGE: "Weighted average",
+  LOT: "By lot",
+};
+
 /** Quantities stay strings. Trailing zeros are trimmed for reading, never for storing. */
 export function formatQuantity(value: string | null): string {
   if (value === null) {

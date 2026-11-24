@@ -3,20 +3,23 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   inventoryBalances,
   inventoryItemLocations,
+  inventoryItems,
   inventoryTransactions,
   locations,
   locationSettings,
 } from "@/db/schema";
 import type { DatabaseTransaction } from "@/db/transactions/transaction-context";
-import { compareDecimals, isPositiveDecimal, negateDecimal } from "@/shared/decimal/decimal";
+import { addDecimals, compareDecimals, isPositiveDecimal, negateDecimal, toScale } from "@/shared/decimal/decimal";
 import { BusinessRuleError, NotFoundError } from "@/shared/errors/app-error";
 import { businessDateOf } from "@/shared/time/business-date-service";
 
 import { loadConversionContext, requireItemFacts } from "../repositories/conversion-repository";
 import { baseUnitCost, extendCost, nextAverageCost } from "../rules/costing";
+import { averageOnHand } from "../rules/lot-costing";
 import { assertDirection, assertStockPolicy } from "../rules/stock-policy";
 import { toBaseQuantity } from "../rules/unit-resolution";
-import { TRANSACTION_DIRECTION, type InventoryTransactionType } from "../types";
+import { COST_SCALE, TRANSACTION_DIRECTION, type InventoryTransactionType } from "../types";
+import { planLotCostedPosting, type LotCostedPlan } from "./lot-costed-posting";
 import { postLotMovements, type LotPostingInput } from "./lot-posting";
 import { applyStockAlert } from "./stock-alerts";
 
@@ -54,6 +57,8 @@ export type PostingResult = {
   averageCostAfter: string | null;
   unitCost: string | null;
   totalCost: string | null;
+  /** Phase 37: the `LOT` item's stock value after the posting; null for weighted average. */
+  stockValueAfter: string | null;
 };
 
 /**
@@ -191,6 +196,9 @@ export async function postInventoryTransaction(
   let averageCostAfter = balance.weightedAverageCost;
   let unitCost: string | null;
   let totalCost: string | null;
+  let stockValueAfter: string | null = null;
+  let lotPlan: LotCostedPlan | null = null;
+  const businessDate = businessDateOf(occurredAt, settings);
 
   if (input.incomingTotalCost !== undefined) {
     if (direction !== 1) {
@@ -200,7 +208,36 @@ export async function postInventoryTransaction(
     if (compareDecimals(input.incomingTotalCost, "0") < 0) {
       throw new BusinessRuleError("INVALID_COST", "A cost can't be negative.");
     }
+  }
 
+  // Phase 37 (policy 4): the costing method is read under the balance lock, which a change of
+  // method also holds, so a posting never uses a method that changed while it waited.
+  const [method] = await transaction
+    .select({ costingMethod: inventoryItems.costingMethod })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.id, item.id));
+
+  // `LOT` implies lot tracking (a database check), so the fresh method alone decides.
+  if (method?.costingMethod === "LOT") {
+    // The lots decide the cost, so they are allocated before the ledger row is written.
+    lotPlan = await planLotCostedPosting(transaction, {
+      organizationId: input.organizationId,
+      locationId: input.locationId,
+      inventoryItemId: item.id,
+      type: input.type,
+      baseQuantityDelta,
+      businessDate,
+      reversesTransactionId: input.reversesTransactionId ?? null,
+      incomingTotalCost: input.incomingTotalCost ?? null,
+      quantityOnHand: balance.quantityOnHand,
+      stockValue: balance.stockValue,
+      lot: input.lot ?? {},
+    });
+    unitCost = lotPlan.unitCost;
+    totalCost = lotPlan.totalCost;
+    stockValueAfter = toScale(addDecimals(balance.stockValue ?? "0", lotPlan.valueDelta), COST_SCALE);
+    averageCostAfter = averageOnHand(stockValueAfter, quantityAfter, balance.weightedAverageCost);
+  } else if (input.incomingTotalCost !== undefined) {
     totalCost = input.incomingTotalCost;
     unitCost = baseUnitCost(totalCost, baseMagnitude);
     averageCostAfter = nextAverageCost({
@@ -230,7 +267,8 @@ export async function postInventoryTransaction(
       totalCost,
       quantityAfter,
       averageCostAfter,
-      businessDate: businessDateOf(occurredAt, settings),
+      stockValueAfter,
+      businessDate,
       occurredAt,
       referenceType: input.reference?.type ?? null,
       referenceId: input.reference?.id ?? null,
@@ -246,13 +284,16 @@ export async function postInventoryTransaction(
     .set({
       quantityOnHand: quantityAfter,
       weightedAverageCost: averageCostAfter,
+      stockValue: stockValueAfter,
       version: sql`${inventoryBalances.version} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(inventoryBalances.id, balance.id));
 
   // Phase 23 (policy 17): the lot side of the same posting, still under the balance lock.
-  if (item.lotTracked) {
+  if (lotPlan) {
+    await lotPlan.write(posted!.id);
+  } else if (item.lotTracked) {
     await postLotMovements(transaction, {
       organizationId: input.organizationId,
       locationId: input.locationId,
@@ -260,7 +301,7 @@ export async function postInventoryTransaction(
       type: input.type,
       transactionId: posted!.id,
       baseQuantityDelta,
-      businessDate: businessDateOf(occurredAt, settings),
+      businessDate,
       unitCost,
       reversesTransactionId: input.reversesTransactionId ?? null,
       lot: input.lot ?? {},
@@ -288,5 +329,6 @@ export async function postInventoryTransaction(
     averageCostAfter,
     unitCost,
     totalCost,
+    stockValueAfter,
   };
 }

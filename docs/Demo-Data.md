@@ -79,7 +79,7 @@ All of this feeds the reports (sales, tax, item mix, menu engineering, labor, ti
 
 - This morning's delivery brings every ingredient back to par, except **Fried Calamari**, which is left low so the 86 board shows it running low. Auto-86 from stock is on.
 - **Tiramisu** is 86'd until close.
-- Mozzarella is lot tracked, with two dated lots (one expiring in two days).
+- Mozzarella is lot tracked and, since Phase 37, **costed by lot**: two cases arrive this morning on separate purchase orders, the second at 12% more, each a dated lot carried at its own cost (one expiring in two days). Tonight's pizzas take mozzarella from the cheaper lot first; see Inventory, Lots and the lot trace. On a database seeded before Phase 37, a rerun switches the mozzarella and adds the two deliveries once.
 - Reservations for the next seven days (phone, plus one online booking a day), and online booking turned on for 16:30 to 20:30. Three parties are on tonight's waitlist.
 - **Three tables mid-meal:** a four-top with pizzas in the oven, a two-top whose mains are held until the calamari is cleared, and a bar tab. One two-top is waiting to be cleaned.
 - A server has asked to swap a shift later this week with another server; it waits for that server to accept and then for a manager.

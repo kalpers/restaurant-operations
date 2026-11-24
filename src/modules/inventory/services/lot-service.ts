@@ -118,6 +118,14 @@ export async function disableLotTracking(database: Database, actor: Actor, inven
       throw new ConcurrencyError("inventory item", inventoryItemId);
     }
 
+    // Phase 37 (policy 2): lot costing needs the lots.
+    if (item.costingMethod === "LOT") {
+      throw new BusinessRuleError(
+        "LOT_COSTING_ACTIVE",
+        "This item is costed by lot. Switch it back to weighted average before turning lot tracking off.",
+      );
+    }
+
     const [stocked] = await transaction
       .select({ id: inventoryLots.id })
       .from(inventoryLots)
@@ -223,6 +231,8 @@ export async function listLots(database: Database, actor: Actor, options: { inve
       sequenceNumber: inventoryLots.sequenceNumber,
       quantityRemaining: inventoryLots.quantityRemaining,
       unitCost: inventoryLots.unitCost,
+      carryingUnitCost: inventoryLots.carryingUnitCost,
+      valueRemaining: inventoryLots.valueRemaining,
       version: inventoryLots.version,
     })
     .from(inventoryLots)
@@ -240,9 +250,12 @@ export async function listLots(database: Database, actor: Actor, options: { inve
   return {
     businessDate: today,
     warningDays: clock!.warningDays,
-    lots: fefoOrder(rows).map(({ unitCost, ...row }) => ({
+    lots: fefoOrder(rows).map(({ unitCost, carryingUnitCost, valueRemaining, ...row }) => ({
       ...row,
       unitCost: showCost ? unitCost : null,
+      // Phase 37 (policy 8): what a lot-costed lot is carried at, and what it's worth.
+      carryingUnitCost: showCost ? carryingUnitCost : null,
+      valueRemaining: showCost ? valueRemaining : null,
       status: expiryStatus(row.expiresOn, today, clock!.warningDays),
     })),
   };

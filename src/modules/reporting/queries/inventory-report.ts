@@ -4,6 +4,11 @@ import type { ReportColumn, ReportSection } from "../types";
 
 import { rowsOf, type ReportContext } from "./report-context";
 
+const COSTING_LABEL: Record<string, string> = {
+  WEIGHTED_AVERAGE: "Weighted average",
+  LOT: "By lot",
+};
+
 const TYPE_LABEL: Record<string, string> = {
   RECEIVE: "Received",
   CONSUME: "Sold (consumed)",
@@ -42,6 +47,9 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
     adjustments: string;
     transfers: string;
     closing: string | null;
+    closing_value: string | null;
+    costing_method: string;
+    method_changed: boolean;
     theoretical_cost: string | null;
     waste_cost: string | null;
     variance_cost: string | null;
@@ -50,6 +58,8 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
     sql`
       WITH moved AS (
         SELECT t.inventory_item_id,
+               MIN(t.sequence) AS first_sequence,
+               MAX(t.sequence) AS last_sequence,
                SUM(t.base_quantity_delta) FILTER (WHERE t.transaction_type = 'RECEIVE') AS received,
                -SUM(t.base_quantity_delta) FILTER (WHERE t.transaction_type IN ('CONSUME', 'SALE_REVERSAL')) AS theoretical,
                -SUM(t.base_quantity_delta) FILTER (WHERE t.transaction_type = 'WASTE') AS waste,
@@ -64,7 +74,12 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
         GROUP BY t.inventory_item_id
       ),
       closing AS (
-        SELECT DISTINCT ON (t.inventory_item_id) t.inventory_item_id, t.quantity_after
+        SELECT DISTINCT ON (t.inventory_item_id) t.inventory_item_id, t.quantity_after,
+               -- Phase 37 (policy 8): a lot-costed row carries its stock value; otherwise
+               -- quantity x average, as the Inventory page values it.
+               COALESCE(t.stock_value_after,
+                        CASE WHEN t.quantity_after >= 0 AND t.average_cost_after IS NOT NULL
+                             THEN round(t.quantity_after * t.average_cost_after, 4) END) AS closing_value
         FROM inventory_transactions t
         WHERE t.location_id = ${filters.locationId} AND t.business_date <= ${filters.to}::date
           AND t.inventory_item_id IN (SELECT inventory_item_id FROM moved)
@@ -78,6 +93,15 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
              COALESCE(m.adjustments, 0)::numeric(14,4)::text AS adjustments,
              COALESCE(m.transfers, 0)::numeric(14,4)::text AS transfers,
              c.quantity_after::numeric(14,4)::text AS closing,
+             c.closing_value::numeric(14,4)::text AS closing_value,
+             i.costing_method,
+             -- Phase 37 (policy 9): the method changed between movements inside the range.
+             EXISTS (
+               SELECT 1 FROM inventory_costing_changes cc
+               WHERE cc.inventory_item_id = m.inventory_item_id AND cc.location_id = ${filters.locationId}
+                 AND cc.last_transaction_sequence >= m.first_sequence
+                 AND cc.last_transaction_sequence < m.last_sequence
+             ) AS method_changed,
              m.theoretical_cost::numeric(14,4)::text AS theoretical_cost,
              m.waste_cost::numeric(14,4)::text AS waste_cost,
              m.variance_cost::numeric(14,4)::text AS variance_cost
@@ -189,7 +213,7 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
       key: "usage",
       title: "Usage and variance by item",
       description:
-        "Theoretical usage is what sales consumed (net of sale reversals); count variance is what counts found beyond it. Closing quantity is the ledger at the end of the range.",
+        "Theoretical usage is what sales consumed (net of sale reversals); count variance is what counts found beyond it. Closing quantity is the ledger at the end of the range. Costs are as posted: an item costed by lot is costed from the lots it used, and where its method changed in the range, the rows before and after the change keep the method they were posted under.",
       columns: [
         { key: "code", label: "Item code", kind: "text" },
         { key: "name", label: "Item", kind: "text" },
@@ -201,6 +225,8 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
         { key: "adjustments", label: "Adjustments", kind: "quantity" },
         { key: "transfers", label: "Transfers (net)", kind: "quantity" },
         { key: "closing", label: "Closing quantity", kind: "quantity" },
+        { key: "method", label: "Costing", kind: "text" },
+        ...costColumn("closingValue", "Closing value"),
         ...costColumn("theoreticalCost", "Theoretical cost"),
         ...costColumn("wasteCost", "Waste cost"),
         ...costColumn("varianceCost", "Count variance cost"),
@@ -218,8 +244,12 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
             adjustments: row.adjustments,
             transfers: row.transfers,
             closing: row.closing,
+            method:
+              (COSTING_LABEL[row.costing_method] ?? row.costing_method) +
+              (row.method_changed ? " (method changed in this range)" : ""),
           },
           {
+            closingValue: row.closing_value,
             theoreticalCost: row.theoretical_cost,
             wasteCost: row.waste_cost,
             varianceCost: row.variance_cost,
@@ -320,6 +350,7 @@ export async function inventorySections(context: ReportContext): Promise<ReportS
 
   if (canViewCost) {
     sections.push(...(await invoiceSections(context)));
+    sections.push(...(await lotCostingSections(context)));
   }
 
   return sections;
@@ -450,6 +481,112 @@ async function invoiceSections(context: ReportContext): Promise<ReportSection[]>
         quantity: row.received_quantity,
         receivedCost: row.total_cost,
         ageDays: row.age_days,
+      })),
+    },
+  ];
+}
+
+/**
+ * Phase 37 (policies 6 and 8): for items costed by lot, the differences left when a new lot
+ * covered stock used beyond the lots (by the date the lot arrived), and the value of each
+ * open lot now.
+ */
+async function lotCostingSections(context: ReportContext): Promise<ReportSection[]> {
+  const { filters } = context;
+  const differences = await rowsOf<{
+    received_on: string;
+    lot_number: string;
+    item: string;
+    unit: string;
+    quantity: string;
+    lot_value: string | null;
+    difference: string;
+  }>(
+    context,
+    sql`
+      SELECT l.received_on::text, l.lot_number, i.name AS item, u.code AS unit,
+             (-SUM(m.base_quantity_delta))::numeric(14,4)::text AS quantity,
+             SUM(m.total_cost)::numeric(14,4)::text AS lot_value,
+             SUM(m.cost_difference)::numeric(14,4)::text AS difference
+      FROM inventory_lot_movements m
+      JOIN inventory_lots l ON l.id = m.lot_id
+      JOIN inventory_items i ON i.id = l.inventory_item_id
+      JOIN units_of_measure u ON u.id = i.base_unit_id
+      WHERE m.cost_difference IS NOT NULL
+        AND l.location_id = ${filters.locationId}
+        AND l.received_on BETWEEN ${filters.from}::date AND ${filters.to}::date
+      GROUP BY l.received_on, l.lot_number, i.name, u.code
+      ORDER BY l.received_on, l.lot_number
+    `,
+  );
+  const lots = await rowsOf<{
+    item: string;
+    lot_number: string;
+    unit: string;
+    expires_on: string | null;
+    quantity: string;
+    carrying: string | null;
+    value: string | null;
+  }>(
+    context,
+    sql`
+      SELECT i.name AS item, l.lot_number, u.code AS unit, l.expires_on::text,
+             l.quantity_remaining::numeric(14,4)::text AS quantity,
+             l.carrying_unit_cost::text AS carrying, l.value_remaining::text AS value
+      FROM inventory_lots l
+      JOIN inventory_items i ON i.id = l.inventory_item_id
+      JOIN units_of_measure u ON u.id = i.base_unit_id
+      WHERE l.location_id = ${filters.locationId} AND i.costing_method = 'LOT' AND l.quantity_remaining > 0
+      ORDER BY i.name, l.sequence_number
+    `,
+  );
+
+  return [
+    {
+      key: "lot-cost-differences",
+      title: "Negative stock cost differences",
+      description:
+        "Stock used beyond its lots was costed at the latest lot cost when sold. When a delivery covered it, the difference between that lot's value and the cost already posted is shown here, by the date the lot arrived. Sales keep the cost they were sent at.",
+      columns: [
+        { key: "receivedOn", label: "Lot arrived", kind: "date" },
+        { key: "lotNumber", label: "Lot", kind: "text" },
+        { key: "item", label: "Item", kind: "text" },
+        { key: "unit", label: "Base unit", kind: "text" },
+        { key: "quantity", label: "Quantity covered", kind: "quantity" },
+        { key: "lotValue", label: "Lot value used", kind: "cost" },
+        { key: "difference", label: "Difference", kind: "cost" },
+      ],
+      rows: differences.map((row) => ({
+        receivedOn: row.received_on,
+        lotNumber: row.lot_number,
+        item: row.item,
+        unit: row.unit,
+        quantity: row.quantity,
+        lotValue: row.lot_value,
+        difference: row.difference,
+      })),
+    },
+    {
+      key: "stock-value-by-lot",
+      title: "Stock value by lot (on hand now)",
+      description: "Open lots of items costed by lot at this location today, at the cost each lot is carried at.",
+      columns: [
+        { key: "item", label: "Item", kind: "text" },
+        { key: "lotNumber", label: "Lot", kind: "text" },
+        { key: "unit", label: "Base unit", kind: "text" },
+        { key: "expiresOn", label: "Use by", kind: "text" },
+        { key: "quantity", label: "Left", kind: "quantity" },
+        { key: "carrying", label: "Carried at", kind: "cost" },
+        { key: "value", label: "Value", kind: "cost" },
+      ],
+      rows: lots.map((row) => ({
+        item: row.item,
+        lotNumber: row.lot_number,
+        unit: row.unit,
+        expiresOn: row.expires_on,
+        quantity: row.quantity,
+        carrying: row.carrying,
+        value: row.value,
       })),
     },
   ];

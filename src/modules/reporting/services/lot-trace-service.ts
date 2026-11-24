@@ -29,6 +29,7 @@ type LotRow = {
   quantity_received: string;
   quantity_remaining: string;
   unit_cost: string | null;
+  carrying_unit_cost: string | null;
   depth: number;
 };
 
@@ -68,7 +69,8 @@ export async function traceLot(database: Database, auth: AuthContext, lotId: str
         )
         SELECT lots.id, lots.location_id, loc.name AS location_name, lots.lot_number, i.name AS item_name,
                lots.supplier_lot_code, lots.expires_on::text, lots.received_on::text, lots.origin,
-               lots.quantity_received::text, lots.quantity_remaining::text, lots.unit_cost::text, lots.depth
+               lots.quantity_received::text, lots.quantity_remaining::text, lots.unit_cost::text,
+               lots.carrying_unit_cost::text, lots.depth
         FROM lots
         JOIN locations loc ON loc.id = lots.location_id
         JOIN inventory_items i ON i.id = lots.inventory_item_id
@@ -100,11 +102,13 @@ export async function traceLot(database: Database, auth: AuthContext, lotId: str
       quantity: string;
       reason: string | null;
       transfer_number: string | null;
+      total_cost: string | null;
     }>(
       tx,
       sql`
         SELECT l.lot_number, loc.name AS location_name, t.business_date::text, t.transaction_type AS type,
-               m.base_quantity_delta::text AS quantity, t.reason_code AS reason, tr.transfer_number
+               m.base_quantity_delta::text AS quantity, t.reason_code AS reason, tr.transfer_number,
+               m.total_cost::text AS total_cost
         FROM inventory_lot_movements m
         JOIN inventory_lots l ON l.id = m.lot_id
         JOIN locations loc ON loc.id = l.location_id
@@ -161,7 +165,13 @@ export async function traceLot(database: Database, auth: AuthContext, lotId: str
           { key: "origin", label: "Origin", kind: "text" },
           { key: "received", label: "Quantity in", kind: "quantity" },
           { key: "remaining", label: "Left", kind: "quantity" },
-          ...(showCost ? [{ key: "unitCost", label: "Cost per unit", kind: "cost" as const }] : []),
+          ...(showCost
+            ? [
+                { key: "unitCost", label: "Received cost per unit", kind: "cost" as const },
+                // Phase 37 (policy 9): what a lot-costed lot is carried at.
+                { key: "carryingUnitCost", label: "Carried at", kind: "cost" as const },
+              ]
+            : []),
         ],
         rows: shown.map((entry) => ({
           relation: relation(entry.depth),
@@ -174,7 +184,7 @@ export async function traceLot(database: Database, auth: AuthContext, lotId: str
           origin: entry.origin,
           received: entry.quantity_received,
           remaining: entry.quantity_remaining,
-          ...(showCost ? { unitCost: entry.unit_cost } : {}),
+          ...(showCost ? { unitCost: entry.unit_cost, carryingUnitCost: entry.carrying_unit_cost } : {}),
         })),
       },
       {
@@ -187,8 +197,10 @@ export async function traceLot(database: Database, auth: AuthContext, lotId: str
           { key: "type", label: "Movement", kind: "text" },
           { key: "quantity", label: "Quantity", kind: "quantity" },
           { key: "detail", label: "Detail", kind: "text" },
+          ...(showCost ? [{ key: "cost", label: "Cost", kind: "cost" as const }] : []),
         ],
         rows: movements.map((row) => ({
+          ...(showCost ? { cost: row.total_cost } : {}),
           businessDate: row.business_date,
           location: row.location_name,
           lotNumber: row.lot_number,

@@ -130,6 +130,7 @@ export async function transferStock(
       averageCostAfter: row.averageCostAfter,
       unitCost: row.unitCost,
       totalCost: row.totalCost,
+      stockValueAfter: row.stockValueAfter,
     };
   };
 
