@@ -256,8 +256,8 @@ No dependency changes.
 | `npm audit --omit=dev` | 0 vulnerabilities |
 | Migration reconstruction | `migrations.test.ts` rebuilds the schema from `0000`–`0090` and checks every expected table: PASS. `npm run db:generate` reports no changes. |
 | Seed idempotency | `db:seed` twice on the dev database: 1 seed applied (`security.phase-36-permissions`), then 0. `db:seed:validation` twice: the second run did nothing. Seed count tests: 172 permissions, 34 seed runs, including a Phase 35 to 36 upgrade case. |
-| Demo data | The Phase 36 demo step ran twice on the dev database: the first run added its records, the second added none. See Remaining issues for the full `db:seed:demo` rerun. |
-| `db:reset` safeguards | The reset guard tests in the integration suite pass (refuse non-development, non-loopback and wrongly named databases). `db:reset` wasn't run on the dev database. |
+| Demo data | With the owner's approval, the dev database was reset (`db:reset`, `db:seed` applied 34 seeds), the owner ran `bootstrap:owner`, and `db:seed:demo` ran in full: every step, including Phase 36 (3 checklist templates, 4 temperature points with 18 readings, 2 events, 2 supplier invoices, 2 bundles). A second run added nothing. |
+| `db:reset` safeguards | The reset guard tests in the integration suite pass (they refuse non-development, non-loopback and wrongly named databases). `db:reset` ran on the local dev database with the owner's approval and rebuilt it from migrations `0000`–`0090`. |
 
 **Fixed during validation.** The first full integration run had one failure out of 1643. The Phase 6 test "never imports Drizzle into the UI" found `@/db` imports in four new files under `src/components/reservations/`:
 - three components imported types from `@/db`;
@@ -328,7 +328,7 @@ All 9 bundle tests pass, and so does the reservations authorization test after i
 
 ## Remaining issues
 
-- **Full demo rerun on the dev database.** Rerunning `npm run db:seed:demo` failed in the history step with "Table T03 needs cleaning before it can be seated". The demo was first run on an earlier day, and that day's "today" tables were left dirty. The failure is in a pre-Phase-36 step and isn't caused by this phase. The Phase 36 demo step ran on its own twice: it added its records once, then nothing. A clean full run needs the dev database reset (`npm run db:reset`, then `bootstrap:owner` and `db:seed:demo`), which wasn't done without the owner's approval. A possible follow-up is to make the history step clean up a previous day's "today" tables.
+- **Demo rerun on a later day (resolved here by a reset).** A rerun of `db:seed:demo` on a later day stopped in the history step ("Table T03 needs cleaning before it can be seated") because an earlier day's "today" tables were left dirty. That step predates Phase 36. After the approved reset, the full demo ran cleanly twice. A possible follow-up is to make the history step clean up an earlier day's "today" tables.
 - **Manual SMTP and Twilio check** (from earlier phases) is still open.
 - **FIFO lot costing** is deferred to Phase 37, along with how approved invoice costs might correct average cost.
 
