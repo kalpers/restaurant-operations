@@ -14,13 +14,14 @@ import { Table, TableFrame, TBody, Td, Th, THead, Tr } from "@/components/ui/tab
 import { useToast } from "@/components/ui/toast";
 import { isInRange } from "@/modules/restaurant/rules/temperature-rules";
 import type { TemperatureReadingView } from "@/modules/restaurant/services/temperature-service";
+import { randomUuid } from "@/shared/random-uuid";
 
 import type { ClientCheck } from "./temperature-checks";
 
 type Failure = Pick<ApiFailure, "code" | "message" | "requestId">;
 type Link = { kind: "recheck" | "correct"; reading: TemperatureReadingView } | null;
 
-const newKey = () => `temp-${crypto.randomUUID()}`;
+const newKey = () => `temp-${randomUuid()}`;
 const timeOf = (iso: string, timeZone: string) =>
   new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
 

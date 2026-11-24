@@ -16,6 +16,7 @@ import { Field, FieldHint, Select, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import type { ManagerLogEntryView } from "@/modules/restaurant/services/manager-log-service";
 import { formatInstant } from "@/shared/time/format-instant";
+import { randomUuid } from "@/shared/random-uuid";
 
 /** Phase 33 (policy 17): the organization's categories, inactive ones only naming old entries. */
 export type LogCategoryOption = { code: string; name: string; active: boolean };
@@ -176,7 +177,7 @@ function AddEntryForm({
 
     const data = new FormData(event.currentTarget);
 
-    key.current ??= `log-${crypto.randomUUID()}`;
+    key.current ??= `log-${randomUuid()}`;
     setPending(true);
     setError(null);
 

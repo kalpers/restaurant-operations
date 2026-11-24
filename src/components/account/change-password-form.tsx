@@ -44,7 +44,8 @@ export function ChangePasswordForm({ minimumLength }: { minimumLength: number })
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-4">
+    // "post" so a submit before the page is interactive never puts fields in the URL.
+    <form method="post" onSubmit={handleSubmit} className="grid gap-4">
       <label className="grid gap-1 text-sm font-medium">
         Current password
         <input type="password" name="currentPassword" required autoComplete="current-password" className={INPUT_STYLE} />

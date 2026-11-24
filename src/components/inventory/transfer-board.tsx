@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
+import { randomUuid } from "@/shared/random-uuid";
 
 import { formatQuantity } from "./format";
 
@@ -51,7 +52,7 @@ type Props = {
 
 type Line = { inventoryItemId: string; quantity: string; unitOfMeasureId: string };
 
-const key = () => crypto.randomUUID();
+const key = () => randomUuid();
 
 function useAction() {
   const router = useRouter();

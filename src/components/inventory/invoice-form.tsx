@@ -12,6 +12,7 @@ import { Table, TableFrame, TBody, Td, Th, THead, Tr } from "@/components/ui/tab
 import { useToast } from "@/components/ui/toast";
 import type { InvoiceView, ReceiptLineFacts } from "@/modules/inventory/services/invoice-service";
 import { isDecimalString, multiplyExact, roundHalfUp, sumDecimals } from "@/shared/decimal/decimal";
+import { randomUuid } from "@/shared/random-uuid";
 
 type Failure = Pick<ApiFailure, "code" | "message" | "requestId">;
 type ItemDraft = { chosen: boolean; quantity: string; unitPrice: string };
@@ -55,7 +56,7 @@ export function InvoiceForm({ invoice, suppliers }: { invoice?: InvoiceView; sup
     invoice?.lines
       .filter((line) => line.kind !== "ITEM")
       .map((line) => ({
-        key: crypto.randomUUID(),
+        key: randomUuid(),
         kind: line.kind as ChargeDraft["kind"],
         description: line.description ?? "",
         amount: (line.amount ?? "0").replace("-", ""),
@@ -291,7 +292,7 @@ export function InvoiceForm({ invoice, suppliers }: { invoice?: InvoiceView; sup
         <div>
           <Button
             variant="secondary"
-            onClick={() => setCharges((current) => [...current, { key: crypto.randomUUID(), kind: "FREIGHT", description: "", amount: "" }])}
+            onClick={() => setCharges((current) => [...current, { key: randomUuid(), kind: "FREIGHT", description: "", amount: "" }])}
           >
             <Plus aria-hidden className="size-4" /> Add freight, tax, charge or credit
           </Button>

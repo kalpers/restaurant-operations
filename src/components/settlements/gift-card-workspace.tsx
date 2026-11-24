@@ -13,6 +13,7 @@ import { INPUT_STYLE } from "@/components/ui/field";
 import type { GiftCardHistory, GiftCardProgramView, GiftCardView } from "@/modules/settlements/services/gift-card-service";
 import type { StockBatchView, StockCardView } from "@/modules/settlements/services/gift-card-stock-service";
 import { formatInstant } from "@/shared/time/format-instant";
+import { randomUuid } from "@/shared/random-uuid";
 
 // Phase 31 gift cards (policies 4, 5, 11, 12, 17). Record only: selling a card records how the
 // guest paid, nothing is charged. A new card's code is shown once, here, and is never stored;
@@ -98,7 +99,7 @@ const ENTRY_LABELS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = { ACTIVE: "Active", INACTIVE: "Inactive", STOCK: "Unsold stock" };
 
 function newKey(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+  return `${prefix}-${randomUuid()}`;
 }
 
 function useAction() {

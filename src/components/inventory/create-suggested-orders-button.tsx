@@ -8,11 +8,12 @@ import { readFailure, type ApiFailure } from "@/components/forms/api-request";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { apiFetch } from "@/components/forms/page-location";
+import { randomUuid } from "@/shared/random-uuid";
 
 type Created = { purchaseOrders: { id: string; poNumber: string }[] };
 
 function newKey(): string {
-  return `suggest-${crypto.randomUUID()}`;
+  return `suggest-${randomUuid()}`;
 }
 
 /**

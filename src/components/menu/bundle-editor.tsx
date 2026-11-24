@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Field, FieldHint, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import type { BundleConfiguration } from "@/modules/menu/services/bundle-service";
+import { randomUuid } from "@/shared/random-uuid";
 
 type Failure = Pick<ApiFailure, "code" | "message" | "requestId">;
 type OptionDraft = { componentMenuItemId: string; upcharge: string };
@@ -28,7 +29,7 @@ const fromConfig = (config: BundleConfiguration): SlotDraft[] =>
   }));
 
 const blankSlot = (): SlotDraft => ({
-  key: crypto.randomUUID(),
+  key: randomUuid(),
   id: null,
   name: "",
   defaultCourse: 1,

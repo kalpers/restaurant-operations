@@ -8,11 +8,12 @@ import { sendApiRequest, type ApiFailure } from "@/components/forms/api-request"
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
+import { randomUuid } from "@/shared/random-uuid";
 
 type StaffMember = { id: string; number: string; name: string; positions: { id: string; name: string }[] };
 
 function newKey(): string {
-  return `clockin-${crypto.randomUUID()}`;
+  return `clockin-${randomUuid()}`;
 }
 
 /**

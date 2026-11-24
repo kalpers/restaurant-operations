@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldHint, Input, Select, Textarea } from "@/components/ui/field";
+import { randomUuid } from "@/shared/random-uuid";
 
 // Phase 22 (policies 8, 9 and 12): the guest's booking form. Times come from the server; the
 // server checks everything again when the booking is made.
@@ -51,7 +52,7 @@ export function BookingForm({
   const [chosen, setChosen] = useState<Record<string, "ALLERGY" | "SEVERE">>({});
   const [website, setWebsite] = useState("");
   // One key per booking attempt, so a resubmit after a lost reply doesn't book twice.
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => randomUuid());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [booked, setBooked] = useState<Booked | null>(null);
@@ -129,7 +130,7 @@ export function BookingForm({
       } else {
         setError(await readError(response));
         // A refused booking wrote nothing, so the next attempt is a new request.
-        setIdempotencyKey(crypto.randomUUID());
+        setIdempotencyKey(randomUuid());
       }
     } catch {
       setError("Couldn't reach the restaurant. Your booking may not have been made; please try again.");

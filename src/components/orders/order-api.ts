@@ -1,4 +1,5 @@
 import { apiFetch } from "@/components/forms/page-location";
+import { randomUuid } from "@/shared/random-uuid";
 
 export type OrderApiResult<Data> =
   | { ok: true; data: Data }
@@ -50,7 +51,7 @@ export async function callOrderApi<Data = unknown>(
 
 /** A client-generated idempotency key for one SEND attempt. */
 export function newIdempotencyKey(): string {
-  return `send-${crypto.randomUUID()}`;
+  return `send-${randomUuid()}`;
 }
 
 export { formatMoney } from "@/components/format/money";

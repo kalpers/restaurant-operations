@@ -23,6 +23,7 @@ import { previewChange } from "@/modules/settlements/rules/settlement-math";
 import { compareDecimals } from "@/shared/decimal/decimal";
 import { formatInstant } from "@/shared/time/format-instant";
 import type { TenderType } from "@/modules/settlements/types";
+import { randomUuid } from "@/shared/random-uuid";
 
 // The settlement screen. Record only: nothing here charges a card or talks to a payment
 // provider. It shows what the server returns; the server decides every amount, the
@@ -82,7 +83,7 @@ const EVENTS = [
 ];
 
 function newKey(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+  return `${prefix}-${randomUuid()}`;
 }
 
 function useAction() {

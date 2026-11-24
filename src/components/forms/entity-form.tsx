@@ -124,7 +124,8 @@ export function EntityForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
+    // "post" so a submit before the page is interactive never puts fields in the URL.
+    <form method="post" onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
       {fields.map((field) =>
         field.type === "checkbox" ? (
           <label key={field.name} className="flex min-h-11 items-center gap-3">

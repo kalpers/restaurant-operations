@@ -13,5 +13,8 @@ export async function signInWithPassword(credentials: {
 }
 
 export async function signOutToLogin(): Promise<void> {
-  await signOut({ callbackUrl: "/login" });
+  // Not a callbackUrl: next-auth resolves that against APP_BASE_URL, which would send someone who
+  // opened the app by IP address to another host.
+  await signOut({ redirect: false });
+  window.location.assign(new URL("/login", window.location.origin));
 }

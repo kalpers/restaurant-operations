@@ -37,7 +37,8 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-4">
+    // "post" so a submit before the page is interactive never puts fields in the URL.
+    <form method="post" onSubmit={handleSubmit} className="grid gap-4">
       <label className="grid gap-1 text-sm font-medium">
         Email
         <input type="email" name="email" required autoComplete="username" className={INPUT_STYLE} />

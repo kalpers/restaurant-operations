@@ -32,6 +32,7 @@ import { LoyaltyRewardsPanel, type LoyaltyPanelData } from "./loyalty-rewards-pa
 import { callOrderApi, formatMoney, newIdempotencyKey, ORDER_TYPE_LABELS } from "./order-api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/components/forms/page-location";
+import { randomUuid } from "@/shared/random-uuid";
 
 // The order screen. It shows what the server returns and sends what staff choose; every
 // rule (sellability, modifier limits, prices, stock, permissions) is decided on the server.
@@ -870,7 +871,7 @@ function RemakeForm({ order, item }: { order: OrderDetail; item: OrderDetail["it
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    key.current ??= `remake-${crypto.randomUUID()}`;
+    key.current ??= `remake-${randomUuid()}`;
 
     const result = await run("POST", `/api/orders/${order.id}/items/${item.id}/remake`, { reason }, {
       "Idempotency-Key": key.current,
@@ -1045,7 +1046,7 @@ function ShareItemForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    key.current ??= `split-${crypto.randomUUID()}`;
+    key.current ??= `split-${randomUuid()}`;
 
     const chosen = targets.slice(0, count).map((target) => {
       if (target === "NEW") {
@@ -1632,7 +1633,7 @@ function SplitBySeatForm({ order, plan, onDone }: { order: OrderDetail; plan: Sp
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    key.current ??= `split-seat-${crypto.randomUUID()}`;
+    key.current ??= `split-seat-${randomUuid()}`;
 
     const result = await run(
       "POST",
@@ -1712,7 +1713,7 @@ function MoveItemsForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    key.current ??= `move-${crypto.randomUUID()}`;
+    key.current ??= `move-${randomUuid()}`;
 
     const other = otherChecks.find((entry) => entry.id === target);
     const result = await run(

@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/toast";
 
 import { callOrderApi, formatMoney } from "./order-api";
 import type { OrderDetail } from "@/modules/orders/queries/order-queries";
+import { randomUuid } from "@/shared/random-uuid";
 
 /** Phase 30 (policy 15): the linked guest's points and the rewards they can afford. */
 export type LoyaltyPanelData = {
@@ -40,7 +41,7 @@ export function LoyaltyRewardsPanel({ order, loyalty }: { order: OrderDetail; lo
       return;
     }
 
-    key.current ??= `loyalty-${crypto.randomUUID()}`;
+    key.current ??= `loyalty-${randomUuid()}`;
     setPending(true);
     setError(null);
 
